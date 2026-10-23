@@ -44,12 +44,16 @@ class ScreenLinkRouter {
       ScreenTarget.library: _resolve,
       ScreenTarget.item: _resolve,
       ScreenTarget.update: (link, current) {
-        PlezyTvUpdater.instance.checkFromLink(() => _context, current);
+        (updaterOverride ?? PlezyTvUpdater.instance).checkFromLink(() => _context, current);
       },
     };
     startUpdates();
   }
 
+  @visibleForTesting
+  PlezyTvUpdater? updaterOverride;
+
+  final _resolutions = Expando<_Resolution>();
   UpdateStartupTrigger? _updateTrigger;
   void startUpdates() {
     _updateTrigger ??= UpdateStartupTrigger(
@@ -165,9 +169,18 @@ class ScreenLinkRouter {
       if (provider.expectedServerIds.contains(link.server)) throw const ScreenLinkNotReady();
       throw StateError('unknown server ${link.server}');
     }
-    final candidates = link.server == null ? ids : [link.server!];
+    var resolution = _resolutions[link];
+    if (resolution == null ||
+        !identical(resolution.owner, owner) ||
+        resolution.profileId != profileId ||
+        !identical(resolution.provider, provider)) {
+      resolution = _Resolution(owner, profileId, provider);
+      _resolutions[link] = resolution;
+    }
+    final candidates = link.server == null ? {...ids, ...provider.expectedServerIds} : {link.server!};
     Object? lastError;
     for (final id in candidates) {
+      if (resolution.answered.contains(id) || !ids.contains(id)) continue;
       final client = provider.getClientForServer(ServerId(id));
       if (client == null) continue;
       try {
@@ -178,10 +191,22 @@ class ScreenLinkRouter {
           if (!isCurrent()) return;
           if (!ownsRequest()) throw const ScreenLinkNotReady();
           if (loadedLibraries!.isLoading) throw const ScreenLinkNotReady();
-          if (library == null) continue;
+          if (library == null) {
+            resolution.answered.add(id);
+            continue;
+          }
+          if (!loadedLibraries.libraries.any((value) => value.globalKey == library.globalKey)) {
+            // Delta loads keep isLoading false. Join the provider’s coalesced
+            // merge before deciding that a server library is unavailable.
+            await loadedLibraries.syncToOnlineServers({id});
+            if (!context.mounted) throw const ScreenLinkNotReady();
+            if (!isCurrent()) return;
+            if (!ownsRequest()) throw const ScreenLinkNotReady();
+          }
           // Use the main screen’s public sidebar selection contract. The
           // scope is below MainScreen’s State context, so locate that scope
           // within this owner only (never another profile or navigator).
+          if (!context.mounted) throw const ScreenLinkNotReady();
           final select = _librarySelector(context);
           if (select == null) throw StateError('library selection unavailable');
           if (!loadedLibraries.libraries.any((value) => value.globalKey == library.globalKey)) {
@@ -195,6 +220,7 @@ class ScreenLinkRouter {
         if (!context.mounted) throw const ScreenLinkNotReady();
         if (!isCurrent()) return;
         if (!ownsRequest()) throw const ScreenLinkNotReady();
+        resolution.answered.add(id);
         if (item == null) continue;
         if (!const [MediaKind.movie, MediaKind.show, MediaKind.season, MediaKind.episode].contains(item.kind)) {
           throw StateError('unsupported item kind ${item.kind.name}');
@@ -209,10 +235,21 @@ class ScreenLinkRouter {
         if (!ownsRequest()) {
           throw const ScreenLinkNotReady();
         }
+        resolution.answered.add(id);
         lastError = error;
       }
     }
-    if (provider.expectedServerIds.any((id) => !ids.contains(id))) throw const ScreenLinkNotReady();
+    if (candidates.any((id) => !resolution!.answered.contains(id))) throw const ScreenLinkNotReady();
     throw StateError('${link.target.name} ${link.id} not found${lastError == null ? '' : ': $lastError'}');
   }
+}
+
+// Answers belong to one pending link and profile owner, not to the timer tick.
+// Expando releases them when the queue releases the link.
+class _Resolution {
+  _Resolution(this.owner, this.profileId, this.provider);
+  final Object? owner;
+  final String? profileId;
+  final MultiServerProvider provider;
+  final answered = <String>{};
 }

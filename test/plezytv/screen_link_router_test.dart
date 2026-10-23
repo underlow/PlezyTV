@@ -1,4 +1,10 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:plezy/plezytv/update/updater.dart';
+import 'package:plezy/plezytv/update/update_service.dart';
+import 'package:plezy/media/media_item.dart';
+import 'package:plezy/utils/app_logger.dart';
 import 'package:flutter/material.dart';
 import 'package:plezy/screens/profile/profile_switch_screen.dart';
 import 'package:plezy/profiles/active_profile_provider.dart';
@@ -28,13 +34,21 @@ class _OfflineMode extends ChangeNotifier implements OfflineModeProvider {
 const _library = MediaLibrary(id: '42', backend: MediaBackend.plex, title: 'Movies', serverId: 'b');
 
 class _Client implements MediaServerClient {
-  _Client(this.libraries, this.fetchGate);
+  _Client(this.libraries, this.fetchGate, this.fetched);
+  final void Function() fetched;
   final Future<void>? fetchGate;
   final List<MediaLibrary> libraries;
   @override
   Future<List<MediaLibrary>> fetchLibraries() async {
+    fetched();
     await fetchGate;
     return libraries;
+  }
+
+  @override
+  Future<MediaItem?> fetchItem(String id) async {
+    fetched();
+    return null;
   }
 
   @override
@@ -42,6 +56,7 @@ class _Client implements MediaServerClient {
 }
 
 class _Servers extends ChangeNotifier implements MultiServerProvider {
+  final calls = <String, int>{};
   bool connected = false;
   List<String> online = ['a', 'b'];
   Future<void>? fetchGate;
@@ -53,7 +68,9 @@ class _Servers extends ChangeNotifier implements MultiServerProvider {
   List<String> get onlineServerIds => connected ? online : [];
   @override
   MediaServerClient? getClientForServer(ServerId serverId) =>
-      _Client(serverId == ServerId('b') ? [_library] : [], fetchGate);
+      _Client(serverId == ServerId('b') ? [_library] : [], fetchGate, () {
+        calls.update(serverId.value, (n) => n + 1, ifAbsent: () => 1);
+      });
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -64,8 +81,15 @@ class _Libraries extends ChangeNotifier implements LibrariesProvider {
   LibrariesLoadState state = LibrariesLoadState.loaded;
   @override
   LibrariesLoadState get loadState => state;
+  List<MediaLibrary> visible = [_library];
+  Future<void>? mergeGate;
   @override
-  List<MediaLibrary> get libraries => [_library];
+  Future<void> syncToOnlineServers(Set<String> ids) async {
+    await mergeGate;
+  }
+
+  @override
+  List<MediaLibrary> get libraries => visible;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -122,6 +146,7 @@ void main() {
   final router = ScreenLinkRouter.instance;
   tearDown(() {
     router.queue.dispose();
+    router.updaterOverride = null;
     receiver.navigationOwner = null;
     receiver.onHome = null;
     receiver.onTabLibraries = null;
@@ -130,6 +155,111 @@ void main() {
     receiver.onTabDownloads = null;
     receiver.onTabSettings = null;
     profileNavigationRegistry.detachNavigator(rootNavigatorKey);
+  });
+
+  Future<void> mount(WidgetTester tester, _Servers servers, _Libraries libraries, List<String> selected) async {
+    final offline = _OfflineMode();
+    addTearDown(offline.dispose);
+    addTearDown(servers.dispose);
+    addTearDown(libraries.dispose);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<OfflineModeProvider>.value(value: offline),
+          ChangeNotifierProvider<MultiServerProvider>.value(value: servers),
+          ChangeNotifierProvider<LibrariesProvider>.value(value: libraries),
+        ],
+        child: MaterialApp(
+          navigatorKey: rootNavigatorKey,
+          home: _Owner(selectLibrary: selected.add),
+        ),
+      ),
+    );
+    profileNavigationRegistry.attachNavigator(rootNavigatorKey);
+    receiver.onHome = () {};
+    receiver.onTabSettings = () {};
+  }
+
+  testWidgets('explicit missing item ignores unrelated offline server and warns once', (tester) async {
+    final servers = _Servers()
+      ..connected = true
+      ..online = ['a'];
+    await mount(tester, servers, _Libraries(), []);
+    MemoryLogOutput.clearLogs();
+    router.claim('plezytv://screen/item?id=999999&server=a');
+    await tester.pump();
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(servers.calls, {'a': 1});
+    expect(
+      MemoryLogOutput.getLogs().where((e) => e.message.contains('Screen link') && e.message.contains('not found')),
+      hasLength(1),
+    );
+  });
+
+  testWidgets('implicit lookup remembers answers while offline candidate waits', (tester) async {
+    final servers = _Servers()
+      ..connected = true
+      ..online = ['a'];
+    await mount(tester, servers, _Libraries(), []);
+    MemoryLogOutput.clearLogs();
+    router.claim('plezytv://screen/item?id=999999');
+    await tester.pump();
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(servers.calls, {'a': 1});
+    expect(MemoryLogOutput.getLogs().where((e) => e.message.contains('Screen link')), isEmpty);
+    servers.online = ['a', 'b'];
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(seconds: 1));
+    expect(servers.calls, {'a': 1, 'b': 1});
+    expect(
+      MemoryLogOutput.getLogs().where((e) => e.message.contains('Screen link') && e.message.contains('not found')),
+      hasLength(1),
+    );
+  });
+
+  testWidgets('late server library waits for delta merge with isLoading false', (tester) async {
+    final servers = _Servers()
+      ..connected = true
+      ..online = ['a'];
+    final libraries = _Libraries()..visible = [];
+    final gate = Completer<void>();
+    libraries.mergeGate = gate.future;
+    final selected = <String>[];
+    await mount(tester, servers, libraries, selected);
+    router.claim('plezytv://screen/library?id=42&server=b');
+    await tester.pump();
+    servers.online = ['a', 'b'];
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(libraries.isLoading, isFalse);
+    expect(selected, isEmpty);
+    await tester.pump(const Duration(seconds: 2));
+    expect(servers.calls, {'b': 1});
+    libraries.visible = [_library];
+    gate.complete();
+    await tester.pump();
+    expect(selected, [_library.globalKey]);
+  });
+
+  testWidgets('real update handler releases queue during held check', (tester) async {
+    await mount(tester, _Servers(), _Libraries(), []);
+    SharedPreferences.setMockInitialValues({});
+    final service = _HeldUpdate(await SharedPreferences.getInstance());
+    router.updaterOverride = PlezyTvUpdater(service: () async => service, enabledForChecks: () => true);
+    var settings = 0;
+    receiver.onTabSettings = () => settings++;
+    router.claim('plezytv://screen/update');
+    await tester.pump();
+    expect(service.started, isTrue);
+    router.claim('plezytv://screen/settings');
+    await tester.pump();
+    expect(settings, 1);
+    service.gate.complete(null);
+    await tester.pump();
+    expect(find.byType(PlezyTvUpdateDialog), findsNothing);
   });
 
   testWidgets('real target table routes tabs and query through registered callbacks', (tester) async {
@@ -317,4 +447,22 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     expect(actions, ['settings']);
   });
+}
+
+class _HeldUpdate extends UpdateService {
+  _HeldUpdate(SharedPreferences prefs)
+    : super(
+        version: '0.2.0',
+        preferences: prefs,
+        abi: () async => 'armeabi-v7a',
+        cache: Directory.systemTemp,
+        log: (_) {},
+      );
+  final gate = Completer<UpdateRelease?>();
+  bool started = false;
+  @override
+  Future<UpdateRelease?> check({required bool automatic}) {
+    started = true;
+    return gate.future;
+  }
 }
