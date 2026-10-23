@@ -1,0 +1,121 @@
+name: PlezyTV upstream sync
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+concurrency:
+  group: plezytv-upstream-sync
+  cancel-in-progress: false
+env:
+  FLUTTER_VERSION: '3.47.1'
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge upstream into dedicated branch
+        id: merge
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B upstream-sync origin/main
+          git remote add upstream https://github.com/edde746/plezy.git
+          git fetch upstream main
+          if git merge --no-edit upstream/main > "$RUNNER_TEMP/upstream-merge.log" 2>&1; then
+            echo 'clean=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'clean=false' >> "$GITHUB_OUTPUT"
+            {
+              echo 'Upstream merge failed. Conflicted paths:'
+              git diff --name-only --diff-filter=U
+              echo
+              cat "$RUNNER_TEMP/upstream-merge.log"
+            } > "$RUNNER_TEMP/upstream-details.txt"
+            git merge --abort || true
+          fi
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        if: steps.merge.outputs.clean == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        if: steps.merge.outputs.clean == 'true'
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - name: Validate merged tree
+        id: checks
+        if: steps.merge.outputs.clean == 'true'
+        continue-on-error: true
+        run: |
+          set +e
+          failed=0
+          for command in \
+            'flutter pub get --enforce-lockfile --no-example' \
+            'flutter analyze' \
+            'flutter test' \
+            'flutter build apk --debug'; do
+            echo "::group::$command"
+            bash -o pipefail -c "$command" 2>&1 | tee -a "$RUNNER_TEMP/upstream-checks.log"
+            result=${PIPESTATUS[0]}
+            echo "Exit status: $result" | tee -a "$RUNNER_TEMP/upstream-checks.log"
+            echo '::endgroup::'
+            if [[ "$result" != 0 ]]; then failed=1; fi
+          done
+          exit "$failed"
+      - name: Push branch and open or update PR
+        if: always() && steps.merge.outputs.clean == 'true'
+        env:
+          CHECK_RESULT: ${{ steps.checks.outcome }}
+        run: |
+          if git diff --quiet origin/main HEAD; then
+            echo 'No upstream changes to propose.'
+            exit 0
+          fi
+          git push --force-with-lease origin HEAD:refs/heads/upstream-sync
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          printf 'Merge upstream/main into PlezyTV.\n\nValidation: %s. [Workflow logs](%s).\n' "$CHECK_RESULT" "$run_url" > "$RUNNER_TEMP/upstream-pr.md"
+          number=$(gh pr list --head upstream-sync --base main --state open --json number --jq '.[0].number // empty')
+          title='Sync upstream Plezy'
+          if [[ "$CHECK_RESULT" != success ]]; then title='Sync upstream Plezy (checks failing)'; fi
+          if [[ -n "$number" ]]; then
+            gh pr edit "$number" --title "$title" --body-file "$RUNNER_TEMP/upstream-pr.md"
+          else
+            gh pr create --head upstream-sync --base main --title "$title" --body-file "$RUNNER_TEMP/upstream-pr.md"
+          fi
+      - name: Report conflict or validation failure
+        if: always()
+        env:
+          MERGE_CLEAN: ${{ steps.merge.outputs.clean }}
+          CHECK_RESULT: ${{ steps.checks.outcome }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          gh label create upstream-sync --description 'Automated upstream merge status' --color D93F0B --force
+          number=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number // empty')
+          if [[ "$MERGE_CLEAN" == true && "$CHECK_RESULT" == success && "$JOB_STATUS" == success ]]; then
+            if [[ -n "$number" ]]; then gh issue close "$number" --comment "Upstream checks now pass: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
+            exit 0
+          fi
+          {
+            printf 'Upstream sync needs attention. Merge clean: %s; checks: %s; job: %s.\n\n' "$MERGE_CLEAN" "$CHECK_RESULT" "$JOB_STATUS"
+            printf 'Logs: %s/%s/actions/runs/%s\n\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            if [[ -f "$RUNNER_TEMP/upstream-details.txt" ]]; then cat "$RUNNER_TEMP/upstream-details.txt"; fi
+            if [[ -f "$RUNNER_TEMP/upstream-checks.log" ]]; then
+              echo 'Last validation output:'
+              tail -c 20000 "$RUNNER_TEMP/upstream-checks.log"
+            fi
+          } > "$RUNNER_TEMP/upstream-issue.md"
+          if [[ -n "$number" ]]; then
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/upstream-issue.md"
+          else
+            gh issue create --title 'Upstream sync needs attention' --label upstream-sync --body-file "$RUNNER_TEMP/upstream-issue.md"
+          fi
+          exit 1
