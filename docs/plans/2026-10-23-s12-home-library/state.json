@@ -4,7 +4,6 @@
   "phase": "implementation",
   "base_commit": "bcde609d9573a54b515d466283ffe8e79d4a3a11",
   "profile": "full",
-  "status": "paused",
   "development_agent": {
     "platform": "codex",
     "model": "gpt-6.1-sol",
@@ -20,5 +19,6 @@
     "T5": {
       "effort": "medium"
     }
-  }
+  },
+  "task": "T2"
 }
