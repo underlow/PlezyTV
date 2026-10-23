@@ -15,7 +15,7 @@ import org.w3c.dom.Element
 class SystemShelfArtworkManifestTest {
   private companion object {
     const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
-    const val AUTHORITY = "com.edde746.plezy.systemshelf.artwork"
+    const val PROVIDER_CLASS = ".watchnext.SystemShelfArtworkProvider"
     val MANIFEST_CANDIDATES = listOf(
       "src/main/AndroidManifest.xml",
       "app/src/main/AndroidManifest.xml",
@@ -27,6 +27,7 @@ class SystemShelfArtworkManifestTest {
   fun artworkProviderIsReachableOnlyThroughUriGrants() {
     val provider = artworkProvider()
 
+    assertEquals("\${applicationId}.systemshelf.artwork", provider.getAttributeNS(ANDROID_NAMESPACE, "authorities"))
     assertEquals("false", provider.getAttributeNS(ANDROID_NAMESPACE, "exported"))
     assertEquals("true", provider.getAttributeNS(ANDROID_NAMESPACE, "grantUriPermissions"))
   }
@@ -39,9 +40,9 @@ class SystemShelfArtworkManifestTest {
     val providers = manifest.getElementsByTagName("provider")
     for (index in 0 until providers.length) {
       val provider = providers.item(index) as Element
-      if (provider.getAttributeNS(ANDROID_NAMESPACE, "authorities") == AUTHORITY) return provider
+      if (provider.getAttributeNS(ANDROID_NAMESPACE, "name") == PROVIDER_CLASS) return provider
     }
-    throw AssertionError("No <provider> declares android:authorities=\"$AUTHORITY\"")
+    throw AssertionError("No <provider> declares android:name=\"$PROVIDER_CLASS\"")
   }
 
   private fun manifestFile(): File {
