@@ -351,6 +351,8 @@ void main() {
   testWidgets('already-offline provider starts at No connection despite online launch flag', (tester) async {
     final settings = await SettingsService.getInstance();
     await settings.write(SettingsService.startupSection, NavigationTabId.downloads);
+    await settings.write(SettingsService.enableCompanionRemoteServer, true);
+    await settings.write(SettingsService.autoCheckUpdatesOnStartup, true);
     final h = _Harness();
     h.offline.isOffline = true;
     h.servers.hasConnectedServers = false;
@@ -382,9 +384,9 @@ void main() {
     expect(retry.focusNode!.hasFocus, isTrue);
     expect(tester.widget<TvSideMenu>(find.byType(TvSideMenu)).items.map((item) => item.label), [t.common.settings]);
     expect(h.home.starts, 0);
-    expect(h.preferences.loads, 0);
+    expect(h.preferences.loads, 1);
     expect(h.downloads.resumes, 0);
-    expect(h.hostStarts, 0);
+    expect(h.hostStarts, 1);
     expect(h.updates, 0);
     expect(h.shelf.coldReads, 1);
     expect(h.shelf.onShelfItemTap, isNotNull);
@@ -395,7 +397,35 @@ void main() {
     h.offline.emit();
     await tester.pumpAndSettle();
     expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.downloads));
+    await c.start();
+    expect(h.hostStarts, 1);
+    expect(h.updates, 0);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('provider-offline bootstrap still prompts with companion setting disabled', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.enableCompanionRemoteServer, false);
+    final h = _Harness();
+    h.offline.isOffline = true;
+    h.servers.hasConnectedServers = false;
+    h.active.profiles = [profile('a'), profile('b')];
+    final c = h.create(handled: false);
+    await c.start();
+    await flush(tester);
+    expect(h.preferences.loads, 1);
+    expect(h.pickers, 1);
+    expect(h.hostStarts, 0);
+    expect(h.home.starts, 0);
+    expect(h.log, isNot(contains('initialLoad')));
+
+    h.servers.hasConnectedServers = true;
+    h.offline.isOffline = false;
+    h.offline.emit();
+    await c.start();
+    await flush(tester);
+    expect(h.hostStarts, 0);
+    expect(h.pickers, 1);
   });
 
   testWidgets('settled binding primes once, libraries finish before initial intent', (tester) async {
@@ -589,6 +619,9 @@ void main() {
   });
 
   testWidgets('offline startup skips network priming, links, watch, companion and updates', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.enableCompanionRemoteServer, true);
+    await settings.write(SettingsService.autoCheckUpdatesOnStartup, true);
     final h = _Harness();
     final c = h.create(offlineStart: true);
     h.servers.hasConnectedServers = false;
@@ -606,6 +639,13 @@ void main() {
     expect(h.hostStarts, 0);
     expect(h.updates, 0);
     expect(h.binder.starts, 1); // Idempotent binder monitoring still starts upstream.
+
+    h.servers.hasConnectedServers = true;
+    h.offline.emit();
+    await c.start();
+    await flush(tester);
+    expect(h.hostStarts, 0);
+    expect(h.updates, 0);
   });
 
   testWidgets('retry joins no duplicate work, reports failure, then transitions online', (tester) async {
