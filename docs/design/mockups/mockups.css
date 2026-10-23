@@ -180,3 +180,53 @@ body{color:var(--t1);font-family:Manrope,Inter,Roboto,sans-serif;-webkit-font-sm
 
 /* ---------- подсказки на макете (аннотации, не часть UI) ---------- */
 .anno{position:absolute;font:600 16px/20px Manrope;color:#FF5FA2;background:#FF5FA21f;border:1.5px dashed #FF5FA2;border-radius:6px;padding:4px 8px;z-index:50}
+
+/* ================= плеер ================= */
+.video{position:absolute;inset:0}
+.shade-top{position:absolute;left:0;right:0;top:0;height:260px;background:linear-gradient(180deg,#000000B3 0%,#00000000 100%)}
+.shade-bottom{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(0deg,#000000D9 0%,#000000A6 45%,#00000000 100%)}
+.subs{position:absolute;left:0;right:0;text-align:center;font:600 40px/52px Manrope;color:#fff;
+  text-shadow:0 0 3px #000,0 0 3px #000,2px 2px 0 #000,-2px -2px 0 #000}
+.p-title{position:absolute;left:96px;top:54px}
+.p-clock{position:absolute;right:96px;top:54px;font:700 28px/36px Manrope}
+.bar{position:absolute;height:6px;border-radius:3px;background:#FFFFFF33}
+.bar .buf{position:absolute;left:0;top:0;bottom:0;background:#FFFFFF59;border-radius:3px}
+.bar .played{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:3px}
+.bar .ghost{position:absolute;top:0;bottom:0;background:#E5A00D66}
+.bar.f{height:10px;border-radius:5px;margin-top:-2px}
+.bar .thumb{position:absolute;top:50%;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px #00000066}
+.bar .tick{position:absolute;top:-4px;bottom:-4px;width:3px;background:#FFFFFFB3;border-radius:2px}
+.time{position:absolute;font:600 22px/28px Manrope;font-variant-numeric:tabular-nums}
+.seek-prev{position:absolute;width:320px;display:flex;flex-direction:column;align-items:center}
+.seek-prev .img{width:320px;height:180px;border-radius:10px;position:relative;overflow:hidden;outline:4px solid #fff;outline-offset:3px}
+.seek-bubble{margin-top:18px;height:44px;padding:0 16px;border-radius:10px;background:#fff;color:var(--on-focus);font:700 26px/44px Manrope;font-variant-numeric:tabular-nums}
+.seek-delta{margin-top:6px;font:600 20px/26px Manrope;color:#fff}
+.hint{position:absolute;font:500 18px/24px Manrope;color:#FFFFFFB3;display:flex;align-items:center;gap:8px}
+.hint svg{width:22px;height:22px}
+.rpanel{position:absolute;right:0;top:0;bottom:0;width:600px;background:#1A1C21F2;padding:54px 96px 54px 48px;display:flex;flex-direction:column;gap:8px}
+.rp-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;height:48px}
+.rp-head .back{color:var(--t3);font:600 32px/36px Manrope}
+.rp-item{min-height:80px;border-radius:var(--r-btn);display:flex;align-items:center;gap:16px;padding:12px 20px;border:4px solid transparent}
+.rp-item .lbl{flex:1;min-width:0}
+.rp-item .a{font:500 22px/30px Manrope}
+.rp-item .b{font:500 18px/24px Manrope;color:var(--t3)}
+.rp-item .v{font:500 22px/30px Manrope;color:var(--t2);white-space:nowrap}
+.rp-item .chev{color:var(--t3);font:600 28px Manrope}
+.rp-item svg{width:28px;height:28px;flex:none}
+.rp-item .chk{width:28px;flex:none;color:var(--accent)}
+.rp-item.f{background:var(--s3);border-color:#fff}
+.rp-item.sel .a{font-weight:700}
+.rp-sep{height:1px;background:var(--s3);margin:8px 0}
+.stepper{display:flex;align-items:center;gap:14px;font:700 22px/30px Manrope;color:var(--t1)}
+.stepper .ar{width:36px;height:36px;border-radius:8px;background:var(--s2);display:flex;align-items:center;justify-content:center;color:var(--t1)}
+.mini-pause{position:absolute;left:96px;bottom:54px;display:flex;align-items:center;gap:16px;height:56px;padding:0 20px;border-radius:12px;background:#000000A6;font:600 22px/28px Manrope}
+.mini-pause svg{width:28px;height:28px}
+.dots{display:flex;gap:16px}.dots i{width:18px;height:18px;border-radius:50%;background:#fff}
+.upnext{position:absolute;right:96px;bottom:54px;width:720px;background:#1A1C21F2;border-radius:16px;padding:24px;display:flex;gap:24px}
+.upnext .img{width:288px;height:162px;border-radius:10px;position:relative;overflow:hidden;flex:none}
+.countdown{position:absolute;left:0;right:0;bottom:0;height:6px;background:#FFFFFF33}
+.countdown i{display:block;height:100%;background:var(--accent)}
+.star{width:56px;height:56px;border-radius:14px;background:var(--s3);display:flex;align-items:center;justify-content:center;color:var(--t2)}
+.star svg{width:28px;height:28px}
+.star.on{color:var(--accent)}
+.star.f{background:var(--focus-fill);color:var(--accent);transform:scale(1.05)}
