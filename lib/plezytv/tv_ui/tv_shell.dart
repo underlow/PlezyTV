@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../screens/main_screen.dart';
 
+export 'shell/tv_section_shell.dart';
+export 'shell/tv_shell_section.dart';
+
 /// Profile home on TV. Later stages replace the upstream home here.
 class TvShell extends StatelessWidget {
   const TvShell({super.key, required this.isOfflineMode, required this.initialPromptHandled});

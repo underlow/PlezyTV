@@ -89,6 +89,30 @@ can substitute a lightweight stateful probe. In teardown call
 These probes check selection, arguments and state retention; they do not verify
 the full upstream home on a device.
 
+S12 T4 introduces the separate `TvSectionShell` in
+`lib/plezytv/tv_ui/shell/tv_section_shell.dart`. The live `TvShell` still builds
+`MainScreen` until T6. Tests of the new surface use
+`TvSectionShell.sectionBuilderForTesting(context, NavigationTabId tab, GlobalKey key)`:
+return a stateful lightweight section using that key and implement the upstream
+`FocusableTab`, `LibraryLoadable`, `Refreshable`, `FullRefreshable` and
+`TabVisibilityAware` capabilities as needed. The shell mounts sections lazily and
+keeps one Libraries section for all library identities. T5 and T6 must reuse this
+hook. `TvSectionShell.sessionControllerFactoryForTesting(context, onContentIntent)`
+can supply a fake T2 controller, or return null to avoid starting session services.
+Reset both hooks to null in teardown. Keep the older MainScreen hook while the
+live shell still uses it; T6 removes it when switching the live shell.
+
+`TvShellSection.tab(NavigationTabId)` and `TvShellSection.library(globalKey)`
+are the shared section identities. `TvSectionShellState` exposes `currentSection`,
+`selectionCommand`, `isSectionAvailable`, `selectSection`, `selectLibrary` and
+`focusMenu` for the remaining shell integration. Every accepted selection
+increments the command counter, including a repeated selection, so deferred
+library loads and focus cannot override a later command. Availability uses
+upstream tab visibility and library existence; Show downloads only filters the
+menu. `handleContentIntent` maps T2 initial load to `primeRefresh`, stale resume
+to `LibrariesProvider.refresh` plus `Refreshable.refresh`, and profile reset to
+`fullRefresh`, only on mounted Home, Libraries and Search sections.
+
 ## Screen links and the later home
 
 Keep S5 screen links in `lib/plezytv/screen_links/` working as documented in
