@@ -41,6 +41,7 @@ import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_shell_section.dart';
+import 'tv_no_connection_screen.dart';
 import 'tv_shell_session_controller.dart';
 import 'tv_shell_session_services.dart';
 
@@ -70,10 +71,18 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
   final _keys = {for (final tab in NavigationTabId.values) tab: GlobalKey()};
   final _mountedTabs = <NavigationTabId>{};
   final _contentScope = FocusScopeNode(debugLabel: 'TV sections');
+  final _retryFocus = FocusNode(debugLabel: 'TV retry connection');
   final _menuFocus = FocusNode(debugLabel: 'TV menu entry');
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   TvShellSection _current = const TvShellSection.tab(NavigationTabId.discover);
   int _selectionCommand = 0;
+  int? _retryCommand;
+  TvShellSection? _beforeOffline;
+  bool _wasOffline = false;
+
+  bool get _isOffline => _session?.isOffline ?? widget.isOfflineMode;
+  TvShellSection get _root =>
+      _isOffline ? const TvShellSection.noConnection() : const TvShellSection.tab(NavigationTabId.discover);
   NavigationTabId? _pendingStartup;
   bool _initialized = false, _selectionMade = false, _suppressBackAfterPop = false;
   Timer? _exitTimer;
@@ -90,15 +99,16 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       (SettingsService.instanceOrNull?.read(SettingsService.showExploreTab) ?? true);
 
   List<NavigationTab> get availableTabs => NavigationTab.getVisibleTabs(
-    isOffline: _session?.isOffline ?? widget.isOfflineMode,
+    isOffline: _isOffline,
     hasLiveTv: context.read<MultiServerProvider>().hasLiveTv,
     hasExplore: _hasExplore,
   );
 
-  bool isSectionAvailable(TvShellSection section) =>
-      availableTabs.any((tab) => tab.id == section.tab) &&
-      (section.libraryGlobalKey == null ||
-          context.read<LibrariesProvider>().libraries.any((lib) => lib.globalKey == section.libraryGlobalKey));
+  bool isSectionAvailable(TvShellSection section) => section.isNoConnection
+      ? _isOffline
+      : availableTabs.any((tab) => tab.id == section.tab) &&
+            (section.libraryGlobalKey == null ||
+                context.read<LibrariesProvider>().libraries.any((lib) => lib.globalKey == section.libraryGlobalKey));
 
   @override
   void didChangeDependencies() {
@@ -126,12 +136,17 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     _session?.addListener(_sessionChanged);
     final preferred = SettingsService.instanceOrNull?.read(SettingsService.startupSection);
     if (preferred != null && !isSectionAvailable(TvShellSection.tab(preferred))) _pendingStartup = preferred;
-    _current = TvShellSection.tab(
-      preferred != null && isSectionAvailable(TvShellSection.tab(preferred)) ? preferred : NavigationTabId.discover,
-    );
-    _mountedTabs.add(_current.tab);
+    _wasOffline = _isOffline;
+    _current = _isOffline
+        ? const TvShellSection.noConnection()
+        : TvShellSection.tab(
+            preferred != null && isSectionAvailable(TvShellSection.tab(preferred))
+                ? preferred
+                : NavigationTabId.discover,
+          );
+    if (!_current.isNoConnection) _mountedTabs.add(_current.tab);
     _afterSelection(() {
-      _onScreen<TabVisibilityAware>(_current.tab, (screen) => screen.onTabShown());
+      if (!_current.isNoConnection) _onScreen<TabVisibilityAware>(_current.tab, (screen) => screen.onTabShown());
       _focusContent(restore: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -140,7 +155,46 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
   }
 
   void _sessionChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final offline = _isOffline;
+    if (offline != _wasOffline) {
+      _wasOffline = offline;
+      _exitTimer?.cancel();
+      if (offline) {
+        _beforeOffline = _current;
+      } else {
+        final previous = _beforeOffline;
+        _beforeOffline = null;
+        if (_retryCommand == null || _retryCommand == _selectionCommand) {
+          final target = previous != null && isSectionAvailable(previous) ? previous : _startupSection();
+          selectSection(target, explicit: false);
+        }
+      }
+    }
+    setState(() {});
+  }
+
+  TvShellSection _startupSection() {
+    final preferred = SettingsService.instanceOrNull?.read(SettingsService.startupSection);
+    final section = preferred == null ? _root : TvShellSection.tab(preferred);
+    return isSectionAvailable(section) ? section : _root;
+  }
+
+  Future<void> _retry() async {
+    final session = _session;
+    if (session == null || session.isReconnecting || _retryCommand != null) return;
+    final command = _selectionCommand;
+    _retryCommand = command;
+    try {
+      final success = await session.retry();
+      if (!mounted || command != _selectionCommand) return;
+      if (success == false) {
+        (ProfileNavigationScope.maybeOf(context)?.mainScaffoldMessengerKey.currentState ?? _messengerKey.currentState)
+            ?.showSnackBar(const SnackBar(content: Text(TvStrings.connectionFailed)));
+      }
+    } finally {
+      _retryCommand = null;
+    }
   }
 
   void _onScreen<T>(NavigationTabId tab, void Function(T) action) {
@@ -163,7 +217,11 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     if (restore) _contentScope.requestFocus();
     _afterSelection(() {
       if (restore && _contentScope.focusedChild != null && _contentScope.hasFocus) return;
-      _onScreen<FocusableTab>(_current.tab, (screen) => screen.focusActiveTabIfReady());
+      if (_current.isNoConnection) {
+        _retryFocus.requestFocus();
+      } else {
+        _onScreen<FocusableTab>(_current.tab, (screen) => screen.focusActiveTabIfReady());
+      }
     });
   }
 
@@ -179,20 +237,20 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     setState(() {
       _selectionCommand++;
       _current = section;
-      _mountedTabs.add(section.tab);
+      if (!section.isNoConnection) _mountedTabs.add(section.tab);
       _exitTimer?.cancel();
     });
-    if (previous.tab != section.tab) {
+    if (!previous.isNoConnection && (section.isNoConnection || previous.tab != section.tab)) {
       _onScreen<TabVisibilityAware>(previous.tab, (screen) => screen.onTabHidden());
     }
     _afterSelection(() {
-      if (previous.tab != section.tab) {
+      if (!section.isNoConnection && (previous.isNoConnection || previous.tab != section.tab)) {
         _onScreen<TabVisibilityAware>(section.tab, (screen) => screen.onTabShown());
       }
       if (changed && section.libraryGlobalKey != null) {
         _onScreen<LibraryLoadable>(section.tab, (screen) => screen.loadLibraryByKey(section.libraryGlobalKey!));
       }
-      if (changed && section.tab == NavigationTabId.discover) {
+      if (changed && !section.isNoConnection && section.tab == NavigationTabId.discover) {
         _onScreen<Refreshable>(section.tab, (screen) => screen.refresh());
       }
       if (focusContent) _focusContent(restore: !changed);
@@ -224,7 +282,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       focusMenu();
       return;
     }
-    const root = TvShellSection.tab(NavigationTabId.discover);
+    final root = _root;
     if (_current != root) {
       selectSection(root, focusContent: false);
       return;
@@ -250,7 +308,10 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       if (event is KeyDownEvent) _focusContent();
       return KeyEventResult.handled;
     }
-    final refresh = dispatchPageRefreshShortcut(event, _keys[_current.tab]?.currentState);
+    final refresh = dispatchPageRefreshShortcut(
+      event,
+      _current.isNoConnection ? null : _keys[_current.tab]?.currentState,
+    );
     if (refresh == KeyEventResult.handled) return refresh;
     if (isSettingsShortcut(event)) {
       selectSection(const TvShellSection.tab(NavigationTabId.settings));
@@ -271,7 +332,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
   @override
   void didPushNext() {
     _miniPlayerInsets?.setNavBarSuspended(true);
-    if (_current.tab == NavigationTabId.discover) {
+    if (!_current.isNoConnection && _current.tab == NavigationTabId.discover) {
       _onScreen<TabVisibilityAware>(_current.tab, (screen) => screen.onTabHidden());
     }
   }
@@ -286,7 +347,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       });
     });
     _miniPlayerInsets?.setNavBarSuspended(false);
-    if (_current.tab == NavigationTabId.discover) {
+    if (!_current.isNoConnection && _current.tab == NavigationTabId.discover) {
       _onScreen<TabVisibilityAware>(_current.tab, (screen) => screen.onTabShown());
       _onScreen<Refreshable>(_current.tab, (screen) => screen.refresh());
     }
@@ -347,7 +408,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     final music = context.watch<MusicPlaybackService?>();
     final tabs = availableTabs;
     final pending = _pendingStartup;
-    if (!_selectionMade && pending != null && tabs.any((tab) => tab.id == pending)) {
+    if (!_isOffline && !_selectionMade && pending != null && tabs.any((tab) => tab.id == pending)) {
       _afterSelection(() {
         _pendingStartup = null;
         selectSection(TvShellSection.tab(pending), explicit: false);
@@ -356,8 +417,12 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       // ignore: invalid_use_of_visible_for_testing_member
     } else if ((_current.libraryGlobalKey == null || libraries.loadState == LibrariesLoadState.loaded) &&
         !isSectionAvailable(_current) &&
-        !(_session?.isOffline ?? widget.isOfflineMode)) {
-      _afterSelection(() => selectSection(const TvShellSection.tab(NavigationTabId.discover), explicit: false));
+        !_isOffline) {
+      _afterSelection(() {
+        if (!_isOffline && !isSectionAvailable(_current)) {
+          selectSection(_current.isNoConnection ? _startupSection() : _root, explicit: false);
+        }
+      });
     }
     final entries = <({TvShellSection? section, TvSideMenuItem item})>[];
     void addTab(NavigationTabId id) {
@@ -408,7 +473,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     }
     addTab(NavigationTabId.liveTv);
     addTab(NavigationTabId.explore);
-    if (music?.currentTrack != null && !(_session?.isOffline ?? widget.isOfflineMode)) {
+    if (music?.currentTrack != null && !_isOffline) {
       entries.add((
         section: null,
         item: TvSideMenuItem(
@@ -447,13 +512,19 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
                   const AuthErrorBanner(),
                   Expanded(
                     child: IndexedStack(
-                      index: _current.tab.index,
+                      index: _current.isNoConnection ? NavigationTabId.values.length : _current.tab.index,
                       children: [
                         for (final tab in NavigationTabId.values)
                           TickerMode(
-                            enabled: _current.tab == tab,
+                            enabled: !_current.isNoConnection && _current.tab == tab,
                             child: _mountedTabs.contains(tab) ? _screen(tab) : const SizedBox.shrink(),
                           ),
+                        TvNoConnectionScreen(
+                          retryFocus: _retryFocus,
+                          reconnecting: _session?.isReconnecting ?? false,
+                          onRetry: () => unawaited(_retry()),
+                          onSettings: () => selectSection(const TvShellSection.tab(NavigationTabId.settings)),
+                        ),
                       ],
                     ),
                   ),
@@ -499,6 +570,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     _exitTimer?.cancel();
     _session?.removeListener(_sessionChanged);
     _session?.dispose();
+    _retryFocus.dispose();
     _menuFocus.dispose();
     _contentScope.dispose();
     super.dispose();

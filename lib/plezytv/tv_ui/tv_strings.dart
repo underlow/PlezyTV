@@ -1,7 +1,13 @@
 import '../../utils/formatters.dart';
 
-/// Whole English templates; screen-specific wording belongs to later stages.
+/// Fork-owned English templates for TV components and screens.
 abstract final class TvStrings {
+  static const noConnection = 'No connection to server';
+  static const noConnectionHelp = 'Check that your server is on and your TV is connected to the same network.';
+  static const retry = 'Retry';
+  static const connecting = 'Connecting…';
+  static const connectionSettings = 'Connection settings';
+  static const connectionFailed = 'Could not connect to the server';
   static const moreLibraries = 'More';
   static const showDownloads = 'Show downloads';
   static const onServer = 'On server';
