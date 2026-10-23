@@ -1,6 +1,16 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:plezy/i18n/strings.g.dart';
+import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/media_library.dart';
+import 'package:plezy/navigation/navigation_tabs.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_side_menu.dart';
+import 'package:plezy/plezytv/tv_ui/shell/tv_section_shell.dart';
+import 'package:plezy/plezytv/tv_ui/shell/tv_shell_section.dart';
+import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_server_client.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_session_controller.dart';
@@ -101,6 +111,14 @@ class _Servers extends ChangeNotifier implements MultiServerProvider {
   @override
   bool hasConnectedServers = true;
   @override
+  bool get hasLiveTv => false;
+  @override
+  int get totalServerCount => 1;
+  @override
+  List<({String displayName, ServerId serverId})> get authErrorServers => [];
+  @override
+  List<({String displayName, ServerId serverId})> get accessDeniedServers => [];
+  @override
   DataAggregationService get aggregationService => _Aggregation();
   void emit() => notifyListeners();
   @override
@@ -137,8 +155,12 @@ class _Preferences implements AccountPreferencesController {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _Libraries implements LibrariesProvider {
+class _Libraries extends ChangeNotifier implements LibrariesProvider {
   _Libraries(this.log);
+  @override
+  List<MediaLibrary> get libraries => [];
+  @override
+  LibrariesLoadState get loadState => LibrariesLoadState.loaded;
   final List<String> log;
   Completer<void>? gate;
   @override
@@ -167,7 +189,9 @@ class _Libraries implements LibrariesProvider {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _Hidden implements HiddenLibrariesProvider {
+class _Hidden extends ChangeNotifier implements HiddenLibrariesProvider {
+  @override
+  Set<String> get hiddenLibraryKeys => {};
   @override
   Future<void> refresh() async {}
   @override
@@ -323,6 +347,51 @@ Future<void> flush(WidgetTester tester) => tester.pump();
 
 void main() {
   setUp(resetSharedPreferencesForTest);
+
+  testWidgets('already-offline provider starts at No connection despite online launch flag', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.startupSection, NavigationTabId.downloads);
+    final h = _Harness();
+    h.offline.isOffline = true;
+    h.servers.hasConnectedServers = false;
+    final c = h.create(offlineStart: false);
+    final hidden = _Hidden();
+    final shell = GlobalKey<TvSectionShellState>();
+    TvSectionShell.sessionControllerFactoryForTesting = (_, _) => c;
+    TvSectionShell.sectionBuilderForTesting = (_, tab, key) => SizedBox(key: key);
+    addTearDown(() {
+      TvSectionShell.sessionControllerFactoryForTesting = null;
+      TvSectionShell.sectionBuilderForTesting = null;
+      hidden.dispose();
+      h.libraries.dispose();
+    });
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LibrariesProvider>.value(value: h.libraries),
+          ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hidden),
+          ChangeNotifierProvider<MultiServerProvider>.value(value: h.servers),
+        ],
+        child: MaterialApp(home: TvSectionShell(key: shell, isOfflineMode: false, initialPromptHandled: true)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, const TvShellSection.noConnection());
+    expect(find.text(TvStrings.noConnection), findsOneWidget);
+    final retry = tester.widget<TvButton>(find.widgetWithText(TvButton, TvStrings.retry));
+    expect(retry.focusNode!.hasFocus, isTrue);
+    expect(tester.widget<TvSideMenu>(find.byType(TvSideMenu)).items.map((item) => item.label), [t.common.settings]);
+    expect(h.home.starts, 0);
+    expect(h.shelf.coldReads, 0);
+    expect(h.watch.navigatorOpener, isNull);
+
+    h.servers.hasConnectedServers = true;
+    h.offline.isOffline = false;
+    h.offline.emit();
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.downloads));
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('settled binding primes once, libraries finish before initial intent', (tester) async {
     final h = _Harness();
