@@ -110,6 +110,7 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
   bool _started = false, _disposed = false, _primingArmed = false, _primed = false;
   bool _isOffline, _offlineUntilConnected, _isReconnecting = false, _showingPicker = false;
   bool _wasBinding = false, _hadProfiles = false;
+  bool _startupUpdatePending = false;
   String? _lastProfileId;
 
   bool get isDisposed => _disposed;
@@ -162,9 +163,19 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
         unawaited(_guard(startCompanionHost));
       }
     }
-    if (!_alive || _isOffline) return; // An offline launch never checks the network.
+    if (!_alive) return;
+    // An online route still owes its startup check when bootstrap finds the
+    // provider offline. A true offline launch does not acquire that duty.
+    _startupUpdatePending = !isOfflineMode || !_isOffline;
+    await _checkPendingStartupUpdate();
+  }
+
+  Future<void> _checkPendingStartupUpdate() async {
+    if (!_alive || _isOffline || !_startupUpdatePending) return;
     final prefs = await settings();
-    if (_alive && prefs.read(SettingsService.autoCheckUpdatesOnStartup)) {
+    if (!_alive || _isOffline || !_startupUpdatePending) return;
+    _startupUpdatePending = false;
+    if (prefs.read(SettingsService.autoCheckUpdatesOnStartup)) {
       unawaited(_guard(checkForUpdates));
     }
   }
@@ -343,6 +354,8 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
       if (!_alive) return;
     }
     await preferences.ensureActiveLoaded();
+    if (!_alive) return;
+    await _checkPendingStartupUpdate();
     if (!_alive) return;
     if (!_primingArmed) {
       _armStartup();
