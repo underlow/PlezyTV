@@ -1,0 +1,81 @@
+name: PlezyTV release
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: plezytv-release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  FLUTTER_VERSION: '3.47.1'
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Require release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_PASSWORD ANDROID_KEY_ALIAS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required release signing secret $name is missing"
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/plezytv-keystore.jks
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          def escape(value):
+              return ''.join('\\u%04x' % ord(c) for c in value)
+          values = {'storeFile': 'plezytv-keystore.jks', 'storePassword': os.environ['ANDROID_STORE_PASSWORD'], 'keyPassword': os.environ['ANDROID_KEY_PASSWORD'], 'keyAlias': os.environ['ANDROID_KEY_ALIAS']}
+          Path('android/key.properties').write_text('\n'.join(k + '=' + escape(v) for k, v in values.items()) + '\n')
+          PY
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      # The local setup-flutter-git action runs flutter.bat and is Windows-only.
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - run: flutter pub get --enforce-lockfile --no-example
+      - name: Build signed APKs (updater and Sentry default to false)
+        run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64 --dart-define=GIT_COMMIT=${{ github.sha }}
+      - name: Name artifacts and verify signing
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          version=$(python3 scripts/pubspec_version.py pubspec.yaml)
+          if [[ "$REF_TYPE" == tag ]]; then version="$RELEASE_REF"; fi
+          mkdir -p artifacts
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          for abi in armeabi-v7a arm64-v8a; do
+            apk="build/app/outputs/flutter-apk/app-$abi-release.apk"
+            "$apksigner" verify "$apk"
+            cp "$apk" "artifacts/plezytv-$version-$abi.apk"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: plezytv-apks
+          path: artifacts/*.apk
+          if-no-files-found: error
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" artifacts/*.apk --verify-tag --title "PlezyTV $RELEASE_TAG" --generate-notes
+      - name: Remove signing material
+        if: always()
+        run: rm -f android/key.properties android/app/plezytv-keystore.jks
