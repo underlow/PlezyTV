@@ -25,7 +25,8 @@ class TvFocusState {
 
 /// TV focus visuals around one visual surface. Keep captions outside this widget
 /// when only the artwork should scale. All dimensional arguments are design px.
-/// Input, traversal, semantics, scrolling and activation belong to Plezy.
+/// Input, traversal, semantics and activation belong to Plezy. TV screens and
+/// rows own scrolling; upstream auto-scroll is off by default.
 class TvFocusable extends StatefulWidget {
   const TvFocusable({
     super.key,
@@ -47,7 +48,7 @@ class TvFocusable extends StatefulWidget {
     this.onNavigateLeft,
     this.onNavigateRight,
     this.onBack,
-    this.autoScroll = true,
+    this.autoScroll = false,
     this.scrollAlignment = 0.5,
     this.useComfortableZone = false,
     this.semanticLabel,
