@@ -55,3 +55,15 @@ redirects, etc. — those are protocol/registered identifiers).
   new workflows if available; grep shows no remaining `plezy://` play/live claims.
 - Coordinator/user on TV (A1, A2, A5): install next to Plezy, launch, `am start` both schemes.
 - A3/A4 need pushing to GitHub with secrets — done by the user after delivery; not claimed here.
+
+## Outcome (2026-10-23)
+Implemented by Codex (gpt-6.1-sol, low): 63f4eeb9b identity/authorities, 18dba2b20 plezytv:// links,
+3e21bd542 context-derived artwork authority, d1e4166ed/fff8b685b placeholder added then removed (user
+decision), 0c03e07c3 CI + docs/plezytv/release.md, c8418649f designer art, df1a3413d art wired,
+6e0d96315 UPSTREAM_SYNC_TOKEN guard, b45255a70 test authority fixes.
+Review: one Codex reviewer over 052942a64..b45255a70; one finding (stale authority in
+SystemShelfArtworkManifestTest) fixed and re-checked; no open findings.
+Verified: resource XML parse, aapt2 compile of res, PNG equality with design, YAML parse, bash -n,
+local simulation of push guard, source greps. NOT run (no Flutter SDK locally): flutter analyze/test/
+build, Gradle/Robolectric tests, actionlint. Pending external acceptance: A1/A2/A5 on a TV, A3/A4 on
+GitHub (needs keystore secrets, optional UPSTREAM_SYNC_TOKEN, upstream workflows disabled per release.md).
