@@ -21,29 +21,45 @@ In repository Settings → Secrets and variables → Actions add:
 
 The PlezyTV release workflow fails if any secret is missing, decodes the keystore
 only for the job, and removes it even after failure. It builds signed
-armeabi-v7a and arm64-v8a APKs with update checking and Sentry disabled (their
-compile-time defaults are false). Manual runs upload APK artifacts; `v*` tags
-also publish a GitHub Release. Artifact versions use the tag on tagged builds,
-and pubspec version on manual builds. Update pubspec version/build number when
-preparing an app update.
+armeabi-v7a and arm64-v8a APKs with upstream update checking and Sentry disabled
+(their compile-time defaults are false). Manual runs upload APK artifacts; `v*`
+tags also publish a GitHub Release. Tags must have the exact format `vX.Y.Z`
+(nonnegative decimal components, no leading zeros, suffixes or prereleases);
+other tag formats fail the build. Artifact names use the tag on tagged builds
+and the pubspec version on manual builds.
+
+Tagged builds bake `PLEZYTV_VERSION=X.Y.Z` into Dart and use Android
+`versionCode = major*10000 + minor*100 + patch`: `v0.2.0` → `200`,
+`v1.2.3` → `10203`. Both ABI APKs have the same versionCode; Flutter’s ABI
+offsets are disabled outside AMAZON builds. Keep minor and patch below 100
+and ensure each release code increases. Manual CI and ordinary local builds
+have no `PLEZYTV_VERSION`, so the fork updater stays disabled; their build
+number still comes from pubspec unless explicitly overridden.
+
+**One-time migration from v0.1.0:** its APK codes were 1156/2156. Android
+refuses an in-place update to v0.2.0 (code 200). Uninstall PlezyTV once, then
+install the matching new APK; uninstalling removes local app data and requires
+signing in again. Original Plezy is a separate app and is unaffected. Subsequent
+releases use increasing tag-derived codes and the same signing key.
 
 Run **PlezyTV release** manually to validate signing before publishing. To release
 an already reviewed commit, create and push a tag yourself:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 Download the matching ABI APK and install alongside original Plezy:
 
 ```sh
-adb install -r plezytv-v0.1.0-armeabi-v7a.apk
+adb install -r plezytv-v0.2.0-armeabi-v7a.apk
 adb shell am start -a android.intent.action.VIEW -d 'plezytv://live?channel=4.1'
 ```
 
 Check both apps appear and launch independently. Original `plezy://` links should
-continue to resolve to Plezy. Verify no updater dialog appears in PlezyTV.
+continue to resolve to Plezy. On manual builds, verify no updater dialog appears
+in PlezyTV.
 
 ## Repository setup (manual)
 
@@ -79,3 +95,22 @@ Actions workflows; PAT pushes can trigger enabled workflows. The sync workflow
 itself performs validation when push authorization permits it. Conflicts,
 release signing, device acceptance and real GitHub automation must be verified
 in the configured repository; local source checks do not establish these.
+
+## Local build verification
+
+Use the checkout-local Flutter/CMake tools and JDK 21 (matching CI):
+
+```sh
+export JAVA_HOME="$PWD/.tools/jdk21/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PWD/.tools/flutter/bin:$PWD/.tools/cmake-4.1.2/CMake.app/Contents/bin:$PATH"
+export XDG_CONFIG_HOME=/private/tmp/plezytv-flutter-config
+flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64 --build-number=200
+for abi in armeabi-v7a arm64-v8a; do
+  "$HOME/Library/Android/sdk/build-tools/36.1.0/aapt2" dump badging \
+    "build/app/outputs/flutter-apk/app-$abi-release.apk" | head -1
+done
+```
+
+Both package lines must report `versionCode='200'`. This local build omits
+`PLEZYTV_VERSION`; the tagged workflow supplies it separately. Without local
+`android/key.properties`, these APKs are unsigned and only verify packaging.

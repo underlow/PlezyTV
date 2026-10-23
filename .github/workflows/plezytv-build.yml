@@ -49,8 +49,23 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
       - run: flutter pub get --enforce-lockfile --no-example
-      - name: Build signed APKs (updater and Sentry default to false)
-        run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64 --dart-define=GIT_COMMIT=${{ github.sha }}
+      - name: Build signed APKs (upstream updater and Sentry default to false)
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          version_args=()
+          if [[ "$REF_TYPE" == tag ]]; then
+            if [[ ! "$RELEASE_REF" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::Release tag must be vX.Y.Z: $RELEASE_REF"
+              exit 1
+            fi
+            version="${RELEASE_REF#v}"
+            build_number=$(python3 -c 'import sys; major, minor, patch = map(int, sys.argv[1].split(".")); print(major * 10000 + minor * 100 + patch)' "$version")
+            version_args=("--build-number=$build_number" "--dart-define=PLEZYTV_VERSION=$version")
+          fi
+          flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64 --dart-define="GIT_COMMIT=$GIT_COMMIT" "${version_args[@]}"
       - name: Name artifacts and verify signing
         env:
           RELEASE_REF: ${{ github.ref_name }}
