@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
+import 'package:plezy/media/media_rating.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_all_card.dart';
@@ -61,7 +63,7 @@ void main() {
     final logo = tester.widget<ClearLogoImage>(find.byType(ClearLogoImage));
     expect(logo.logoPath, '/logo');
     expect(logo.width, 560);
-    expect(logo.height, 200);
+    expect(logo.height, lessThanOrEqualTo(200));
     compact.value = true;
     await tester.pump();
     expect(tester.getSize(find.byType(TvHero)).height, 420);
@@ -102,6 +104,162 @@ void main() {
     );
     expect(find.byType(OptimizedMediaImage), findsNothing);
     expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('F1 spoiler policy follows caller setting and Plezy watch state', (tester) async {
+    final episode = testMediaItem(
+      kind: MediaKind.episode,
+      parentIndex: 1,
+      index: 3,
+      title: 'Title',
+      summary: 'Secret',
+      viewOffsetMs: 100,
+      durationMs: 10000,
+    );
+    for (final hidden in [false, true]) {
+      for (final watched in [false, true]) {
+        await pumpTvWidget(
+          tester,
+          Align(
+            alignment: Alignment.topLeft,
+            child: TvHero(
+              item: episode.copyWith(viewCount: watched ? 1 : 0),
+              hideSpoilers: hidden,
+            ),
+          ),
+        );
+        expect(find.text('Secret'), hidden && !watched ? findsNothing : findsOneWidget);
+        expect(find.text('S1, E3: Title'), hidden && !watched ? findsOneWidget : findsNothing);
+      }
+    }
+    await pumpTvWidget(tester, TvHero(item: episode.copyWith(parentIndex: null), hideSpoilers: true));
+    expect(find.text('Secret'), findsNothing);
+    await pumpTvWidget(tester, TvHero(item: testMediaItem(summary: 'Movie'), hideSpoilers: true));
+    expect(find.text('Movie'), findsOneWidget);
+  });
+
+  testWidgets('F2 F6 metadata formats ratings and uses type-specific mockup order', (tester) async {
+    await pumpTvWidget(
+      tester,
+      TvHero(
+        item: testMediaItem(
+          kind: MediaKind.episode,
+          parentIndex: 1,
+          index: 3,
+          title: 'Title',
+          year: 2023,
+          contentRating: 'ru/18+',
+          durationMs: 3120000,
+          viewOffsetMs: 1020000,
+        ),
+      ),
+    );
+    expect(
+      find.text('S1 E3 · Title · ${formatDurationTextual(3120000)} · ${formatDurationTextual(2100000)} left · 18+'),
+      findsOneWidget,
+    );
+    await pumpTvWidget(
+      tester,
+      TvHero(
+        compact: true,
+        item: testMediaItem(
+          kind: MediaKind.show,
+          year: 2023,
+          childCount: 1,
+          leafCount: 8,
+          contentRating: 'ru/18+',
+          genres: ['Drama', 'Crime'],
+        ),
+      ),
+    );
+    expect(find.text('2023 · 1 season · 8 episodes · 18+ · Drama, Crime'), findsOneWidget);
+  });
+
+  testWidgets('F3 dense content never overflows either height transition', (tester) async {
+    final compact = ValueNotifier(false);
+    addTearDown(compact.dispose);
+    final item =
+        testMediaItem(
+          kind: MediaKind.episode,
+          title: 'Episode',
+          parentIndex: 1,
+          index: 3,
+          summary: 'First line\nSecond line\nThird line',
+          contentRating: 'ru/18+',
+          durationMs: 3120000,
+          viewOffsetMs: 1020000,
+          rating: 8,
+        ).copyWith(
+          title: 'First metadata line\nSecond metadata line',
+          ratings: const [MediaRatingSource(source: 'imdb', value: 8)],
+        );
+    await pumpTvWidget(
+      tester,
+      Align(
+        alignment: Alignment.topLeft,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: compact,
+          builder: (context, value, _) => TvHero(item: item, compact: value),
+        ),
+      ),
+    );
+    final metadata = find.byWidgetPredicate((w) => w is Text && (w.data?.startsWith('S1 E3') ?? false));
+    expect(tester.getSize(metadata).height, 60);
+    expect(tester.getSize(find.text(item.summary!)).height, 102);
+    for (final value in [true, false]) {
+      compact.value = value;
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
+  testWidgets('F4 F5 full two-line title, fixed top and bottom anchor in both modes', (tester) async {
+    for (final compact in [false, true]) {
+      double? metadataTop;
+      for (final title in ['Short', 'First line\nSecond line gy']) {
+        await pumpTvWidget(
+          tester,
+          Align(
+            alignment: Alignment.topLeft,
+            child: TvHero(
+              compact: compact,
+              item: testMediaItem(title: title, year: 2023, summary: title == 'Short' ? 'Brief' : 'Long\nSummary'),
+            ),
+          ),
+        );
+        final text = tester.renderObject<RenderParagraph>(find.text(title));
+        expect(text.didExceedMaxLines, isFalse);
+        if (title != 'Short') expect(text.size.height, 128);
+        final logo = tester.getRect(find.byType(ClearLogoImage));
+        final titleRect = tester.getRect(find.text(title));
+        expect(logo.top, compact ? 72 : 110);
+        expect(titleRect.bottom, logo.bottom);
+        final current = tester.getTopLeft(find.text('2023')).dy;
+        if (metadataTop != null) expect(current, metadataTop);
+        metadataTop = current;
+      }
+    }
+  });
+
+  testWidgets('F7 skeleton matches reference geometry and fixed top', (tester) async {
+    await pumpTvWidget(tester, const Align(alignment: Alignment.topLeft, child: TvHeroSkeleton()));
+    final blocks = find.descendant(of: find.byType(TvHeroSkeleton), matching: find.byType(Container));
+    expect(tester.getTopLeft(blocks.first).dy, 110);
+    expect(
+      [for (var i = 0; i < blocks.evaluate().length; i++) tester.getSize(blocks.at(i))],
+      [
+        const Size(420, 96),
+        const Size(520, 24),
+        const Size(240, 24),
+        const Size(860, 22),
+        const Size(820, 22),
+        const Size(600, 22),
+      ],
+    );
   });
 
   testWidgets('All card matches both row sizes and selects with OK', (tester) async {

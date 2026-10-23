@@ -12,6 +12,10 @@ abstract final class TvStrings {
   static const moreLibraries = 'More';
   static const showDownloads = 'Show downloads';
   static const onServer = 'On server';
+  static String seasons(int count) => '$count ${count == 1 ? 'season' : 'seasons'}';
+  static String episodes(int count) => '$count ${count == 1 ? 'episode' : 'episodes'}';
+  static String spoilerEpisode({required int season, required int episode, required String title}) =>
+      'S$season, E$episode: $title';
   static String left(int milliseconds) => '${formatDurationTextual(milliseconds)} left';
   static String unwatched(int count) => '$count unwatched';
   static String episode({required int season, required int episode, required String title}) =>
