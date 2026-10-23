@@ -1,8 +1,7 @@
 # PlezyTV
 
 **PlezyTV is an unofficial fork of [Plezy](https://github.com/edde746/plezy) with a reworked interface for Android TV.**
-It adds its own TV screens aimed at a remote control and at staying fast on low-end boxes; everything else is Plezy's work,
-and upstream is merged regularly. PlezyTV installs side by side with Plezy and is not affiliated with its author —
+PlezyTV installs side by side with Plezy and is not affiliated with its author —
 report issues with the fork here, not upstream. Early work in progress, no releases yet.
 
 ---
