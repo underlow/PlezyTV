@@ -38,6 +38,7 @@ class TvHomeModel {
   final TvHomePartState hubsState;
   final String? errorMessage;
   final bool isLoadInFlight;
+  final TvHomeState? _retryState;
 
   const TvHomeModel._({
     required this.rows,
@@ -45,10 +46,12 @@ class TvHomeModel {
     required this.hubsState,
     required this.errorMessage,
     required this.isLoadInFlight,
+    this._retryState,
   });
 
   TvHomeState get state {
     if (rows.isNotEmpty) return TvHomeState.content;
+    if (_retryState != null) return _retryState;
     if (onDeckState == TvHomePartState.loading || hubsState == TvHomePartState.loading) {
       return TvHomeState.loading;
     }
@@ -64,6 +67,8 @@ class TvHomeModelBuilder {
   List<MediaHub>? _hubs;
   List<TvHomeRow> _continueRows = const [];
   List<TvHomeRow> _rows = const [];
+  TvHomeState? _terminalState;
+  String? _terminalError;
 
   TvHomeModel build(DiscoverProvider provider) {
     if (!identical(_onDeck, provider.onDeck) || !identical(_hubs, provider.hubs)) {
@@ -77,6 +82,7 @@ class TvHomeModelBuilder {
             title: TvStrings.continueWatching,
             items: onDeck,
             hasMore: provider.hasMoreContinueWatching,
+            // Plezy TV renders no Continue Watching counter in its hub header.
           ),
       ]);
       final rows = <TvHomeRow>[..._continueRows];
@@ -97,15 +103,25 @@ class TvHomeModelBuilder {
       }
       _rows = rows.length == _continueRows.length ? _continueRows : List.unmodifiable(rows);
     }
-    // Discover publishes onDeck first, even when the hub request finishes first.
-    final hubsLoading = provider.isLoading || provider.areHubsLoading;
-    return TvHomeModel._(
-      rows: provider.isLoading ? _continueRows : _rows,
+    // Preserve the retry/refresh button while the provider clears its error
+    // and switches to loading on the next microtask. Existing rows always win.
+    final retryState = provider.isLoadInFlight && _rows.isEmpty ? _terminalState : null;
+    final model = TvHomeModel._(
+      rows: _rows,
       onDeckState: provider.isLoading ? TvHomePartState.loading : TvHomePartState.ready,
-      hubsState: hubsLoading ? TvHomePartState.loading : TvHomePartState.ready,
-      errorMessage: provider.errorMessage,
+      hubsState: provider.areHubsLoading ? TvHomePartState.loading : TvHomePartState.ready,
+      errorMessage: retryState == TvHomeState.error ? _terminalError : provider.errorMessage,
       isLoadInFlight: provider.isLoadInFlight,
+      retryState: retryState,
     );
+    if (model.state == TvHomeState.content) {
+      _terminalState = null;
+      _terminalError = null;
+    } else if (!provider.isLoadInFlight && (model.state == TvHomeState.error || model.state == TvHomeState.empty)) {
+      _terminalState = model.state;
+      _terminalError = model.errorMessage;
+    }
+    return model;
   }
 
   static List<MediaItem> _videoItems(List<MediaItem> items) => List.unmodifiable(
