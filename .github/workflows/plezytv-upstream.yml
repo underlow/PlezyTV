@@ -107,6 +107,9 @@ jobs:
           git push --force-with-lease origin HEAD:refs/heads/upstream-sync
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           printf 'Merge upstream/main into PlezyTV.\n\nValidation: %s. [Workflow logs](%s).\n' "$CHECK_RESULT" "$run_url" > "$RUNNER_TEMP/upstream-pr.md"
+          if ! git diff --quiet origin/main HEAD -- lib/screens/main_screen.dart lib/navigation/navigation_tabs.dart lib/navigation/main_screen_scope.dart; then
+            printf '\nWarning: upstream changes TV shell dependencies. Review the repeated MainScreen duties in docs/plezytv/tv-ui.md against lib/plezytv/tv_ui/shell/.\n' >> "$RUNNER_TEMP/upstream-pr.md"
+          fi
           number=$(gh pr list --head upstream-sync --base main --state open --json number --jq '.[0].number // empty')
           title='Sync upstream Plezy'
           if [[ "$CHECK_RESULT" != success ]]; then title='Sync upstream Plezy (checks failing)'; fi
