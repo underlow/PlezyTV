@@ -8,6 +8,44 @@ import 'tv_theme_test_helper.dart';
 
 void main() {
   for (final reduced in [false, true]) {
+    for (final origin in [0, 2]) {
+      testWidgets('unsuccessful seek restores initial viewport $origin (reduced=$reduced)', (tester) async {
+        final nodes = <int, FocusNode>{};
+        await pumpTvWidget(
+          tester,
+          Align(
+            alignment: Alignment.topLeft,
+            child: TvHorizontalRow(
+              title: 'Sparse',
+              itemCount: 40,
+              cardWidth: 216,
+              cardHeight: 404,
+              cardBuilder: (context, index, node) {
+                nodes[index] = node;
+                return TvPoster(
+                  key: ValueKey(index),
+                  item: testMediaItem(title: '$index'),
+                  focusNode: node,
+                  disabled: index != origin,
+                );
+              },
+            ),
+          ),
+          reduced: reduced,
+        );
+        nodes[origin]!.requestFocus();
+        await tester.pumpAndSettle();
+        final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+        final originalOffset = scroll.offset;
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(scroll.offset, originalOffset);
+        expect(nodes[origin]!.hasFocus, isTrue);
+      });
+    }
+  }
+
+  for (final reduced in [false, true]) {
     testWidgets('disabled run beyond lazy boundary (reduced=$reduced)', (tester) async {
       final nodes = <int, FocusNode>{};
       await pumpTvWidget(
