@@ -181,6 +181,9 @@ flutter:
   # Registered as UI font families so the Linux build, whose fontconfig may
   # lack CJK fonts, can fall back to the bundled subtitle fonts (mono_theme).
   fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/plezytv/fonts/Manrope[wght].ttf
     - family: Go Noto Current
       fonts:
         - asset: assets/go-noto-current-regular.ttf
