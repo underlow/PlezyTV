@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 env:
   FLUTTER_VERSION: '3.47.1'
-  GH_TOKEN: ${{ github.token }}
+  GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -21,6 +21,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
       - name: Merge upstream into dedicated branch
         id: merge
         run: |
@@ -41,19 +42,39 @@ jobs:
             } > "$RUNNER_TEMP/upstream-details.txt"
             git merge --abort || true
           fi
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+      - name: Check workflow push authorization
+        id: push_gate
         if: steps.merge.outputs.clean == 'true'
+        env:
+          HAS_SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN != '' }}
+        run: |
+          # Inspect all incoming commits, including changes later reverted in history.
+          git log --format= --name-only origin/main..HEAD -- .github/workflows/ | sort -u | sed '/^$/d' > "$RUNNER_TEMP/upstream-workflows.txt"
+          if [[ "$HAS_SYNC_TOKEN" != true && -s "$RUNNER_TEMP/upstream-workflows.txt" ]]; then
+            echo 'allowed=false' >> "$GITHUB_OUTPUT"
+            {
+              echo 'UPSTREAM_SYNC_TOKEN is required: incoming commits modify .github/workflows/.'
+              echo 'GITHUB_TOKEN cannot push these commits. No branch push or PR update was attempted.'
+              echo 'Add a fine-grained PAT with repository Contents, Pull requests, Issues and Workflows write permissions as UPSTREAM_SYNC_TOKEN, then rerun.'
+              echo
+              cat "$RUNNER_TEMP/upstream-workflows.txt"
+            } > "$RUNNER_TEMP/upstream-details.txt"
+          else
+            echo 'allowed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        if: steps.merge.outputs.clean == 'true' && steps.push_gate.outputs.allowed == 'true'
         with:
           distribution: temurin
           java-version: '21'
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        if: steps.merge.outputs.clean == 'true'
+        if: steps.merge.outputs.clean == 'true' && steps.push_gate.outputs.allowed == 'true'
         with:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
       - name: Validate merged tree
         id: checks
-        if: steps.merge.outputs.clean == 'true'
+        if: steps.merge.outputs.clean == 'true' && steps.push_gate.outputs.allowed == 'true'
         continue-on-error: true
         run: |
           set +e
@@ -72,7 +93,7 @@ jobs:
           done
           exit "$failed"
       - name: Push branch and open or update PR
-        if: always() && steps.merge.outputs.clean == 'true'
+        if: always() && steps.merge.outputs.clean == 'true' && steps.push_gate.outputs.allowed == 'true'
         env:
           CHECK_RESULT: ${{ steps.checks.outcome }}
         run: |
@@ -94,13 +115,14 @@ jobs:
       - name: Report conflict or validation failure
         if: always()
         env:
+          PUSH_ALLOWED: ${{ steps.push_gate.outputs.allowed }}
           MERGE_CLEAN: ${{ steps.merge.outputs.clean }}
           CHECK_RESULT: ${{ steps.checks.outcome }}
           JOB_STATUS: ${{ job.status }}
         run: |
           gh label create upstream-sync --description 'Automated upstream merge status' --color D93F0B --force
           number=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number // empty')
-          if [[ "$MERGE_CLEAN" == true && "$CHECK_RESULT" == success && "$JOB_STATUS" == success ]]; then
+          if [[ "$PUSH_ALLOWED" == true && "$MERGE_CLEAN" == true && "$CHECK_RESULT" == success && "$JOB_STATUS" == success ]]; then
             if [[ -n "$number" ]]; then gh issue close "$number" --comment "Upstream checks now pass: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
             exit 0
           fi
