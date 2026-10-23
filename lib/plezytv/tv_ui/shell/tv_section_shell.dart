@@ -15,6 +15,9 @@ import '../../../navigation/page_refresh_shortcut.dart';
 import '../../../navigation/profile_navigation_scope.dart';
 import '../../../navigation/settings_shortcut.dart';
 import '../../../providers/catalog_sources_provider.dart';
+import '../../../providers/companion_remote_provider.dart';
+import '../../../services/companion_remote/companion_remote_receiver.dart';
+import '../../../models/companion_remote/remote_command.dart';
 import '../../../providers/hidden_libraries_provider.dart';
 import '../../../providers/libraries_provider.dart';
 import '../../../providers/multi_server_provider.dart';
@@ -49,7 +52,7 @@ typedef TvSectionBuilder = Widget Function(BuildContext context, NavigationTabId
 typedef TvSessionControllerFactory =
     TvShellSessionController? Function(BuildContext context, void Function(TvShellContentIntent) onContentIntent);
 
-/// S12 section surface. TvShell keeps its upstream home until T6 wires this in.
+/// TV home navigation and section surface.
 class TvSectionShell extends StatefulWidget {
   const TvSectionShell({super.key, required this.isOfflineMode, required this.initialPromptHandled});
 
@@ -90,6 +93,8 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
   RouteObserver<PageRoute<dynamic>>? _observer;
   PageRoute<dynamic>? _route;
   MiniPlayerInsetController? _miniPlayerInsets;
+  CompanionRemoteProvider? _companion;
+  void Function(RemoteCommand)? _commandHandler;
 
   TvShellSection get currentSection => _current;
   int get selectionCommand => _selectionCommand;
@@ -150,7 +155,54 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       _focusContent(restore: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_session?.start());
+      if (!mounted) return;
+      _setupCompanionRemote();
+      unawaited(_session?.start());
+    });
+  }
+
+  // Register after the first frame: the focus scope must exist before S5 sees
+  // this State as ready and searches its descendants for library selection.
+  void _setupCompanionRemote() {
+    final receiver = CompanionRemoteReceiver.instance;
+    _companion = context.read<CompanionRemoteProvider?>();
+    _commandHandler = (command) {
+      if (mounted) receiver.handleCommand(command, context);
+    };
+    _companion?.onCommandReceived = _commandHandler;
+    receiver.navigationOwner = this;
+    void tab(NavigationTabId id) => selectSection(TvShellSection.tab(id));
+    void step(int direction) {
+      final tabs = availableTabs;
+      if (tabs.isEmpty) return;
+      final index = _current.isNoConnection ? -1 : tabs.indexWhere((tab) => tab.id == _current.tab);
+      tab(tabs[(index < 0 ? 0 : (index + direction) % tabs.length)].id);
+    }
+
+    receiver.onTabNext = () => step(1);
+    receiver.onTabPrevious = () => step(-1);
+    receiver.onTabDiscover = () => tab(NavigationTabId.discover);
+    receiver.onTabLibraries = () => tab(NavigationTabId.libraries);
+    receiver.onTabSearch = () => _search(null);
+    receiver.onTabDownloads = () => tab(NavigationTabId.downloads);
+    receiver.onTabSettings = () => tab(NavigationTabId.settings);
+    receiver.onHome = () => selectSection(_root);
+    receiver.onSearchAction = _search;
+  }
+
+  void _search(String? query) {
+    const section = TvShellSection.tab(NavigationTabId.search);
+    if (!isSectionAvailable(section)) return;
+    final trimmed = query?.trim() ?? '';
+    selectSection(section, focusContent: trimmed.isEmpty);
+    _afterSelection(() {
+      _onScreen<SearchInputFocusable>(NavigationTabId.search, (screen) {
+        if (trimmed.isEmpty) {
+          screen.focusSearchInput();
+        } else {
+          screen.submitSearchQuery(trimmed);
+        }
+      });
     });
   }
 
@@ -566,6 +618,20 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
 
   @override
   void dispose() {
+    final receiver = CompanionRemoteReceiver.instance;
+    if (identical(_companion?.onCommandReceived, _commandHandler)) _companion?.onCommandReceived = null;
+    if (identical(receiver.navigationOwner, this)) {
+      receiver.onTabNext = null;
+      receiver.onTabPrevious = null;
+      receiver.onTabDiscover = null;
+      receiver.onTabLibraries = null;
+      receiver.onTabSearch = null;
+      receiver.onTabDownloads = null;
+      receiver.onTabSettings = null;
+      receiver.onHome = null;
+      receiver.onSearchAction = null;
+      receiver.navigationOwner = null;
+    }
     _observer?.unsubscribe(this);
     _exitTimer?.cancel();
     _session?.removeListener(_sessionChanged);

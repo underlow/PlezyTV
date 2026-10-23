@@ -22,7 +22,6 @@ import '../../test_helpers/prefs.dart';
 
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:plezy/plezytv/tv_ui/tv_shell.dart';
-import 'package:plezy/screens/main_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +32,8 @@ void main() {
   });
   tearDown(() {
     TvUi.resetForTesting();
-    TvShell.mainScreenBuilderForTesting = null;
+    TvSectionShell.sectionBuilderForTesting = null;
+    TvSectionShell.sessionControllerFactoryForTesting = null;
   });
 
   for (final tv in [false, true]) {
@@ -83,7 +83,7 @@ void main() {
         if (tv) {
           expect(selected, isA<TvShell>());
           final shell = selected as TvShell;
-          final home = shell.build(context) as MainScreen;
+          final home = shell.build(context) as TvSectionShell;
           expect(home.isOfflineMode, offline);
           expect(home.initialPromptHandled, isTrue);
         } else {
@@ -103,17 +103,15 @@ void main() {
   }
 
   testWidgets('TV shell forwards both flags and preserves child state across override changes', (tester) async {
-    MainScreen? home;
+    TvSectionShell? home;
     TvUi.enabledForTesting = () => true;
     final graph = await _SessionGraph.create();
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await graph.dispose();
     });
-    TvShell.mainScreenBuilderForTesting = (value) {
-      home = value;
-      return const _HomeProbe();
-    };
+    TvSectionShell.sessionControllerFactoryForTesting = (_, _) => null;
+    TvSectionShell.sectionBuilderForTesting = (_, _, key) => _HomeProbe(key: key);
     await graph.pump(
       tester,
       httpClientFactory: () => FakeHttpClient(200, const <int>[]),
@@ -122,15 +120,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(TvShell), findsOneWidget);
-    final state = tester.state(find.byType(_HomeProbe));
-    expect(home!.isOfflineMode, isTrue);
-    expect(home!.initialPromptHandled, isFalse);
+    home = tester.widget<TvSectionShell>(find.byType(TvSectionShell));
+    final state = tester.state(find.byType(TvSectionShell));
+    expect(home.isOfflineMode, isTrue);
+    expect(home.initialPromptHandled, isFalse);
     TvUi.enabledForTesting = () => false;
     await graph.pump(tester, httpClientFactory: () => FakeHttpClient(200, const <int>[]), isOfflineMode: true);
     await tester.pumpAndSettle();
     expect(find.byType(TvShell), findsOneWidget);
-    expect(tester.state(find.byType(_HomeProbe)), same(state));
-    expect(home!.initialPromptHandled, isTrue);
+    expect(tester.state(find.byType(TvSectionShell)), same(state));
+    home = tester.widget<TvSectionShell>(find.byType(TvSectionShell));
+    expect(home.initialPromptHandled, isTrue);
   });
 
   testWidgets('lookup reads injectable detection once unless passed a snapshot', (tester) async {
@@ -159,7 +159,7 @@ void main() {
 }
 
 class _HomeProbe extends StatefulWidget {
-  const _HomeProbe();
+  const _HomeProbe({super.key});
   @override
   State<_HomeProbe> createState() => _HomeProbeState();
 }

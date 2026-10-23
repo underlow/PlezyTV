@@ -81,26 +81,21 @@ Follow `test/plezytv/tv_ui/tv_ui_test.dart` and the profile-session test harness
 Set `TvUi.enabledForTesting = () => true` (or `false`) to control detection.
 `TvUi.profileHomeBuilderForTesting` intercepts the selected replacement,
 including `null`, so navigator tests can avoid starting the full upstream home.
-`TvShell.mainScreenBuilderForTesting` receives the configured `MainScreen` and
-can substitute a lightweight stateful probe. In teardown call
-`TvUi.resetForTesting()` (also clears the profile-home interceptor), and reset
-`TvShell.mainScreenBuilderForTesting = null` separately. Do not use
-`TvDetectionService.debugSetAppleTVOverride`: it also enables Apple TV paths.
-These probes check selection, arguments and state retention; they do not verify
-the full upstream home on a device.
+In teardown call `TvUi.resetForTesting()` (also clears the profile-home
+interceptor). Do not use `TvDetectionService.debugSetAppleTVOverride`: it also
+enables Apple TV paths.
 
-S12 T4 introduces the separate `TvSectionShell` in
-`lib/plezytv/tv_ui/shell/tv_section_shell.dart`. The live `TvShell` still builds
-`MainScreen` until T6. Tests of the new surface use
+The live `TvShell` builds `TvSectionShell` in
+`lib/plezytv/tv_ui/shell/tv_section_shell.dart`. Tests use
 `TvSectionShell.sectionBuilderForTesting(context, NavigationTabId tab, GlobalKey key)`:
 return a stateful lightweight section using that key and implement the upstream
-`FocusableTab`, `LibraryLoadable`, `Refreshable`, `FullRefreshable` and
-`TabVisibilityAware` capabilities as needed. The shell mounts sections lazily and
-keeps one Libraries section for all library identities. T5 and T6 must reuse this
-hook. `TvSectionShell.sessionControllerFactoryForTesting(context, onContentIntent)`
-can supply a fake T2 controller, or return null to avoid starting session services.
-Reset both hooks to null in teardown. Keep the older MainScreen hook while the
-live shell still uses it; T6 removes it when switching the live shell.
+`FocusableTab`, `LibraryLoadable`, `SearchInputFocusable`, `Refreshable`,
+`FullRefreshable` and `TabVisibilityAware` capabilities as needed. The shell
+mounts sections lazily and keeps one Libraries section for all library identities.
+`TvSectionShell.sessionControllerFactoryForTesting(context, onContentIntent)`
+can supply a fake session controller, or return null to avoid starting services.
+Reset both hooks to null in teardown. The former
+`TvShell.mainScreenBuilderForTesting` hook has been removed.
 
 `TvShellSection.tab(NavigationTabId)` and `TvShellSection.library(globalKey)`
 are the shared section identities. `TvSectionShellState` exposes `currentSection`,
