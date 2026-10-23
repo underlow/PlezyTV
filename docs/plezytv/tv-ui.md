@@ -33,7 +33,8 @@ MainScreen(isOfflineMode: widget.isOfflineMode,
 The explicit test builder wins, then the registry, then upstream. The actual
 lookup is `TvUi.profileHome(BuildContext context, {bool? enabled, required bool
 isOfflineMode, required bool initialPromptHandled})`, returning `Widget?`.
-`TvShell` currently builds upstream `MainScreen`, forwarding both flags.
+`TvShell` builds the fork-owned `TvSectionShell`, forwarding both flags.
+Non-TV profile homes still build upstream `MainScreen`.
 
 Never add hooks to `lib/main.dart`, `lib/screens/main_screen.dart`,
 `lib/screens/media_detail_screen.dart`, or other upstream files of thousands of
@@ -80,7 +81,7 @@ state is created. A lookup without `enabled:` reads the current detection value.
 Follow `test/plezytv/tv_ui/tv_ui_test.dart` and the profile-session test harness.
 Set `TvUi.enabledForTesting = () => true` (or `false`) to control detection.
 `TvUi.profileHomeBuilderForTesting` intercepts the selected replacement,
-including `null`, so navigator tests can avoid starting the full upstream home.
+including `null`, so navigator tests can avoid starting the full TV shell.
 In teardown call `TvUi.resetForTesting()` (also clears the profile-home
 interceptor). Do not use `TvDetectionService.debugSetAppleTVOverride`: it also
 enables Apple TV paths.
@@ -108,25 +109,71 @@ menu. `handleContentIntent` maps T2 initial load to `primeRefresh`, stale resume
 to `LibrariesProvider.refresh` plus `Refreshable.refresh`, and profile reset to
 `fullRefresh`, only on mounted Home, Libraries and Search sections.
 
-## Screen links and the later home
+## Shell and upstream parity
+
+`TvSectionShell` in `lib/plezytv/tv_ui/shell/` owns section selection, focus,
+Back, and companion navigation. It wraps the upstream Discover, Libraries,
+Live TV, Explore, Search, Downloads and Settings screens in `TvTheme`, an
+`IndexedStack` with lazy mounting and `TickerMode`, `TvSideMenu`,
+`MainScreenFocusScope`, `SideNavigationScope`, `OverlaySheetHost` and
+`AuthErrorBanner`. The Libraries screen is shared across library identities.
+The menu follows provider availability and hidden libraries; More opens the
+upstream library quick picker. `TvSettings.showDownloads` defaults to false and
+only hides the menu entry, leaving links and remote navigation available.
+
+`TvShellSessionController` owns session services and lifecycle observation;
+`tv_shell_session_services.dart` supplies production provider/navigation
+adapters. It starts after the first frame and is disposed with the shell.
+`TvNoConnectionScreen` is the offline root, with retry progress and connection
+settings. Losing connectivity keeps the current content visible while reducing
+the menu. Reconnection restores the previous available section or the startup
+section, unless a later selection superseded the retry. Online Back goes through
+the menu to Home; offline Back goes to No connection. At the root, a second Back
+within three seconds exits. Sheets consume Back before shell navigation.
+
+The shell repeats the following duties from
+[`lib/screens/main_screen.dart`](../../lib/screens/main_screen.dart). Upstream
+fixes to these private methods do not automatically reach the TV shell. Compare
+both implementations whenever upstream changes them; reuse shared policies
+rather than copying their implementations.
+
+| Duty | MainScreen methods | TV implementation in `shell/` |
+|---|---|---|
+| Session bootstrap: binder, Plex Home, active preferences | `initState`, `_handleOfflineStatusChanged` | Controller `start`, `_enterOnline`; production adapters |
+| Prime after profile binding, with 15-second fallback; load libraries before content, watch sync and cached download metadata | `_runStartupOnFirstOnlineServer`, `_primeOnlineServices`, `_primeContentTabs` | Controller `_armStartup`, `_primeOnSettle`, `_primeOnlineServices`; shell `handleContentIntent(initialLoad)` |
+| Resume queued downloads and sync collections for newly online servers | `_resumeQueuedDownloadsForServers` | Controller `_resumeDownloads` and server status subscription |
+| Initial and late-arriving profile selection, respecting `initialPromptHandled` | `_promptForInitialProfileSelection`, `_pushProfileSelection`, `_onActiveProfileChanged` | Controller `_initialPrompt`, `_pushPicker`, `_profileChanged`; shared `runInitialProfilePrompt` |
+| Profile/rebind invalidation: volatile cache, hidden libraries, library reload, shuffle and mounted content reset | `_onActiveProfileChanged`, `_invalidateAllScreens`, `_fullRefreshContentTabs` | Controller `_profileChanged`, `_invalidate`; shared `profileInvalidationAction`; shell `handleContentIntent(fullReset)` |
+| Resume: Seerr user, conditional profile picker and stale content refresh | `didChangeAppLifecycleState`, `_showProfileSelectionOnResume`, `_refreshContentAfterStaleResume` | Controller `didChangeAppLifecycleState`, shared resume gates/policy; shell `handleContentIntent(refreshAfterResume)` |
+| Launcher cold/warm links and Live TV playback | `_setupSystemShelfDeepLink`, `_handleShelfContentId` | Controller `_readColdShelfLink`, `_onShelfTap`; production `openShelfContent` and `launchLiveTv` adapters |
+| Watch Together navigation and cleanup | `_setupWatchTogetherCallback`, `_navigateToWatchTogetherMedia`, `dispose` | Controller `start`, `_openWatch`, `dispose`; production playback adapter |
+| Companion command routing, navigation ownership and optional host startup | `_setupCompanionRemote`, `_autoStartCompanionRemoteServer`, `dispose` | Shell `_setupCompanionRemote`, `_search`, `dispose`; controller `start` and host adapter |
+| Optional Plezy update check/dialog | `_checkForUpdatesOnStartup`, `_showUpdateDialog` | Controller `start` and production `checkForUpdates` adapter (separate from the PlezyTV updater) |
+| Offline state, reconnection and section availability | `_handleOfflineStatusChanged`, `_triggerReconnect`, `_handleTabAvailabilityChanged`, `_handleLiveTvChanged`, `_handleCatalogSourcesChanged` | Controller `_offlineChanged`, `_enterOnline`, `retry`; shell `_sessionChanged`, `_retry`, `availableTabs`, `_surface` |
+| Startup section, lazy screens, tab visibility, library selection and quick picker | `initState`, `_buildScreens`, `_buildScreenSlot`, `_buildTickerAwareStack`, `_selectTab`, `_selectLibrary`, `_handleLibrariesScreenSelected`, `_showLibraryQuickPicker` | Shell `didChangeDependencies`, `_screen`, `_surface`, `selectSection`, `selectLibrary`, `_showMore` |
+| Content/menu focus, Back, refresh/search/settings shortcuts and scope geometry | `_focusSidebar`, `_focusContent`, `_handleMainBack`, `_handleMainBackKeyAction`, `_handleBackKey`, `_handlePageRefreshShortcut`, `_handleSearchShortcut`, `_handleSettingsShortcut`, `_buildContent` | Shell `focusMenu`, `_focusContent`, `_back`, `_keyEvent`, `_surface`, `build` |
+| Route coverage: Discover visibility/refresh and mini-player inset suspension | `didChangeDependencies`, `didPushNext`, `didPopNext`, `_onDiscoverBecameVisible`, `dispose` | Shell route subscription, `didPushNext`, `didPopNext`, `dispose` |
+
+The upstream-sync workflow adds a PR warning when the merged diff changes
+`lib/screens/main_screen.dart`, `lib/navigation/navigation_tabs.dart` or
+`lib/navigation/main_screen_scope.dart`. Use this table as the review checklist.
+TV has side navigation and no mini-player; it suspends existing inset reporting
+while another route covers it, and does not report a bottom navigation bar height.
+
+## Screen links and the shell
 
 Keep S5 screen links in `lib/plezytv/screen_links/` working as documented in
-[dev-tools.md](dev-tools.md). New screens must remain reachable through those
-existing targets and the profile navigator, preserving readiness, tab/navigation
-callbacks and Back behavior. `screen_link_router.dart` searches descendant
-widgets for `MainScreenFocusScope` to obtain `selectLibrary`; retaining only a
-similar-looking TV library screen is insufficient. Today the upstream
-`MainScreen` inside `TvShell` supplies that scope and the navigation callbacks.
+[dev-tools.md](dev-tools.md). The live `TvSectionShell` supplies the descendant
+`MainScreenFocusScope` used by `screen_link_router.dart` for `selectLibrary`,
+and owns `CompanionRemoteReceiver.navigationOwner` and its tab/search/Home
+callbacks. Command routing is installed after the first frame, once the scope is
+mounted, and owned callbacks are removed on disposal. The router can then report
+readiness and the PlezyTV updater can process pending startup work.
 
-In S12, `TvShell` must replace `MainScreen`, rather than keep wrapping it. Before
-removing the upstream home, the TV implementation must provide:
-
-- `MainScreenFocusScope`, including library selection, and the navigation
-  callbacks/readiness used by S5 links.
-- Bottom-bar inset reporting to the session’s `MiniPlayerInsetController`, so
-  the mini-player stays above the TV navigation UI.
-- First-prompt handling that respects `initialPromptHandled`, preserving the
-  profile-session contract and avoiding repeated startup prompts.
-
-These are requirements for the replacement, not functionality already
-implemented independently by `TvShell`.
+Links to home, libraries, a specific library, item, downloads, search, settings
+and update use the existing targets. Downloads remains reachable when Show
+downloads is off. Availability follows upstream tab visibility and library
+existence. Remote Libraries opens the general Libraries section; Home selects
+Home online or No connection offline. Section replacement stages must preserve
+these scopes, callbacks, readiness and Back behavior. Initial profile prompting
+continues to respect the profile session’s `initialPromptHandled` flag.
