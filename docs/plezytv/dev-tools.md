@@ -22,9 +22,13 @@ selects the section in the normal Libraries screen. `item` opens details for a
 movie, show, season or episode, never starts playback. Replace example IDs with
 IDs from your server. Add `&server=<machineId>` to disambiguate library/item
 IDs; otherwise the first connected server resolving the ID wins. Keep the URI
-quoted and percent-encode query text and IDs when needed.
+quoted and percent-encode search query text when needed. Item and library IDs
+must contain decimal digits only; server identifiers accept ASCII letters,
+digits and hyphens. Links wait during profile selection/binding and library
+initialization, including when the requested known server is still connecting.
 
-`update` runs a manual PlezyTV update check in tagged builds. Untagged builds
+`update` runs a manual PlezyTV update check in tagged builds. Later screen links
+can proceed while it checks; a superseded check does not open a result dialog. Untagged builds
 (no `PLEZYTV_VERSION`) have no updater UI or network checks. Invalid links,
 missing IDs, unknown servers/IDs and invisible tabs leave the current screen
 unchanged and produce one `appLogger` warning with the URI and reason. Existing

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../../main.dart' show rootNavigatorKey;
 import '../../media/ids.dart';
+import '../../profiles/active_profile_provider.dart';
+import '../../screens/profile/profile_switch_screen.dart';
 import '../../media/media_kind.dart';
 import '../../media/media_item.dart';
 import '../../navigation/navigation_tabs.dart';
@@ -41,7 +43,9 @@ class ScreenLinkRouter {
       ScreenTarget.settings: (link, current) => _tab(link, _receiver.onTabSettings, NavigationTabId.settings),
       ScreenTarget.library: _resolve,
       ScreenTarget.item: _resolve,
-      ScreenTarget.update: (link, current) => PlezyTvUpdater.instance.check(() => _context, automatic: false),
+      ScreenTarget.update: (link, current) {
+        PlezyTvUpdater.instance.checkFromLink(() => _context, current);
+      },
     };
     startUpdates();
   }
@@ -66,7 +70,23 @@ class ScreenLinkRouter {
     return owner is State && owner.mounted ? owner.context : null;
   }
 
+  bool _profileReady() {
+    final context = _context;
+    if (context == null) return false;
+    final profile = context.read<ActiveProfileProvider?>();
+    if (profile != null && (!profile.isInitialized || profile.activeId == null || profile.isBinding)) return false;
+    var picker = false;
+    void visit(Element element) {
+      if (element.widget is ProfileSwitchScreen) picker = true;
+      element.visitChildren(visit);
+    }
+
+    rootNavigatorKey.currentContext?.visitChildElements(visit);
+    return !picker;
+  }
+
   bool _isReady() =>
+      _profileReady() &&
       rootNavigatorKey.currentState != null &&
       profileNavigationRegistry.navigator != null &&
       _context != null &&
@@ -125,15 +145,26 @@ class ScreenLinkRouter {
   Future<void> _resolve(ScreenLink link, bool Function() isCurrent) async {
     final context = _context!;
     final owner = _receiver.navigationOwner;
+    final profile = context.read<ActiveProfileProvider?>();
+    final profileId = profile?.activeId;
+    bool ownsRequest() =>
+        context.mounted && identical(owner, _receiver.navigationOwner) && profileId == profile?.activeId && _isReady();
     final provider = context.read<MultiServerProvider>();
     if (!provider.hasConnectedServers) throw const ScreenLinkNotReady();
     _ensureVisible(NavigationTabId.libraries);
     final loadedLibraries = link.target == ScreenTarget.library ? context.read<LibrariesProvider>() : null;
-    if (loadedLibraries != null && loadedLibraries.isLoading) {
+    if (loadedLibraries != null &&
+        (loadedLibraries.isLoading ||
+            // The provider exposes its initial state only through this getter.
+            // ignore: invalid_use_of_visible_for_testing_member
+            loadedLibraries.loadState == LibrariesLoadState.initial)) {
       throw const ScreenLinkNotReady();
     }
     final ids = provider.onlineServerIds;
-    if (link.server != null && !ids.contains(link.server)) throw StateError('unknown server ${link.server}');
+    if (link.server != null && !ids.contains(link.server)) {
+      if (provider.expectedServerIds.contains(link.server)) throw const ScreenLinkNotReady();
+      throw StateError('unknown server ${link.server}');
+    }
     final candidates = link.server == null ? ids : [link.server!];
     Object? lastError;
     for (final id in candidates) {
@@ -145,14 +176,15 @@ class ScreenLinkRouter {
           final library = libraries.where((value) => value.id == link.id).firstOrNull;
           if (!context.mounted) throw const ScreenLinkNotReady();
           if (!isCurrent()) return;
-          if (!identical(owner, _receiver.navigationOwner)) throw const ScreenLinkNotReady();
+          if (!ownsRequest()) throw const ScreenLinkNotReady();
+          if (loadedLibraries!.isLoading) throw const ScreenLinkNotReady();
           if (library == null) continue;
           // Use the main screen’s public sidebar selection contract. The
           // scope is below MainScreen’s State context, so locate that scope
           // within this owner only (never another profile or navigator).
           final select = _librarySelector(context);
           if (select == null) throw StateError('library selection unavailable');
-          if (!loadedLibraries!.libraries.any((value) => value.globalKey == library.globalKey)) {
+          if (!loadedLibraries.libraries.any((value) => value.globalKey == library.globalKey)) {
             throw StateError('library ${link.id} unavailable in active profile');
           }
           _showMain();
@@ -162,7 +194,7 @@ class ScreenLinkRouter {
         final item = await client.fetchItem(link.id!);
         if (!context.mounted) throw const ScreenLinkNotReady();
         if (!isCurrent()) return;
-        if (!identical(owner, _receiver.navigationOwner)) throw const ScreenLinkNotReady();
+        if (!ownsRequest()) throw const ScreenLinkNotReady();
         if (item == null) continue;
         if (!const [MediaKind.movie, MediaKind.show, MediaKind.season, MediaKind.episode].contains(item.kind)) {
           throw StateError('unsupported item kind ${item.kind.name}');
@@ -173,9 +205,14 @@ class ScreenLinkRouter {
       } on ScreenLinkNotReady {
         rethrow;
       } catch (error) {
+        if (!isCurrent()) return;
+        if (!ownsRequest()) {
+          throw const ScreenLinkNotReady();
+        }
         lastError = error;
       }
     }
+    if (provider.expectedServerIds.any((id) => !ids.contains(id))) throw const ScreenLinkNotReady();
     throw StateError('${link.target.name} ${link.id} not found${lastError == null ? '' : ': $lastError'}');
   }
 }

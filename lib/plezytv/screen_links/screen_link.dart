@@ -34,7 +34,13 @@ class ScreenLink {
     if ((target == ScreenTarget.library || target == ScreenTarget.item) && (id == null || id.trim().isEmpty)) {
       throw const FormatException('missing required parameter id');
     }
-    if (server != null && server.trim().isEmpty) throw const FormatException('empty server');
+    if (id != null && (id.isEmpty || RegExp(r'[^0-9]').hasMatch(id))) {
+      throw const FormatException('invalid id');
+    }
+    // Plex machine identifiers and UUIDs use ASCII letters, digits and hyphens.
+    if (server != null && (server.isEmpty || RegExp(r'[^A-Za-z0-9-]').hasMatch(server))) {
+      throw const FormatException('invalid server');
+    }
     return ScreenLink(source, target, id: id, server: server, query: uri.queryParameters['q']);
   }
 }

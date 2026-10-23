@@ -35,6 +35,33 @@ void main() {
     }
   });
 
+  test('injected metadata path is rejected once before dispatch', () async {
+    final warnings = <String>[];
+    var requests = 0;
+    final queue = ScreenLinkQueue(
+      isReady: () => true,
+      dispatch: (_, _) async {
+        requests++;
+      },
+      warn: (_, reason) => warnings.add(reason),
+    );
+    addTearDown(queue.dispose);
+    queue.claim(
+      'plezytv://screen/item?id=..%2F..%2F%3A%2Fscrobble%3Fkey%3D123%26identifier%3Dcom.plexapp.plugins.library',
+    );
+    await queue.flush();
+    expect(requests, 0);
+    expect(warnings, hasLength(1));
+    for (final id in ['-1', ' 1', '1/2', '1?x=2', '1\n']) {
+      expect(
+        () => ScreenLink.parse('plezytv://screen/library?id=${Uri.encodeQueryComponent(id)}'),
+        throwsFormatException,
+      );
+    }
+    expect(() => ScreenLink.parse('plezytv://screen/item?id=1&server=..%2Fa'), throwsFormatException);
+    expect(ScreenLink.parse('plezytv://screen/item?id=1&server=abc-123').server, 'abc-123');
+  });
+
   test('play, live, original scheme and shelf IDs are not claimed', () {
     for (final source in [
       'plezytv://play?content_id=plezy_a_1',
