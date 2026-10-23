@@ -34,14 +34,15 @@ small/medium upstream files; mobile behavior unchanged.
   opens the target screen, both when PlezyTV is running and from a cold start.
 - **R2** Targets: `home` (default start tab), `libraries`, `library?id=<sectionId>[&server=<machineId>]`,
   `item?id=<ratingKey>[&server=<machineId>]` (movie, show, season, episode detail),
-  `search[?q=<text>]`, `livetv`, `downloads`, `settings`, `update` (runs a manual
+  `search[?q=<text>]`, `downloads`, `settings`, `update` (runs a manual
   update check, R12). When `server` is omitted the first connected server that
   resolves the ID is used.
-- **R3** On a cold start the link is applied after the active profile's servers
-  are connected; if they do not connect within 30 s, the link is dropped with a
-  warning log.
+- **R3** A link that arrives before the main screen is ready (cold start,
+  profile picker, sign-in, servers connecting) waits without a timeout and is
+  applied once the main screen of the active profile is ready. Only the latest
+  pending link is kept. A link lost because the app is closed is not restored.
 - **R4** An invalid link (unknown target, missing required parameter, unknown
-  server or ID, target unavailable e.g. Live TV absent) changes nothing visible:
+  server or ID, target tab not visible) changes nothing visible:
   the app stays where it was and logs one warning naming the link and reason.
   It never crashes.
 - **R5** Existing `plezytv://play` and `plezytv://live` links keep working
@@ -54,7 +55,9 @@ small/medium upstream files; mobile behavior unchanged.
 ### Log tag
 - **R8** On Android every `appLogger` line is written to logcat with tag
   `PlezyTV` and the matching priority (d/i/w/e), so `adb logcat -s PlezyTV`
-  shows the fork's app logs. Lines no longer go to the `flutter` tag.
+  shows the app's Dart logs. Release builds no longer write them under
+  `flutter`; debug builds also keep console output for `flutter run`. Plain
+  `print`/`debugPrint` and native Kotlin tags are out of scope.
 - **R9** Redaction, in-memory log buffer (in-app log viewer/export), level
   filtering (debug only with the debug setting) are preserved. Non-Android
   platforms and tests keep current output.
@@ -64,7 +67,11 @@ small/medium upstream files; mobile behavior unchanged.
 ### Updates
 - **R11** Release builds made from a `v*` tag carry that version
   (`PLEZYTV_VERSION`, e.g. `0.2.0`). Builds without it (manual CI runs, local)
-  never check for updates and show no update UI.
+  never check for updates and show no update UI. Release `versionCode` is
+  derived from the tag (`major*10000 + minor*100 + patch`, e.g. 0.2.0 → 200),
+  identical for both ABIs, so every newer release has a larger code. The
+  one-time reinstall over v0.1.0 (code 1156/2156) is accepted; no compatibility
+  with upstream numbering is kept during the project.
 - **R12** Check: GitHub `releases/latest` of `underlow/PlezyTV`; an update exists
   when its tag (without `v`) is semver-newer than `PLEZYTV_VERSION` and the
   release has an APK asset for the device ABI (`plezytv-v<ver>-armeabi-v7a.apk`
@@ -72,14 +79,20 @@ small/medium upstream files; mobile behavior unchanged.
   the installed app is v7a — i.e. use the installed app's ABI).
 - **R13** Automatic check after startup, at most once per 6 hours, respecting a
   skipped version. Manual check (settings item, `plezytv://screen/update`)
-  ignores cooldown and skip, and reports "up to date" or the failure.
+  ignores cooldown and skip, and reports "up to date" or the failure. The
+  cooldown starts when an automatic request is sent, whether it succeeds or
+  not. The automatic dialog is not shown over the player; it waits until
+  playback ends. `releases/latest` excludes drafts and pre-releases; a tag that
+  is not `vX.Y.Z` is treated as no update and logged.
 - **R14** Update dialog: version, current version, actions Install / Later /
   Skip this version (skip only for automatic). Remote-navigable with focus on
   Install.
 - **R15** Install: download APK to app cache with visible progress and cancel;
   then hand it to the system package installer. If installing unknown apps is
   not allowed for PlezyTV, open that system setting and explain; after the user
-  returns, Install can be retried.
+  returns, the dialog is still open with focus on Install; pressing it reuses
+  an already complete download. Downloaded APKs are deleted on the next start
+  and before a new download.
 - **R16** Failures (no network, HTTP error, no matching asset, download
   interrupted, insufficient space) show a short message; the app keeps working;
   a partial file is deleted. The automatic check fails silently (log only).
@@ -103,9 +116,13 @@ passed on. `main_screen.dart` is not changed.
 **ScreenLinkRouter** (fork-owned, e.g. `lib/plezytv/screen_links/`): parses into
 a typed `ScreenLink` (pure, unit-tested), then waits for readiness (active
 profile session with `MultiServerProvider` having connected clients, bounded by
-R3), and navigates using `rootNavigatorKey`. Tab targets select the main tab via
-the existing main-screen scope API (`main_screen_scope.dart`) if it exposes tab
-switching; otherwise the plan picks the smallest hook outside large files.
+R3), and navigates using `rootNavigatorKey`. Tab targets reuse the in-app
+command callbacks that `main_screen.dart` already registers on
+`CompanionRemoteReceiver.instance` (`onHome`, `onTabLibraries`, `onTabSearch`,
+`onSearchAction(query)`, `onTabDownloads`, `onTabSettings`); no phone or
+companion connection is involved. Live TV has no such callback, so `livetv`
+moves to S3. The router claims links in `SystemShelfService` but holds them
+until those callbacks are registered (the main screen is ready).
 `library` and `item` resolve data with existing clients (`fetchItem`, library
 sections) and push the existing screens via existing navigation helpers
 (`media_navigation_helper.dart`). One target table maps names to handlers so S3
@@ -113,7 +130,8 @@ can swap handlers (R6). State: a single pending link (latest wins) held until
 readiness or timeout.
 
 **Log output.** In `app_logger.dart` the `Logger` gets a fork-owned output on
-Android: a `LogOutput` that queues lines and sends them in batches over a
+Android: a `LogOutput` that queues lines and sends them in batches (debug builds also keep
+`ConsoleOutput`) over a
 method channel to a small Kotlin handler calling `android.util.Log.println`
 with tag `PlezyTV` (lines split under logcat's ~4 KB limit). Printer, filter,
 redaction and `MemoryLogOutput` stay as is. Batching on a microtask/short timer
@@ -134,9 +152,10 @@ outside `main_screen.dart`/`main.dart` (plan chooses: profile session screen or
 the router's readiness signal). Settings: one guarded tile hook in
 `settings_screen.dart`.
 
-Android versionCode comes from upstream pubspec and only grows with merges, so a
-newer release normally installs over an older one; if the installer rejects a
-downgrade, R16 applies.
+Release builds pass `--build-number` computed from the tag and disable
+Flutter's per-ABI versionCode offset (or override it in the fork's Gradle
+config) so the code equals the tag formula (R11). If the installer still
+rejects an install, R16 applies.
 
 ## 4. Acceptance examples
 
@@ -154,11 +173,24 @@ downgrade, R16 applies.
 | A10 | A8, network drops mid-download | — | Message shown, partial file removed, app usable | R16 |
 | A11 | Installed v0.3.0 = latest | Settings → Check for updates | "Up to date" | R13,R17 |
 | A12 | Manual CI build (no tag) | open settings, start | No update item, no check | R11,R17 |
+| A14 | Cold start, profile picker shown 5 min | pick profile | Linked screen opens after the main screen is ready | R3 |
+| A15 | Not ready | two links in a row | Only the second applied | R3 |
+| A16 | Running | `screen/search?q=matrix` | Search tab with results for "matrix" | R2 |
+| A17 | Running | `screen/item?id=1&server=bogus` | Nothing changes; warning | R4 |
+| A18 | Warm | Watch Next tap (`plezytv://play`) | Playback starts as before | R5 |
+| A19 | Debug logging on | open in-app log viewer/export | Lines present, redacted | R9 |
+| A20 | Two automatic starts within 6 h | — | One GitHub request; Skip on 0.3.0 hides automatic dialog, manual check still offers 0.3.0 with Install/Later only | R13,R14 |
+| A21 | Downloading | Cancel | Partial file removed, app usable | R15,R16 |
+| A22 | No network at start | — | No UI, one log line | R16 |
+| A23 | Any check | — | Request has no Authorization header | R18 |
+| A24 | v0.1.0 installed | install v0.2.0 (code 200) | Installer refuses; documented one-time reinstall | R11 |
 | A13 | Release has only arm64 APK, app is armeabi-v7a | check | No update offered; manual check says no compatible APK | R12,R16 |
 
 ## 5. Agreement
 
 Confirmed by the user 2026-10-23: all three parts in S5; APK download and
 install; profile medium; manual check as one item in settings; links, log tag
-and tag-based version as proposed. Delegated to planning: exact file locations,
+and tag-based version as proposed. After spec review (same day): versionCode from tag, reinstall once accepted;
+`livetv` link moved to S3; no link timeout; debug keeps console logs. Delegated
+to planning: exact file locations,
 startup-trigger hook point, tab-switching mechanism, batching details.
