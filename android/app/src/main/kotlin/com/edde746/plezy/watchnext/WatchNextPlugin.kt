@@ -37,7 +37,7 @@ class WatchNextPlugin() :
       if (data.scheme != "plezytv") return null
       return when (data.authority) {
         "play" -> data.getQueryParameter("content_id")
-        "live" -> data.toString()
+        "live", "screen" -> data.toString()
         else -> null
       }
     }

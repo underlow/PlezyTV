@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
 import '../i18n/strings.g.dart';
+import '../plezytv/screen_links/screen_link_router.dart';
 import '../media/ids.dart';
 import '../media/media_item.dart';
 import '../media/media_item_types.dart';
@@ -101,6 +102,7 @@ class SystemShelfService {
     }
     final args = call.arguments;
     final contentId = args is Map ? args['contentId'] as String? : null;
+    if (contentId != null && ScreenLinkRouter.instance.claim(contentId)) return true;
     final callback = onShelfItemTap;
     if (contentId == null || callback == null) return false;
     callback(contentId);
@@ -195,12 +197,14 @@ class SystemShelfService {
   Future<String?> getInitialDeepLink() async {
     final channel = _channel;
     if (channel == null) return null;
-    return _invokeGuarded<String>(
+    final link = await _invokeGuarded<String>(
       channel,
       'getInitialDeepLink',
       label: 'System shelf initial deep link failed',
       failureLabel: 'Failed to get system shelf initial deep link',
     );
+    if (link != null && ScreenLinkRouter.instance.claim(link)) return null;
+    return link;
   }
 
   /// Check whether the current platform has a launcher shelf integration.
