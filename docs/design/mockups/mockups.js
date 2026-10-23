@@ -2,6 +2,18 @@
 // Все размеры — из ../tokens.json. Тексты — пример для русской локали.
 
 const ICONS = {
+  pause:'<path d="M7 5h4v14H7zm6 0h4v14h-4z"/>',
+  down:'<path d="M6 9l6 6 6-6-1.4-1.4L12 12.2 7.4 7.6z"/>',
+  up:'<path d="M6 15l6-6 6 6-1.4 1.4L12 11.8l-4.6 4.6z"/>',
+  star:'<path d="M12 3l2.7 5.9 6.3.6-4.8 4.3 1.4 6.2L12 16.8 6.4 20l1.4-6.2L3 9.5l6.3-.6z"/>',
+  skip:'<path d="M5 5v14l9-7zm10 0h3v14h-3z"/>',
+  timer:'<path d="M9 2h6v2H9zm3 3a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm-1 2h2v4.4l2.6 1.5-1 1.7L11 14z"/>',
+  speed:'<path d="M12 4a9 9 0 0 1 8 13.2l-1.8-1A7 7 0 1 0 5.8 16.2l-1.8 1A9 9 0 0 1 12 4zm4.2 4.4-3 6a2 2 0 1 1-1.4-1.4z"/>',
+  aspect:'<path d="M3 6h18v12H3zm2 2v8h14V8zm1 1h4v2H8v2H6zm12 6h-4v-2h2v-2h2z"/>',
+  hd:'<path d="M3 5h18v14H3zm3 4v6h2v-2h2v2h2V9h-2v2H8V9zm8 0v6h3a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2zm2 2h1v2h-1z"/>',
+  autoplay:'<path d="M4 6h10v2H4zm0 4h10v2H4zm0 4h6v2H4zm12-2 6 4-6 4z"/>',
+  sync:'<path d="M12 4V1L8 5l4 4V6a6 6 0 0 1 5.3 8.8l1.5 1.5A8 8 0 0 0 12 4zm0 14a6 6 0 0 1-5.3-8.8L5.2 7.7A8 8 0 0 0 12 20v3l4-4-4-4z"/>',
+  dl:'<path d="M11 4h2v9l3.5-3.5 1.4 1.4L12 16.8 6.1 10.9l1.4-1.4L11 13zM5 18h14v2H5z"/>',
   play:'<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>',
   plus:'<path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/>',
   check:'<path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L20.1 8.4 18.7 7z"/>',
@@ -385,6 +397,150 @@ SCREENS['09-state-error-server'] = () => screenBg(220,false)
       btn('Повторить',{icon:'refresh',s:'f'}) + btn('Выбрать другой сервер',{kind:'secondary',icon:'server'}), 200, 1624, 290)
   + sidebar('Главная');
 
+
+// ================= плеер =================
+const EP = {show:'Тьма', s:2, e:1, t:'Начала и концы', dur:'53 мин'};
+function videoFrame(hue=200, dim=0){
+  return `<div class="video" style="background:
+    radial-gradient(ellipse 700px 420px at 68% 38%,${hsl(hue+20,45,58,.75)},transparent 70%),
+    radial-gradient(ellipse 500px 500px at 20% 70%,${hsl(hue-10,35,30,.9)},transparent 70%),
+    linear-gradient(180deg,${hsl(hue,30,38)} 0%,${hsl(hue+8,28,24)} 55%,${hsl(hue+15,30,12)} 100%)"></div>
+    <div class="video" style="background:${hsl(hue+5,25,8,.92)};clip-path:polygon(0 70%,12% 58%,22% 66%,38% 48%,52% 62%,63% 55%,78% 68%,90% 52%,100% 60%,100% 100%,0 100%)"></div>
+    <div class="video" style="background:${hsl(hue,20,14,.95)};clip-path:polygon(8% 100%,10% 40%,13% 38%,15% 100%)"></div>
+    ${dim?`<div class="video" style="background:#000000${dim}"></div>`:''}`;
+}
+const BAR = {x:300, w:1380, y:963};
+const pct = (mm, ss, tot=53*60) => (mm*60+ss)/tot;
+function bar(o={}){
+  const at = o.at ?? pct(23,14), buf = o.buf ?? Math.min(1, at+0.12);
+  const ghost = o.target!=null ? `<div class="ghost" style="left:${at*100}%;width:${(o.target-at)*100}%"></div>` : '';
+  const th = o.f ? `<div class="thumb" style="left:${(o.target??at)*100}%"></div>` : '';
+  const ticks = (o.marks||[]).map(m=>`<div class="tick" style="left:${m*100}%"></div>`).join('');
+  return `<div class="bar ${o.f?'f':''}" style="left:${BAR.x}px;width:${BAR.w}px;top:${o.y??BAR.y}px"><div class="buf" style="width:${buf*100}%"></div><div class="played" style="width:${at*100}%"></div>${ghost}${ticks}${th}</div>`;
+}
+function topInfo(){
+  return `<div class="shade-top"></div>
+    <div class="p-title"><div class="title">${EP.t}</div><div class="body c2" style="margin-top:4px">${metaLine([`S${EP.s} E${EP.e}`, EP.show, EP.dur])}</div></div>
+    <div class="p-clock">01:54</div>`;
+}
+// Нижняя панель. f: 'bar' | 'play' | 'sub' | 'audio' | 'settings'; dy — сдвиг вверх (очередь)
+function controls(o={}){
+  const dy = o.dy||0, f=o.f;
+  const y = v => v-dy;
+  const ib = (icon, cap, key, x) => `<div class="abs" style="left:${x}px;top:${y(840)}px">${ibtn(icon,cap,f===key?'f':'')}</div>`;
+  return `<div class="shade-bottom" style="height:${o.shadeH||420}px"></div>
+    <div class="abs body" style="left:96px;top:${y(858)}px;color:#FFFFFFD9">Закончится в 02:24</div>
+    ${ib('sub','Субтитры','sub',1600)}${ib('speaker','Звук','audio',1680)}${ib('gear','Настройки','settings',1760)}
+    <div class="abs" style="left:96px;top:${y(932)}px"><div class="ibtn ${f==='play'?'f':''}" style="${f==='play'?'':'background:transparent'}">${ico(o.playing?'pause':'play')}</div></div>
+    <div class="time" style="left:184px;top:${y(950)}px">${o.elapsed||'23:14'}</div>
+    ${bar({f:f==='bar', target:o.target, y:y(BAR.y), marks:o.marks})}
+    <div class="time" style="right:96px;top:${y(950)}px;color:#FFFFFFD9">${o.remaining||'−29:46'}</div>
+    ${o.noHint?'':`<div class="hint" style="left:0;right:0;justify-content:center;top:${y(1000)}px">${ico('down')}Далее в очереди</div>`}`;
+}
+SCREENS['10-player-hidden'] = () => videoFrame(200)
+  + `<div class="subs" style="bottom:120px">— Ты тоже это слышал?<br>Опять пропал ребёнок.</div>`;
+SCREENS['10-player-hidden-paused'] = () => videoFrame(200)
+  + `<div class="mini-pause">${ico('pause')}<span>Пауза</span><span style="color:#FFFFFFB3;font-variant-numeric:tabular-nums">23:14 / 53:00</span></div>`;
+SCREENS['10-player-paused'] = () => videoFrame(200) + topInfo() + controls({f:'bar'});
+SCREENS['10-player-seek'] = () => {
+  const at = pct(23,14), tg = pct(34,40), x = BAR.x + BAR.w*tg;
+  return videoFrame(200) + topInfo() + controls({f:'bar', target:tg})
+    + `<div class="seek-prev" style="left:${x-160}px;top:560px"><div class="img">${stillArt(150,320,180,3)}</div>
+       <div class="seek-bubble">34:40</div><div class="seek-delta">+11:26</div></div>`;
+};
+SCREENS['10-player-queue'] = () => {
+  const eps = [
+    {t:'S2 E1 · Начала и концы',sub:'Сейчас · осталось 29 мин',p:44,hue:200,i:0},
+    {t:'S2 E2 · Тёмная материя',sub:'54 мин',hue:180,i:1},
+    {t:'S2 E3 · Призраки',sub:'50 мин',hue:150,i:2},
+    {t:'S2 E4 · Путешественники',sub:'52 мин',hue:210,i:3},
+    {t:'S2 E5 · Потерянные и найденные',sub:'55 мин',hue:30,i:4},
+  ].map((e,i)=>episode(e,{s:i===1?'f':''})).join('');
+  return videoFrame(200) + topInfo() + controls({dy:400, shadeH:820, noHint:true})
+    + `<div class="hint" style="left:0;right:0;justify-content:center;top:600px">${ico('up')}Панель</div>`
+    + mrow('Далее в очереди', 'Сезон 2 · ещё 7 эпизодов', eps, 640, {left:96, pad:true});
+};
+function rpanel(title, items, back=true){
+  return `<div class="rpanel"><div class="rp-head">${back?'<span class="back">‹</span>':''}<span class="title">${title}</span></div>${items}</div>`;
+}
+const rpItem = (o) => `<div class="rp-item ${o.f?'f':''} ${o.sel?'sel':''}">${o.icon?ico(o.icon):''}${o.check!==undefined?`<span class="chk">${o.check?ico('check'):''}</span>`:''}
+  <div class="lbl"><div class="a">${o.a}</div>${o.b?`<div class="b">${o.b}</div>`:''}</div>${o.v?`<div class="v">${o.v}</div>`:''}${o.stepper||''}${o.chev?'<div class="chev">›</div>':''}</div>`;
+const rpBase = () => videoFrame(200) + `<div class="shade-top"></div><div class="p-title"><div class="title">${EP.t}</div><div class="body c2" style="margin-top:4px">${metaLine([`S${EP.s} E${EP.e}`, EP.show, EP.dur])}</div></div>`;
+SCREENS['10-player-settings'] = () => rpBase() + rpanel('Настройки', [
+  rpItem({icon:'hd',a:'Качество',b:'Без перекодирования',v:'Оригинал · 4K',chev:1,f:1}),
+  rpItem({icon:'sub',a:'Субтитры',v:'Русский',chev:1}),
+  rpItem({icon:'speaker',a:'Звук',b:'Dolby Digital 5.1',v:'Русский',chev:1}),
+  rpItem({icon:'speed',a:'Скорость',v:'1×',chev:1}),
+  rpItem({icon:'aspect',a:'Формат кадра',v:'Исходный',chev:1}),
+  rpItem({icon:'timer',a:'Таймер сна',v:'Выкл.',chev:1}),
+  rpItem({icon:'autoplay',a:'Следующая серия',b:'Автоматически, с отсчётом',v:'Вкл.',chev:1}),
+  rpItem({icon:'more',a:'Ещё',b:'Аудиовыход, сведения о файле',chev:1}),
+].join(''), false);
+SCREENS['10-player-subtitles'] = () => rpBase() + rpanel('Субтитры', [
+  rpItem({check:false,a:'Выкл.'}),
+  rpItem({check:true,sel:1,f:1,a:'Русский',b:'Встроенные'}),
+  rpItem({check:false,a:'Русский — только надписи',b:'Встроенные'}),
+  rpItem({check:false,a:'English',b:'Встроенные'}),
+  rpItem({check:false,a:'English — SDH',b:'Для слабослышащих'}),
+  rpItem({check:false,a:'Deutsch',b:'Внешние · OpenSubtitles'}),
+  '<div class="rp-sep"></div>',
+  rpItem({icon:'search',a:'Найти субтитры',b:'На OpenSubtitles',chev:1}),
+  rpItem({icon:'sync',a:'Синхронизация',v:'0,0 с',chev:1}),
+].join(''));
+SCREENS['10-player-audio'] = () => rpBase() + rpanel('Звук', [
+  rpItem({check:true,sel:1,a:'Русский — Dolby Digital 5.1',b:'Многоголосый закадровый'}),
+  rpItem({check:false,a:'Русский — AAC 2.0',b:'Стерео'}),
+  rpItem({check:false,a:'Deutsch — Dolby Digital 5.1',b:'Оригинал'}),
+  rpItem({check:false,a:'English — Dolby Digital 5.1'}),
+  rpItem({check:false,a:'English — AAC 2.0',b:'Комментарии создателей'}),
+  '<div class="rp-sep"></div>',
+  rpItem({icon:'sync',a:'Синхронизация',b:'←/→ — шаг 50 мс',f:1,stepper:`<div class="stepper"><span class="ar">‹</span>−150 мс<span class="ar">›</span></div>`}),
+  rpItem({icon:'speaker',a:'Аудиовыход',v:'Авто (HDMI)',chev:1}),
+].join(''));
+SCREENS['10-player-skip-intro'] = () => videoFrame(260)
+  + `<div class="abs" style="right:96px;bottom:54px">${btn('Пропустить заставку',{kind:'secondary',icon:'skip',s:'f'})}</div>`;
+SCREENS['10-player-next-countdown'] = () => videoFrame(240) 
+  + `<div class="upnext"><div class="img">${stillArt(180,288,162,1)}<div class="countdown"><i style="width:60%"></i></div></div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <div class="caption c3" style="text-transform:uppercase;letter-spacing:.08em;font-weight:700">Следующая серия через 12 с</div>
+        <div class="title" style="margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">S2 E2 · Тёмная материя</div>
+        <div class="caption c2" style="margin-top:2px">Тьма · 54 мин</div>
+        <div style="display:flex;gap:16px;margin-top:auto">${btn('Смотреть',{icon:'play',s:'f',small:true})}${btn('Отмена',{kind:'secondary',small:true})}</div>
+      </div></div>`;
+SCREENS['10-player-buffering'] = () => videoFrame(200,'66')
+  + `<div class="state-box" style="left:0;right:0;top:470px"><div class="dots"><i style="opacity:1"></i><i style="opacity:.6"></i><i style="opacity:.3"></i></div>
+     <div class="title" style="margin-top:28px">Загрузка… 42%</div><div class="body c2" style="margin-top:6px">Медленное соединение с сервером</div></div>`;
+SCREENS['10-player-error'] = () => videoFrame(200,'D9') + topInfo()
+  + stateBox('cloudOff','Не удалось воспроизвести','Сервер «Домашний» не отвечает. После повтора просмотр продолжится с 23:14.',
+      btn('Повторить',{icon:'refresh',s:'f'}) + btn('Качество ниже',{kind:'secondary',icon:'hd'}) + btn('Выйти',{kind:'secondary'}), 0, 1920, 290);
+
+// ---------- после просмотра ----------
+SCREENS['11-postplay-show'] = () => screenBg(180,false)
+  + `<div class="abs caption c3" style="left:96px;top:54px;text-transform:uppercase;letter-spacing:.08em;font-weight:700">Вы посмотрели S2 E1 · Начала и концы</div>
+     <div class="abs" style="left:96px;top:110px;width:720px;height:405px;border-radius:10px;overflow:hidden">${stillArt(180,720,405,1)}</div>
+     <div class="abs" style="left:864px;top:110px;width:960px">
+       <div class="caption" style="color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Далее</div>
+       <div class="headline" style="margin-top:8px">S2 E2 · Тёмная материя</div>
+       <div class="body c2" style="margin-top:10px">${metaLine(['Тьма','54 мин','21 июня 2019'])}</div>
+       <div class="bodyL clamp3" style="margin-top:16px">Йонас возвращается из будущего и пытается разорвать петлю. Шарлотта и Ульрих находят новые следы, а Клаудия впервые встречает Странника.</div>
+       <div class="actions" style="margin-top:32px">${btn('Смотреть S2 E2',{icon:'play',s:'f'})}${btn('К сериалу',{kind:'secondary'})}</div>
+     </div>`
+  + mrow('Сезон 2', 'ещё 6 эпизодов', [
+      {t:'S2 E3 · Призраки',sub:'50 мин',hue:150,i:2},{t:'S2 E4 · Путешественники',sub:'52 мин',hue:210,i:3},
+      {t:'S2 E5 · Потерянные и найденные',sub:'55 мин',hue:30,i:4},{t:'S2 E6 · Бесконечное время',sub:'51 мин',hue:120,i:0},{t:'S2 E7 · Начало конца',sub:'53 мин',hue:260,i:1}
+    ].map(e=>episode(e)).join(''), 620, {left:96, pad:true});
+SCREENS['11-postplay-movie'] = () => screenBg(32,false)
+  + `<div class="abs" style="left:96px;top:54px;width:216px;height:324px;border-radius:10px;overflow:hidden">${posterArt(M.dune,216,324)}<div class="badge b-watched">${ico('check')}</div></div>
+     <div class="abs" style="left:360px;top:54px;width:1400px">
+       <div class="caption c3" style="text-transform:uppercase;letter-spacing:.08em;font-weight:700">Вы посмотрели</div>
+       <div class="headline" style="margin-top:8px">Дюна: Часть вторая</div>
+       <div class="body" style="margin-top:12px;display:flex;gap:10px;align-items:center"><span style="width:28px;height:28px;color:var(--watched);display:inline-flex">${ico('check')}</span><span class="c2">Отмечено как просмотренное · 2 ч 46 мин</span></div>
+       <div style="margin-top:20px">${ratings({imdb:'8.5',tmdb:'8.1',rt:'92%',aud:'95%'})}</div>
+       <div class="body" style="margin-top:28px">Ваша оценка</div>
+       <div style="display:flex;gap:12px;margin-top:12px">${[1,2,3,4,5].map(i=>`<div class="star ${i<=3?'on':''} ${i===4?'f':''}">${ico('star')}</div>`).join('')}</div>
+       <div class="actions" style="margin-top:36px">${btn('Вернуться к фильму',{kind:'secondary'})}${btn('Смотреть заново',{kind:'secondary',icon:'play'})}</div>
+     </div>`
+  + mrow('Похожие', null, ['duna1','blade','arrival','inter','incep','prisoners','sicario','solaris'].map((k,i)=>poster(M[k],{i})).join(''), 500, {left:96, pad:true});
 
 // ---------- лист компонентов (высокий, не 1080) ----------
 function stateRow(title, note, cells){
