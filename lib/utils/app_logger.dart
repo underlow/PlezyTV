@@ -2,6 +2,8 @@ import 'dart:collection';
 
 import 'package:logger/logger.dart';
 
+import '../plezytv/logging/android_log_output.dart';
+
 import 'log_redaction_manager.dart';
 
 /// Represents a single log entry stored in memory
@@ -32,8 +34,7 @@ class LogEntry {
 
 /// In-memory log store with a circular buffer.
 ///
-/// Fed by [MemoryAwareLogPrinter.log()]; console output goes through the
-/// logger's default [ConsoleOutput].
+/// Fed by [MemoryAwareLogPrinter.log()], independently of the platform output.
 class MemoryLogOutput {
   static const int maxLogSizeBytes = 5 * 1024 * 1024;
   static final ListQueue<LogEntry> _logs = ListQueue<LogEntry>();
@@ -117,7 +118,11 @@ bool get debugLoggingEnabled => _productionFilter.isEnabledFor(Level.debug);
 /// ```
 ///
 /// Non-final so tests can swap in a recording logger.
-Logger appLogger = Logger(printer: MemoryAwareLogPrinter(SimplePrinter()), filter: _productionFilter);
+Logger appLogger = Logger(
+  printer: MemoryAwareLogPrinter(SimplePrinter()),
+  filter: _productionFilter,
+  output: plezyTvLogOutput(),
+);
 
 /// Update the logger's level dynamically based on the debug setting.
 ///
