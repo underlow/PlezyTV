@@ -3,5 +3,11 @@
   "stage": "S6",
   "phase": "implementation",
   "base_commit": "7edb0c304921ee9f02619be276a47f843274e4ab",
-  "profile": "medium"
+  "profile": "medium",
+  "development_agent": {
+    "platform": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "low"
+  },
+  "task": "T1"
 }
