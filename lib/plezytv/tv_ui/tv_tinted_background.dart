@@ -56,6 +56,7 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
   List<(_BackgroundLook, double)> _previous = [(const _BackgroundLook(), 1)];
   _BackgroundLook _target = const _BackgroundLook();
   final _images = <ui.Image>[];
+  ui.Image? _pendingBackdrop;
   Timer? _debounce;
   int _generation = 0;
 
@@ -75,6 +76,7 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     }
     _debounce?.cancel();
     _generation++;
+    _releasePendingBackdrop();
     _debounce = widget.timer(Duration(milliseconds: TvTokens.motion.heroDebounce), () => _request());
   }
 
@@ -82,7 +84,6 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     final generation = ++_generation;
     final source = widget.source;
     final service = widget.service ?? TvTintService.shared;
-    ui.Image? readyBackdrop;
     Color? readyTint;
     var tintApplied = false;
     // Do not let a slow backdrop delay the tint transition. A decoded backdrop
@@ -94,8 +95,11 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
             image?.dispose();
             return;
           }
-          readyBackdrop = image;
-          if (tintApplied && image != null) _images.add(image);
+          if (tintApplied) {
+            if (image != null) _images.add(image);
+          } else {
+            _pendingBackdrop = image;
+          }
           if (tintApplied) {
             setState(() {
               _target = _BackgroundLook(tint: readyTint, backdrop: image);
@@ -107,10 +111,11 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     }
     final tint = await service.tintFor(source);
     if (!mounted || generation != _generation) {
-      readyBackdrop?.dispose();
       return;
     }
-    if (readyBackdrop != null) _images.add(readyBackdrop!);
+    final readyBackdrop = _pendingBackdrop;
+    _pendingBackdrop = null;
+    if (readyBackdrop != null) _images.add(readyBackdrop);
     readyTint = tint;
     tintApplied = true;
     final next = _BackgroundLook(tint: tint, backdrop: readyBackdrop);
@@ -146,6 +151,11 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     }
   }
 
+  void _releasePendingBackdrop() {
+    _pendingBackdrop?.dispose();
+    _pendingBackdrop = null;
+  }
+
   void _releaseOldImages() {
     final retained = {_target.backdrop, ..._previous.map((look) => look.$1.backdrop)};
     for (final image in _images.where((image) => !retained.contains(image))) {
@@ -168,6 +178,7 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
   @override
   void dispose() {
     _generation++;
+    _releasePendingBackdrop();
     _debounce?.cancel();
     _fade.dispose();
     for (final image in _images) {

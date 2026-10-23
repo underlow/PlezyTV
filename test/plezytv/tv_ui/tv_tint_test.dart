@@ -151,6 +151,48 @@ void main() {
     }
   });
 
+  for (final removeWidget in [false, true]) {
+    testWidgets('pending backdrop released immediately on ${removeWidget ? 'dispose' : 'source change'}', (
+      tester,
+    ) async {
+      final decoded = await tester.runAsync(() => image(Colors.red));
+      var disposals = 0;
+      final oldOnDispose = ui.Image.onDispose;
+      ui.Image.onDispose = (value) {
+        if (identical(value, decoded)) disposals++;
+        oldOnDispose?.call(value);
+      };
+      addTearDown(() => ui.Image.onDispose = oldOnDispose);
+      final service = StubTintService(fetch: (_, _, _) async => Uint8List(1), decode: (_, _) async => decoded!);
+      final current = ValueNotifier(source('A'));
+      addTearDown(current.dispose);
+      await pumpTvWidget(
+        tester,
+        ValueListenableBuilder<TvArtworkSource>(
+          valueListenable: current,
+          builder: (_, value, _) => TvTintedBackground(source: value, service: service),
+        ),
+      );
+      await tester.pump();
+      expect(decoded!.debugDisposed, isFalse);
+      expect(service.answers['A']!.isCompleted, isFalse);
+      if (removeWidget) {
+        await tester.pumpWidget(const SizedBox());
+      } else {
+        current.value = source('B');
+        await tester.pump();
+      }
+      expect(decoded.debugDisposed, isTrue);
+      expect(disposals, 1);
+      service.answers['A']!.complete(Colors.red);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(disposals, 1);
+      expect(find.byType(RawImage), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('30 interrupted fades keep layers and live images bounded', (tester) async {
     final decoded = <ui.Image>[];
     final template = await tester.runAsync(() => image(Colors.red, width: 1280, height: 1));

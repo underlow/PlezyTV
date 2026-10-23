@@ -82,7 +82,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
 
   int _seekGeneration = 0;
 
-  void _seek(int target, int step, int generation) {
+  void _seek(int target, int step, int generation, double originalOffset) {
     if (!mounted || generation != _seekGeneration) return;
     while (target >= 0 && target < widget.itemCount) {
       final candidate = _memory.nodeFor('$target');
@@ -91,7 +91,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
         // entire disabled run. Retry after layout attaches its focus nodes.
         _scroll.jumpTo((target * _extent).clamp(0.0, _scroll.position.maxScrollExtent));
         final next = target;
-        WidgetsBinding.instance.addPostFrameCallback((_) => _seek(next, step, generation));
+        WidgetsBinding.instance.addPostFrameCallback((_) => _seek(next, step, generation, originalOffset));
         return;
       }
       if (candidate.canRequestFocus) {
@@ -100,8 +100,9 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
       }
       target += step;
     }
-    // No enabled item in this direction: restore the original slot and focus.
-    _scrollTo(_index);
+    // Reveal jumps are speculative: restore the exact viewport, bypassing the
+    // initial-slot optimization and without changing the row scroll policy.
+    _scroll.jumpTo(originalOffset);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && generation == _seekGeneration) _memory.nodeFor('$_index')?.requestFocus();
     });
@@ -113,7 +114,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
     }
     if (event is KeyDownEvent || event is KeyRepeatEvent) {
       final step = event.logicalKey == LogicalKeyboardKey.arrowRight ? 1 : -1;
-      _seek(_index + step, step, ++_seekGeneration);
+      _seek(_index + step, step, ++_seekGeneration, _scroll.offset);
     }
     return KeyEventResult.handled;
   }
