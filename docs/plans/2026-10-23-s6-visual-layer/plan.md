@@ -146,3 +146,33 @@ base commit are identified by running them on the base, not assumed.
 
 Each A-case is owned by the task listed above. Whole-change review follows T8.
 No device run is planned in S6 (spec §7).
+
+## Outcome
+
+Delivered 2026-10-23 (branch `flow/s6-visual-layer`, not pushed or merged):
+- T1 `448063857` Manrope (variable font, OFL), `TvTokens` (parity test against
+  `tokens.json`; `tintStrength` corrected to 0.44), `TvTheme` with
+  min(w/1920, h/1080) scale and no system text scaling, `TvStrings`, test helper.
+- T2 `f06f066a1` `TvFocusable` over upstream `FocusableWrapper`.
+- T3 `51a3a5a71` tint service and tinted/plain backgrounds.
+- T4 `c23e9b87a` poster, episode, badges, progress, skeletons; autoScroll off.
+- T5 `219bc9b2e` horizontal row. T6 `bc2e66c5a` buttons, chips, tabs, ratings.
+- T7 `367d682d8` side menu, settings item. T8 `8786609c1` `docs/plezytv/tv-ui.md`.
+- Review fixes: `ceeabc81b` (bounded background layers, row traversal across
+  lazy disabled runs, disabled genre chip), `1b32ed7f1` (row restore, pending
+  backdrop ownership), `e41a4dcee` (seek origin across key repeats).
+
+Verification: full `flutter test` 8248 passed / 7 skipped after T8;
+`test/plezytv` 110 passed and `flutter analyze` clean after the last fix (rerun
+by the coordinator). Upstream touched only in `pubspec.yaml`. Two independent
+reviews (behavior/tests, low-end performance) plus two targeted re-reviews; the
+last fix (`e41a4dcee`) was not independently re-reviewed (user decision: the
+disabled-card path it covers has no known Plezy use case).
+
+Limits: widget tests only, no goldens, no device run; real look and Mi Box 4
+performance are first checked by screen stages. Upstream auto-scroll is not used
+(own scrolling; instant-when-reduced is a hypothesis for S2). The disabled state
+of posters/rows is implemented from the design without a known Plezy case.
+For later stages: build screens inside `TvTheme` from `lib/plezytv/tv_ui/`
+components per `docs/plezytv/tv-ui.md`; press scale 0.97 on list items is open
+for S12.
