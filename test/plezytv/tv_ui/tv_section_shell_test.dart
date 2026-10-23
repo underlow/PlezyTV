@@ -22,6 +22,8 @@ import 'package:plezy/navigation/main_screen_scope.dart';
 import 'package:plezy/navigation/navigation_tabs.dart';
 import 'package:plezy/navigation/profile_navigation_scope.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_side_menu.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
+import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_section_shell.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_section.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_session_controller.dart';
@@ -96,9 +98,28 @@ class _Session extends ChangeNotifier implements TvShellSessionController {
   _Session(this.emitIntent);
   final void Function(TvShellContentIntent) emitIntent;
   @override
-  bool get isOffline => false;
+  bool isOffline = false;
+  void offline(bool value) {
+    isOffline = value;
+    notifyListeners();
+  }
+
+  Completer<bool?>? attempt;
+  int retries = 0;
   @override
-  bool get isReconnecting => false;
+  Future<bool?> retry() async {
+    retries++;
+    isReconnecting = true;
+    notifyListeners();
+    final result = await attempt!.future;
+    if (result == true) offline(false);
+    isReconnecting = false;
+    notifyListeners();
+    return result;
+  }
+
+  @override
+  bool isReconnecting = false;
   @override
   Future<void> start() async {}
   @override
@@ -184,6 +205,7 @@ void main() {
   late _Sources sources;
   late _Music music;
   late _Session session;
+  bool offlineStart = false;
   late GlobalKey<TvSectionShellState> shell;
   late GlobalKey<NavigatorState> navigator;
   late RouteObserver<PageRoute<dynamic>> observer;
@@ -223,6 +245,7 @@ void main() {
   }
 
   setUp(() {
+    offlineStart = false;
     resetSharedPreferencesForTest();
     libraries = _Libraries()..libraries = [movies, series];
     hidden = _Hidden();
@@ -233,7 +256,8 @@ void main() {
     navigator = GlobalKey<NavigatorState>();
     observer = RouteObserver<PageRoute<dynamic>>();
     probes.clear();
-    TvSectionShell.sessionControllerFactoryForTesting = (_, emit) => session = _Session(emit);
+    TvSectionShell.sessionControllerFactoryForTesting = (_, emit) =>
+        session = (_Session(emit)..isOffline = offlineStart);
     TvSectionShell.sectionBuilderForTesting = (_, tab, key) {
       probes[tab] = key;
       return _Probe(key: key, tab: tab);
@@ -249,6 +273,171 @@ void main() {
     servers.dispose();
     sources.dispose();
     music.dispose();
+  });
+
+  TvButton retryButton(WidgetTester tester) => tester.widget<TvButton>(
+    find.widgetWithText(TvButton, session.isReconnecting ? TvStrings.connecting : TvStrings.retry),
+  );
+
+  testWidgets('O1/O2 offline launch focuses Retry, settings opens section, downloads follows N1', (tester) async {
+    offlineStart = true;
+    await pump(tester);
+    expect(shell.currentState!.currentSection, const TvShellSection.noConnection());
+    expect(probes, isEmpty);
+    expect(find.text(TvStrings.noConnection), findsOneWidget);
+    expect(retryButton(tester).focusNode!.hasFocus, isTrue);
+    expect(menu(tester).items.map((item) => item.label), [t.common.settings]);
+    expect(menu(tester).currentIndex, isNull);
+    await key(tester, LogicalKeyboardKey.arrowLeft);
+    expect(find.text(t.common.settings), findsOneWidget);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(retryButton(tester).focusNode!.hasFocus, isTrue);
+    await SettingsService.instance.write(TvSettings.showDownloads, true);
+    await tester.pumpAndSettle();
+    expect(menu(tester).items.map((item) => item.label), [t.navigation.downloads, t.common.settings]);
+    tester.widget<TvButton>(find.widgetWithText(TvButton, TvStrings.connectionSettings)).onSelect!();
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.settings));
+    expect(probe(NavigationTabId.settings).first.hasFocus, isTrue);
+    shell.currentState!.focusMenu();
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.escape);
+    expect(shell.currentState!.currentSection, const TvShellSection.noConnection());
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(retryButton(tester).focusNode!.hasFocus, isTrue);
+    await key(tester, LogicalKeyboardKey.escape);
+    await key(tester, LogicalKeyboardKey.escape);
+    expect(find.text(t.common.pressBackAgainToExit), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('O1/O3 Retry shows disabled Connecting then configured startup and full menu', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.startupSection, NavigationTabId.downloads);
+    offlineStart = true;
+    await pump(tester);
+    session.attempt = Completer<bool?>();
+    retryButton(tester).onSelect!();
+    await tester.pumpAndSettle();
+    expect(retryButton(tester).label, TvStrings.connecting);
+    expect(retryButton(tester).disabled, isTrue);
+    retryButton(tester).onSelect!();
+    expect(session.retries, 1);
+    session.attempt!.complete(true);
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.downloads));
+    expect(probe(NavigationTabId.downloads).first.hasFocus, isTrue);
+    expect(menu(tester).items.map((item) => item.label), contains(t.common.home));
+  });
+
+  testWidgets('O3 offline startup retains deferred Live TV preference until binding exposes it', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.startupSection, NavigationTabId.liveTv);
+    offlineStart = true;
+    await pump(tester);
+    session.offline(false);
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, home);
+    servers.hasLiveTv = true;
+    servers.emit();
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.liveTv));
+  });
+
+  testWidgets('O1 failed retry reports failure and permits another attempt', (tester) async {
+    offlineStart = true;
+    await pump(tester);
+    session.attempt = Completer<bool?>();
+    retryButton(tester).onSelect!();
+    session.attempt!.complete(false);
+    await tester.pumpAndSettle();
+    expect(find.text(TvStrings.connectionFailed), findsOneWidget);
+    expect(shell.currentState!.currentSection, const TvShellSection.noConnection());
+    expect(retryButton(tester).disabled, isFalse);
+  });
+
+  testWidgets('O4 soft loss retains Series and focus; offline Back root; O3 auto return restores Series', (
+    tester,
+  ) async {
+    await pump(tester);
+    shell.currentState!.selectLibrary(series.globalKey);
+    await tester.pumpAndSettle();
+    final state = probe(NavigationTabId.libraries);
+    state.second.requestFocus();
+    await tester.pump();
+    session.offline(true);
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, TvShellSection.library(series.globalKey));
+    expect(state.second.hasFocus, isTrue);
+    expect(state.hidden, 0);
+    expect(menu(tester).items.map((item) => item.label), [t.common.settings]);
+    expect(menu(tester).currentIndex, isNull);
+    await key(tester, LogicalKeyboardKey.escape);
+    await key(tester, LogicalKeyboardKey.escape);
+    expect(shell.currentState!.currentSection, const TvShellSection.noConnection());
+    session.offline(false);
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, TvShellSection.library(series.globalKey));
+    expect(state.loads, [series.globalKey, series.globalKey]);
+  });
+
+  testWidgets('O3 deleted offline library falls back to configured startup', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.startupSection, NavigationTabId.search);
+    await pump(tester);
+    shell.currentState!.selectLibrary(series.globalKey);
+    await tester.pumpAndSettle();
+    session.offline(true);
+    libraries.libraries = [movies];
+    libraries.emit();
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, TvShellSection.library(series.globalKey));
+    session.offline(false);
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.currentSection, search);
+  });
+
+  testWidgets('O3 Live TV and Explore snapshots require availability on return', (tester) async {
+    await pump(tester);
+    for (final tab in [NavigationTabId.liveTv, NavigationTabId.explore]) {
+      servers.hasLiveTv = true;
+      sources.hasAnySource = true;
+      servers.emit();
+      sources.emit();
+      await tester.pumpAndSettle();
+      shell.currentState!.selectSection(TvShellSection.tab(tab));
+      await tester.pumpAndSettle();
+      session.offline(true);
+      servers.hasLiveTv = false;
+      sources.hasAnySource = false;
+      servers.emit();
+      sources.emit();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, TvShellSection.tab(tab));
+      session.offline(false);
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, home);
+    }
+  });
+
+  testWidgets('O3 retry completion after new selection keeps section and its focus', (tester) async {
+    await pump(tester);
+    shell.currentState!.selectLibrary(series.globalKey);
+    await tester.pumpAndSettle();
+    session.offline(true);
+    shell.currentState!.focusMenu();
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.escape);
+    session.attempt = Completer<bool?>();
+    retryButton(tester).onSelect!();
+    shell.currentState!.selectSection(const TvShellSection.tab(NavigationTabId.settings));
+    await tester.pumpAndSettle();
+    final command = shell.currentState!.selectionCommand;
+    session.attempt!.complete(true);
+    await tester.pumpAndSettle();
+    expect(shell.currentState!.selectionCommand, command);
+    expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.settings));
+    expect(probe(NavigationTabId.settings).first.hasFocus, isTrue);
   });
 
   testWidgets('S1 home starts focused with collapsed menu; F1/F2/F5 restore exact child', (tester) async {

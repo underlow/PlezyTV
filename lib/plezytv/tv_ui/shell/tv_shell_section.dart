@@ -6,16 +6,25 @@ import '../../../navigation/navigation_tabs.dart';
 /// Libraries share one mounted screen, but each library is a distinct section.
 @immutable
 class TvShellSection {
-  const TvShellSection.tab(this.tab) : libraryGlobalKey = null;
-  const TvShellSection.library(String globalKey) : tab = NavigationTabId.libraries, libraryGlobalKey = globalKey;
+  const TvShellSection.tab(this.tab) : libraryGlobalKey = null, isNoConnection = false;
+  const TvShellSection.noConnection() : tab = NavigationTabId.discover, libraryGlobalKey = null, isNoConnection = true;
+  const TvShellSection.library(String globalKey)
+    : tab = NavigationTabId.libraries,
+      libraryGlobalKey = globalKey,
+      isNoConnection = false;
 
+  // The offline root has no upstream tab; discover is only its stack placeholder.
+  final bool isNoConnection;
   final NavigationTabId tab;
   final String? libraryGlobalKey;
 
   @override
   bool operator ==(Object other) =>
-      other is TvShellSection && tab == other.tab && libraryGlobalKey == other.libraryGlobalKey;
+      other is TvShellSection &&
+      isNoConnection == other.isNoConnection &&
+      tab == other.tab &&
+      libraryGlobalKey == other.libraryGlobalKey;
 
   @override
-  int get hashCode => Object.hash(tab, libraryGlobalKey);
+  int get hashCode => Object.hash(isNoConnection, tab, libraryGlobalKey);
 }
