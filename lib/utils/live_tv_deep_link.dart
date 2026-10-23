@@ -7,9 +7,9 @@ import '../screens/video_player/live_tv_session_args.dart';
 import 'app_logger.dart';
 import 'live_tv_player_navigation.dart';
 
-/// A `plezy://live` deep link that tunes a live TV channel.
+/// A `plezytv://live` deep link that tunes a live TV channel.
 ///
-/// Format: `plezy://live?channel=<channel>[&server=<machineIdentifier>][&start=beginning|live]`
+/// Format: `plezytv://live?channel=<channel>[&server=<machineIdentifier>][&start=beginning|live]`
 ///
 /// * `channel` (required) is matched against the channel key, identifier,
 ///   number and call sign, in that order. The first rule that matches exactly
@@ -22,11 +22,11 @@ import 'live_tv_player_navigation.dart';
 ///   prompt is shown as usual.
 ///
 /// Intended for automation (e.g. a home automation system launching
-/// `am start -a android.intent.action.VIEW -d "plezy://live?channel=4.1&start=beginning"`).
+/// `am start -a android.intent.action.VIEW -d "plezytv://live?channel=4.1&start=beginning"`).
 class LiveTvDeepLink {
   const LiveTvDeepLink({required this.channel, this.serverId, this.startPosition = LiveTvStartPosition.ask});
 
-  static const scheme = 'plezy';
+  static const scheme = 'plezytv';
   static const host = 'live';
 
   final String channel;
