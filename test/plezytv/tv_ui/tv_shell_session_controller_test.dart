@@ -382,8 +382,13 @@ void main() {
     expect(retry.focusNode!.hasFocus, isTrue);
     expect(tester.widget<TvSideMenu>(find.byType(TvSideMenu)).items.map((item) => item.label), [t.common.settings]);
     expect(h.home.starts, 0);
-    expect(h.shelf.coldReads, 0);
-    expect(h.watch.navigatorOpener, isNull);
+    expect(h.preferences.loads, 0);
+    expect(h.downloads.resumes, 0);
+    expect(h.hostStarts, 0);
+    expect(h.updates, 0);
+    expect(h.shelf.coldReads, 1);
+    expect(h.shelf.onShelfItemTap, isNotNull);
+    expect(h.watch.navigatorOpener, isNotNull);
 
     h.servers.hasConnectedServers = true;
     h.offline.isOffline = false;
@@ -596,6 +601,7 @@ void main() {
     expect(h.log, isEmpty);
     expect(h.downloads.resumes, 0);
     expect(h.shelf.coldReads, 0);
+    expect(h.shelf.onShelfItemTap, isNull);
     expect(h.watch.navigatorOpener, isNull);
     expect(h.hostStarts, 0);
     expect(h.updates, 0);
