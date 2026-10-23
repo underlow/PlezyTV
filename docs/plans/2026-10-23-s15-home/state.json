@@ -4,5 +4,10 @@
   "phase": "implementation",
   "profile": "medium",
   "base_commit": "c6d3c4095cde57623abb8718a180c1aa3a098c62",
-  "status": "paused"
+  "task": "T1",
+  "development_agent": {
+    "platform": "codex",
+    "model": "sol",
+    "effort": "low"
+  }
 }
