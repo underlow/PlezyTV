@@ -74,3 +74,13 @@ opens Plezy (A2); first screen shows no update dialog (A5; update check is compi
 Notes: Xiaomi is 32-bit (armeabi-v7a), arm64 APK does not run there. In-app branding (login screen
 "Plezy" logo) unchanged; not in S1 scope. Not run: actionlint; A3/A4 need GitHub (keystore secrets,
 optional UPSTREAM_SYNC_TOKEN, upstream workflows disabled per docs/plezytv/release.md).
+
+GitHub acceptance (2026-10-23): A3 — release v0.1.0 published by plezytv-build.yml with
+armeabi-v7a/arm64-v8a APKs signed with the user's key; v7a APK installed on the Xiaomi and opens via
+plezytv://. A4 — plezytv-upstream.yml run 39946954443 merged upstream cleanly, full validation passed,
+opened PR #1 (9 upstream commits, mergeable). Fixes found by real runs: ktlint import order
+(7c7d66d8e); sync validation aligned with upstream CI, GH_REPO for fork, issues-disabled fallback
+(08d614089). Repo setup done: inherited workflows disabled, Actions write + PR creation allowed,
+issues enabled. Upstream CI failures in website/server/iOS are upstream's, unrelated to S1.
+Lesson: replacing a differently-signed build requires uninstall and wipes app data — ask first.
+S1 complete.
