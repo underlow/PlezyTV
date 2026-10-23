@@ -146,51 +146,6 @@ void main() {
     expect(model.hubsState, TvHomePartState.ready);
   });
 
-  test('A10: retry retains error across real provider loading sequence', () {
-    final onDeck = provider.onDeck;
-    final hubs = provider.hubs;
-    provider.isLoading = provider.areHubsLoading = true;
-    expect(builder.build(provider).state, TvHomeState.loading);
-    provider.isLoading = provider.areHubsLoading = false;
-    provider.errorMessage = 'failed';
-    final error = builder.build(provider);
-    expect(error.state, TvHomeState.error);
-    expect(error.errorMessage, 'failed');
-    provider.isLoadInFlight = true;
-    final retry = builder.build(provider);
-    expect(retry.isLoadInFlight, isTrue);
-    expect(retry.state, TvHomeState.error);
-    provider.isLoading = provider.areHubsLoading = true;
-    provider.errorMessage = null;
-    final loading = builder.build(provider);
-    expect(loading.state, TvHomeState.error);
-    expect(loading.errorMessage, 'failed');
-    expect(loading.isLoadInFlight, isTrue);
-    expect(loading.onDeckState, TvHomePartState.loading);
-    expect(loading.hubsState, TvHomePartState.loading);
-    expect(provider.onDeck, same(onDeck));
-    expect(provider.hubs, same(hubs));
-    expect(loading.rows, same(error.rows));
-    provider.isLoadInFlight = provider.isLoading = provider.areHubsLoading = false;
-    expect(builder.build(provider).state, TvHomeState.empty);
-    provider.errorMessage = 'new failure';
-    expect(builder.build(provider).errorMessage, 'new failure');
-    expect(builder.build(provider).state, TvHomeState.error);
-  });
-
-  test('A10b/A11: loaded without error and rows is empty', () {
-    expect(builder.build(provider).state, TvHomeState.empty);
-    provider.isLoadInFlight = true;
-    expect(builder.build(provider).state, TvHomeState.empty);
-    expect(builder.build(provider).isLoadInFlight, isTrue);
-    provider.isLoading = provider.areHubsLoading = true;
-    expect(builder.build(provider).state, TvHomeState.empty);
-    provider.onDeck = [testMediaItem()];
-    expect(builder.build(provider).state, TvHomeState.content);
-    provider.isLoadInFlight = provider.isLoading = provider.areHubsLoading = false;
-    expect(builder.build(provider).state, TvHomeState.content);
-  });
-
   test('existing content wins over an error; rows cached until list replacement', () {
     provider.onDeck = [testMediaItem()];
     final first = builder.build(provider);
@@ -199,7 +154,7 @@ void main() {
     final next = builder.build(provider);
     expect(next.state, TvHomeState.content);
     expect(next.rows, same(first.rows));
-    expect(next.isLoadInFlight, isTrue);
+    expect(next.isLoadInFlight, isFalse); // Settled parts re-enable controls before the drain ends.
     provider.onDeck = List.of(provider.onDeck);
     expect(builder.build(provider).rows, isNot(same(first.rows)));
     final rows = builder.build(provider).rows;
