@@ -35,8 +35,46 @@ import 'package:plezy/screens/libraries/library_quick_picker_sheet.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/widgets/overlay_sheet.dart';
 
+import 'package:plezy/providers/discover_provider.dart';
+import 'package:plezy/plezytv/tv_ui/home/tv_home_screen.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
+import 'package:plezy/media/media_hub.dart';
+import 'package:plezy/media/media_server_client.dart';
+import '../../test_helpers/media_items.dart';
+
 import '../../test_helpers/prefs.dart';
 import '../../test_helpers/stub_music_playback_service.dart';
+
+class _HomeDiscover extends ChangeNotifier implements DiscoverProvider {
+  @override
+  List<MediaItem> onDeck = [testMediaItem(id: 'first', title: 'first'), testMediaItem(id: 'second', title: 'second')];
+  @override
+  List<MediaHub> hubs = [];
+  @override
+  bool isLoading = false, areHubsLoading = false, isLoadInFlight = false, hasMoreContinueWatching = false;
+  @override
+  String? errorMessage;
+  int loads = 0, staleChecks = 0, continues = 0;
+  void emit() => notifyListeners();
+  @override
+  Future<void> load() async {
+    loads++;
+  }
+
+  @override
+  bool refreshIfStale() {
+    staleChecks++;
+    return false;
+  }
+
+  @override
+  Future<void> refreshContinueWatching() async {
+    continues++;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _Libraries extends ChangeNotifier implements LibrariesProvider {
   @override
@@ -65,6 +103,8 @@ class _Hidden extends ChangeNotifier implements HiddenLibrariesProvider {
 }
 
 class _Servers extends ChangeNotifier implements MultiServerProvider {
+  @override
+  MediaServerClient? getClientForServer(ServerId serverId) => null;
   @override
   bool hasLiveTv = false;
   @override
@@ -206,6 +246,8 @@ void main() {
   late _Music music;
   late _Session session;
   bool offlineStart = false;
+  bool realHome = false;
+  late _HomeDiscover homeProvider;
   late GlobalKey<TvSectionShellState> shell;
   late GlobalKey<NavigatorState> navigator;
   late RouteObserver<PageRoute<dynamic>> observer;
@@ -218,6 +260,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
+          ChangeNotifierProvider<DiscoverProvider>.value(value: homeProvider),
           ChangeNotifierProvider<LibrariesProvider>.value(value: libraries),
           ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hidden),
           ChangeNotifierProvider<MultiServerProvider>.value(value: servers),
@@ -246,6 +289,8 @@ void main() {
 
   setUp(() {
     offlineStart = false;
+    realHome = false;
+    homeProvider = _HomeDiscover();
     resetSharedPreferencesForTest();
     libraries = _Libraries()..libraries = [movies, series];
     hidden = _Hidden();
@@ -259,6 +304,7 @@ void main() {
     TvSectionShell.sessionControllerFactoryForTesting = (_, emit) =>
         session = (_Session(emit)..isOffline = offlineStart);
     TvSectionShell.sectionBuilderForTesting = (_, tab, key) {
+      if (realHome && tab == NavigationTabId.discover) return TvHomeScreen(key: key);
       probes[tab] = key;
       return _Probe(key: key, tab: tab);
     };
@@ -268,6 +314,7 @@ void main() {
     TvSectionShell.sessionControllerFactoryForTesting = null;
     BackKeyCoordinator.clear();
     BackKeyUpSuppressor.clearSuppression();
+    homeProvider.dispose();
     libraries.dispose();
     hidden.dispose();
     servers.dispose();
@@ -278,6 +325,66 @@ void main() {
   TvButton retryButton(WidgetTester tester) => tester.widget<TvButton>(
     find.widgetWithText(TvButton, session.isReconnecting ? TvStrings.connecting : TvStrings.retry),
   );
+
+  testWidgets('T4 real Home receives shell lifecycle and Back/left hooks', (tester) async {
+    realHome = true;
+    await pump(tester);
+    expect(find.byType(TvHomeScreen), findsOneWidget);
+    expect(homeProvider.loads, 1);
+    homeProvider.isLoadInFlight = true;
+    session.emitIntent(TvShellContentIntent.initialLoad);
+    expect(homeProvider.loads, 1);
+    homeProvider.isLoadInFlight = false;
+    session.emitIntent(TvShellContentIntent.refreshAfterResume);
+    expect(homeProvider.continues, 1);
+    session.emitIntent(TvShellContentIntent.fullReset);
+    expect(homeProvider.loads, 2);
+    final rail = tester.state<TvHorizontalRowState>(find.byType(TvHorizontalRow));
+    expect(rail.focusInside.value, isTrue);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(rail.focusedIndex, 1);
+    await key(tester, LogicalKeyboardKey.escape);
+    expect(rail.focusedIndex, 0);
+    expect(rail.focusInside.value, isTrue);
+    await key(tester, LogicalKeyboardKey.escape);
+    expect(menu(tester).focusNode!.hasFocus, isTrue);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(rail.focusInside.value, isTrue);
+    await key(tester, LogicalKeyboardKey.arrowLeft);
+    expect(menu(tester).focusNode!.hasFocus, isTrue);
+    final beforeShown = homeProvider.staleChecks;
+    shell.currentState!.selectSection(const TvShellSection.tab(NavigationTabId.settings));
+    await tester.pumpAndSettle();
+    shell.currentState!.selectSection(const TvShellSection.tab(NavigationTabId.discover));
+    await tester.pumpAndSettle();
+    expect(homeProvider.staleChecks, beforeShown + 2); // onTabShown and refresh
+    expect(rail.focusInside.value, isTrue);
+  });
+
+  testWidgets('T4 A17: loading Home never takes focus back from Settings', (tester) async {
+    realHome = true;
+    homeProvider.onDeck = [];
+    homeProvider.isLoading = homeProvider.areHubsLoading = true;
+    await pump(tester);
+    shell.currentState!.selectSection(const TvShellSection.tab(NavigationTabId.settings));
+    await tester.pumpAndSettle();
+    final settingsFocus = FocusManager.instance.primaryFocus;
+    expect(probe(NavigationTabId.settings).first.hasFocus, isTrue);
+    homeProvider.onDeck = [testMediaItem(id: 'arrived')];
+    homeProvider.isLoading = homeProvider.areHubsLoading = false;
+    homeProvider.emit();
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(settingsFocus));
+  });
+
+  testWidgets('T4 A10c: offline shell does not mount Home', (tester) async {
+    realHome = true;
+    offlineStart = true;
+    await pump(tester);
+    expect(find.byType(TvHomeScreen), findsNothing);
+    expect(find.text(TvStrings.noConnection), findsOneWidget);
+    expect(homeProvider.loads, 0);
+  });
 
   testWidgets('O1/O2 offline launch focuses Retry, settings opens section, downloads follows N1', (tester) async {
     offlineStart = true;

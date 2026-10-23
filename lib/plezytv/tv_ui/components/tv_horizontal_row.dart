@@ -20,6 +20,8 @@ class TvHorizontalRow extends StatefulWidget {
     required this.cardHeight,
     this.counter,
     this.onFocusInsideChanged,
+    this.itemKey,
+    this.onItemFocused,
   }) : assert(itemCount >= 0),
        assert(cardWidth > 0),
        assert(cardHeight > 0);
@@ -32,6 +34,10 @@ class TvHorizontalRow extends StatefulWidget {
   final double cardWidth, cardHeight;
   final Widget Function(BuildContext context, int index, FocusNode focusNode) cardBuilder;
   final ValueChanged<bool>? onFocusInsideChanged;
+
+  /// Stable identity, including server identity for media. Omit for index memory.
+  final String Function(int index)? itemKey;
+  final ValueChanged<int>? onItemFocused;
 
   @override
   State<TvHorizontalRow> createState() => TvHorizontalRowState();
@@ -48,15 +54,59 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
 
   ValueListenable<bool> get focusInside => _inside;
 
-  /// Re-enter through the scope so Flutter restores its last focused child.
+  String _key(int index) => widget.itemKey?.call(index) ?? '$index';
+  int get focusedIndex => _index;
+
+  /// Returns true if already at the start; otherwise moves there.
+  bool focusStart() {
+    if (_index == 0) return true;
+    _index = 0;
+    _seekPending = true;
+    _seek(0, 1, ++_seekGeneration, _scroll.hasClients ? _scroll.offset : 0);
+    return false;
+  }
+
+  /// Re-enter the remembered item, revealing it if it left the lazy viewport.
   void requestFocus() {
-    if (widget.itemCount > 0) _scope.requestFocus();
+    if (widget.itemCount == 0) return;
+    if (widget.itemKey == null && _memory.lastFocusedKey != null) {
+      _scope.requestFocus();
+    } else {
+      _seekPending = true;
+      _seek(_index, 1, ++_seekGeneration, _scroll.hasClients ? _scroll.offset : 0);
+    }
   }
 
   @override
   void didUpdateWidget(TvHorizontalRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.itemCount < oldWidget.itemCount) {
+    final previousKey = _index < oldWidget.itemCount ? oldWidget.itemKey?.call(_index) : null;
+    final hadFocus = _scope.hasFocus;
+    final previousFocus = FocusManager.instance.primaryFocus;
+    final owners = {previousFocus, ...?previousFocus?.ancestors};
+    if (widget.itemKey != null) {
+      final keys = [for (var i = 0; i < widget.itemCount; i++) _key(i)];
+      final same = keys.indexOf(previousKey ?? '');
+      _index = same >= 0 ? same : _index.clamp(0, keys.isEmpty ? 0 : keys.length - 1);
+      final restoreIndex = _index;
+      final generation = ++_seekGeneration;
+      _seekPending = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || generation != _seekGeneration) return;
+        _memory.pruneExcept({for (var i = 0; i < widget.itemCount; i++) _key(i)});
+        if (hadFocus &&
+            widget.itemCount > 0 &&
+            (FocusManager.instance.primaryFocus == null ||
+                _scope.hasFocus ||
+                owners.contains(FocusManager.instance.primaryFocus)) &&
+            (ModalRoute.of(context)?.isCurrent ?? true) &&
+            TickerMode.valuesOf(context).enabled) {
+          _index = restoreIndex;
+          widget.onItemFocused?.call(_index);
+          requestFocus();
+        }
+      });
+    } else if (widget.itemCount < oldWidget.itemCount) {
       _memory.pruneExcept({for (var i = 0; i < widget.itemCount; i++) '$i'});
       _index = _index.clamp(0, widget.itemCount > 0 ? widget.itemCount - 1 : 0);
     }
@@ -86,7 +136,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
   void _seek(int target, int step, int generation, double originalOffset) {
     if (!mounted || generation != _seekGeneration) return;
     while (target >= 0 && target < widget.itemCount) {
-      final candidate = _memory.nodeFor('$target');
+      final candidate = _memory.nodeFor(_key(target));
       if (candidate == null || candidate.context?.mounted != true || !candidate.ancestors.contains(_scope)) {
         // Reveal one cache-sized region at a time rather than building the
         // entire disabled run. Retry after layout attaches its focus nodes.
@@ -96,6 +146,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
         return;
       }
       if (candidate.canRequestFocus) {
+        if (candidate.hasFocus) _scrollTo(target);
         candidate.requestFocus();
         _seekPending = false;
         return;
@@ -107,7 +158,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
     _scroll.jumpTo(originalOffset);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && generation == _seekGeneration) {
-        _memory.nodeFor('$_index')?.requestFocus();
+        _memory.nodeFor(_key(_index))?.requestFocus();
         _seekPending = false;
       }
     });
@@ -117,6 +168,9 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.arrowLeft && event.logicalKey != LogicalKeyboardKey.arrowRight) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft && _index == 0 && !_seekPending) {
       return KeyEventResult.ignored;
     }
     if (event is KeyDownEvent || event is KeyRepeatEvent) {
@@ -185,15 +239,25 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                     padding: EdgeInsets.only(left: left, top: px(24), right: _viewport),
                     itemExtent: _extent,
                     itemCount: widget.itemCount,
+                    findChildIndexCallback: widget.itemKey == null
+                        ? null
+                        : (key) {
+                            for (var i = 0; i < widget.itemCount; i++) {
+                              if (ValueKey(_key(i)) == key) return i;
+                            }
+                            return null;
+                          },
                     itemBuilder: (context, index) {
-                      final node = _memory.get('$index');
+                      final node = _memory.get(_key(index));
                       return Focus(
+                        key: ValueKey(_key(index)),
                         canRequestFocus: false,
                         skipTraversal: true,
                         onFocusChange: (focused) {
                           if (focused) {
                             _index = index;
                             _scrollTo(index);
+                            widget.onItemFocused?.call(index);
                           }
                         },
                         child: Padding(

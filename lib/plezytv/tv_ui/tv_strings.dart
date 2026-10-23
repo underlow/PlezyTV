@@ -5,6 +5,8 @@ abstract final class TvStrings {
   static const noConnection = 'No connection to server';
   static const noConnectionHelp = 'Check that your server is on and your TV is connected to the same network.';
   static const retry = 'Retry';
+  static const homeEmpty = 'Nothing here yet';
+  static const refresh = 'Refresh';
   static const connecting = 'Connecting…';
   static const connectionSettings = 'Connection settings';
   static const connectionFailed = 'Could not connect to the server';

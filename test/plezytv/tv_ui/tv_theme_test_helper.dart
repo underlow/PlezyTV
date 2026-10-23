@@ -9,6 +9,7 @@ Future<void> pumpTvWidget(
   Widget child, {
   Size size = const Size(1920, 1080),
   bool reduced = false,
+  ThemeData? appTheme,
   TextScaler textScaler = TextScaler.noScaling,
 }) async {
   final highlightStrategy = FocusManager.instance.highlightStrategy;
@@ -25,6 +26,7 @@ Future<void> pumpTvWidget(
   });
   Widget host(Widget content) => InputModeTracker(
     child: MaterialApp(
+      theme: appTheme,
       home: MediaQuery(
         data: MediaQueryData(size: size, textScaler: textScaler),
         child: TvTheme(child: content),
