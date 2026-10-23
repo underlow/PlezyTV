@@ -146,6 +146,12 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     if (!_isOffline) {
       unawaited(plexHome.start());
       _armStartup();
+    }
+    // MainScreen enters this bootstrap before its post-frame provider
+    // reconciliation. Preserve its preferences, prompt and companion duties
+    // for an online route even when the provider is already offline; only
+    // the network services above depend on the reconciled state.
+    if (!isOfflineMode || !_isOffline) {
       await preferences.ensureActiveLoaded();
       if (!_alive) return;
       await _initialPrompt();
