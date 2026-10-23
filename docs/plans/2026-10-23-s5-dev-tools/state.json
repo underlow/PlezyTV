@@ -2,9 +2,8 @@
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S5",
   "profile": "medium",
-  "phase": "implementation",
+  "phase": "review",
   "base_commit": "99abd920539d15265ff4809066d325079b42d53b",
-  "status": "paused",
   "development_agent": {
     "platform": "codex",
     "model": "gpt-6.1-sol",
