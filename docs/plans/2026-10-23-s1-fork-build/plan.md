@@ -63,7 +63,14 @@ decision), 0c03e07c3 CI + docs/plezytv/release.md, c8418649f designer art, df1a3
 6e0d96315 UPSTREAM_SYNC_TOKEN guard, b45255a70 test authority fixes.
 Review: one Codex reviewer over 052942a64..b45255a70; one finding (stale authority in
 SystemShelfArtworkManifestTest) fixed and re-checked; no open findings.
-Verified: resource XML parse, aapt2 compile of res, PNG equality with design, YAML parse, bash -n,
-local simulation of push guard, source greps. NOT run (no Flutter SDK locally): flutter analyze/test/
-build, Gradle/Robolectric tests, actionlint. Pending external acceptance: A1/A2/A5 on a TV, A3/A4 on
-GitHub (needs keystore secrets, optional UPSTREAM_SYNC_TOKEN, upstream workflows disabled per release.md).
+Verified locally (Flutter 3.47.1, JDK 21, CMake 4.1.2 in gitignored `.tools/`): CI analyzer
+(0 diagnostics), icon consistency, ci_guard_checks.sh (incl. workflow security), full `flutter test`
+(8154 passed, 7 skipped), Android unit tests WatchNextProvider 36/36, ExternalPlayerChannel 6/6,
+SystemShelfArtworkManifest 1/1; debug and release APK builds; APK badging: package
+com.underlow.plezytv, label PlezyTV, all provider authorities prefixed com.underlow.plezytv, only
+custom scheme plezytv. On Xiaomi MiTV-AFKR0 (armeabi-v7a): release v7a APK (debug-signed) installed
+next to Plezy; both in launcher, PlezyTV banner shown (A1); plezytv://live opens PlezyTV, plezy://live
+opens Plezy (A2); first screen shows no update dialog (A5; update check is compiled off).
+Notes: Xiaomi is 32-bit (armeabi-v7a), arm64 APK does not run there. In-app branding (login screen
+"Plezy" logo) unchanged; not in S1 scope. Not run: actionlint; A3/A4 need GitHub (keystore secrets,
+optional UPSTREAM_SYNC_TOKEN, upstream workflows disabled per docs/plezytv/release.md).
