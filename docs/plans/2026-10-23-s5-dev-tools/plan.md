@@ -107,4 +107,24 @@ install of a locally built APK through the installer path, and report the gap.
 
 ## Outcome
 
-(filled at delivery)
+Delivered 2026-10-23 (branch `flow/s5-dev-tools`, not pushed):
+- T1 screen links `plezytv://screen/<target>` — `d03bd25ff`; usage in `docs/plezytv/dev-tools.md`.
+- T2 logcat tag `PlezyTV` — `97048182f`.
+- T3 tag-derived versions (`versionCode = major*10000+minor*100+patch`, same for both ABIs) — `908c58e96`;
+  v0.1.0 (codes 1156/2156) needs a one-time uninstall, see `docs/plezytv/release.md`.
+- T4 updater from `underlow/PlezyTV` releases (auto every 6 h, Settings tile, `screen/update`) — `18fc84d39`.
+- Review fixes: `8dcc51bbd` (id/server validation against Plex path injection; links wait for profile
+  picker, binding, library init; update link no longer blocks the queue; retry after profile switch),
+  `173973bad` (no network polling for offline servers, one R4 warning; library delta-merge race; router
+  test for update link).
+
+Verification: 69 tests (`test/plezytv`, system_shelf_service, video_player_navigation) pass, rerun by the
+coordinator; new tests fail without their fixes (negative controls); analyzer clean; debug ARM APK built;
+split release build gives versionCode 200 on both ABIs. Independent reviews: behavior/tests and
+security/performance on the whole change, targeted re-review of `8dcc51bbd`; `173973bad` was not
+independently re-reviewed (user chose to deliver).
+
+Not verified: nothing run on a TV (192.168.1.118 storage full) — A1–A4, A6, A14–A18 by `am start`,
+logcat and screencap remain open; update download/install end-to-end needs a real tagged release;
+AMAZON build and live CI not run. For S3+: screen links are ready for screenshot acceptance once the
+build is on a TV; handlers in the router target table are replaceable.
