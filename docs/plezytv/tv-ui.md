@@ -43,6 +43,31 @@ small factory seam or minimal extraction while respecting this restriction and
 keeping the upstream edit minimal; its name alone does not make it an allowed
 hook location.
 
+## Visual layer
+
+Shared visuals live in `lib/plezytv/tv_ui/`: `tv_tokens.dart` mirrors the design
+tokens, `tv_theme.dart` supplies `TvTheme`, `tv_focusable.dart` wraps upstream
+focus logic, `tv_tint_service.dart` and `tv_tinted_background.dart` supply artwork
+tinting and backgrounds, and `components/` contains the shared TV components.
+`TvTheme` is opt-in; upstream screens keep their existing look until a TV
+replacement explicitly wraps its subtree.
+
+Component sizes are design px at 1920×1080. `TvTheme.of(context).px(value)`
+converts them with `min(width / 1920, height / 1080)` using the theme root's
+`MediaQuery` size. System text scaling is disabled inside the TV theme. Logic
+comes from Plezy, including watch state, ratings, ordering and formatting; the
+design only styles those results.
+
+TV components manage their own scrolling; `TvFocusable.autoScroll` defaults to
+off. Scrolling animates normally and jumps when `DevicePerformance.isReduced`;
+screen stages must follow the same rule for vertical page scrolling. The reduced
+scroll policy is a performance hypothesis to confirm with S2 measurements or
+first screen acceptance.
+
+Use `pumpTvWidget` from `test/plezytv/tv_ui/tv_theme_test_helper.dart` for component
+tests. It supplies the TV theme and keyboard input mode at a chosen logical
+`size`, accepts `reduced` and `textScaler`, and resets test state in teardown.
+
 ## Session choice and tests
 
 `TvUi.enabled` defaults to `PlatformDetector.isTV()`, which includes the Force TV
