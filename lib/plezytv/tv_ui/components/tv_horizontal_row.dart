@@ -81,6 +81,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
   }
 
   int _seekGeneration = 0;
+  bool _seekPending = false;
 
   void _seek(int target, int step, int generation, double originalOffset) {
     if (!mounted || generation != _seekGeneration) return;
@@ -96,6 +97,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
       }
       if (candidate.canRequestFocus) {
         candidate.requestFocus();
+        _seekPending = false;
         return;
       }
       target += step;
@@ -104,8 +106,13 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
     // initial-slot optimization and without changing the row scroll policy.
     _scroll.jumpTo(originalOffset);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && generation == _seekGeneration) _memory.nodeFor('$_index')?.requestFocus();
+      if (mounted && generation == _seekGeneration) {
+        _memory.nodeFor('$_index')?.requestFocus();
+        _seekPending = false;
+      }
     });
+    // An edge seek may restore an unchanged offset, which schedules no layout.
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -113,6 +120,10 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
       return KeyEventResult.ignored;
     }
     if (event is KeyDownEvent || event is KeyRepeatEvent) {
+      // Coalesce both directions until speculative reveals and any restoration
+      // finish, so another key cannot capture a temporary viewport as its origin.
+      if (_seekPending) return KeyEventResult.handled;
+      _seekPending = true;
       final step = event.logicalKey == LogicalKeyboardKey.arrowRight ? 1 : -1;
       _seek(_index + step, step, ++_seekGeneration, _scroll.offset);
     }
