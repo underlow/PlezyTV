@@ -53,7 +53,10 @@ class TvChip extends StatelessWidget {
         ),
       ),
     );
-    if (!focusable) return IntrinsicWidth(child: surface(false, false));
+    if (!focusable) {
+      final chip = IntrinsicWidth(child: surface(false, false));
+      return disabled ? Opacity(opacity: .4, child: chip) : chip;
+    }
     return TvFocusable(
       kind: TvFocusKind.fill,
       radius: TvTokens.radius.chip.toDouble(),

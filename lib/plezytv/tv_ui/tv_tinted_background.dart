@@ -48,12 +48,12 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
       )..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
           setState(() {
-            _previous = _target;
+            _previous = [(_target, 1)];
             _releaseOldImages();
           });
         }
       });
-  Widget _previous = const _BackgroundLook();
+  List<(_BackgroundLook, double)> _previous = [(const _BackgroundLook(), 1)];
   _BackgroundLook _target = const _BackgroundLook();
   final _images = <ui.Image>[];
   Timer? _debounce;
@@ -99,7 +99,7 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
           if (tintApplied) {
             setState(() {
               _target = _BackgroundLook(tint: readyTint, backdrop: image);
-              if (_fade.isCompleted) _previous = _target;
+              if (_fade.isCompleted) _previous = [(_target, 1)];
             });
           }
         }),
@@ -117,15 +117,21 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     setState(() {
       if (first || DevicePerformance.isReduced) {
         _fade.stop();
-        _previous = _target = next;
+        _target = next;
+        _previous = [(next, 1)];
         _releaseOldImages();
         _fade.value = 1;
       } else {
-        // Freeze the actual composited look at this instant. No color or
-        // geometry interpolation; only the new layer's opacity animates.
-        _previous = _currentLook();
+        // Keep a flat snapshot of the two newest looks. The first interruption
+        // is exact; further interruptions approximate the oldest contribution
+        // by making the retained bottom look opaque, bounding layers and images.
+        _previous = _fade.value == 1 ? [(_target, 1)] : [..._previous, (_target, _fade.value)];
+        if (_previous.length > 2) {
+          _previous = [(_previous[_previous.length - 2].$1, 1), _previous.last];
+        }
         _fade.stop();
         _target = next;
+        _releaseOldImages();
         _fade.forward(from: 0);
       }
     });
@@ -141,10 +147,11 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
   }
 
   void _releaseOldImages() {
-    for (final image in _images.where((image) => image != _target.backdrop)) {
+    final retained = {_target.backdrop, ..._previous.map((look) => look.$1.backdrop)};
+    for (final image in _images.where((image) => !retained.contains(image))) {
       image.dispose();
     }
-    _images.removeWhere((image) => image != _target.backdrop);
+    _images.removeWhere((image) => !retained.contains(image));
   }
 
   Widget _currentLook() => _fade.value == 1
@@ -152,7 +159,8 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
       : Stack(
           fit: StackFit.expand,
           children: [
-            _previous,
+            for (final (look, opacity) in _previous)
+              if (opacity == 1) look else Opacity(opacity: opacity, child: look),
             Opacity(opacity: _fade.value, child: _target),
           ],
         );

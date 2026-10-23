@@ -42,6 +42,14 @@ double paintedScale(WidgetTester tester, Finder parent) {
 }
 
 void main() {
+  testWidgets('disabled non-focusable genre chip has opacity 0.4', (tester) async {
+    await pumpTvWidget(tester, const TvChip.genre(label: 'Drama', disabled: true));
+    expect(
+      tester.widget<Opacity>(find.descendant(of: find.byType(TvChip), matching: find.byType(Opacity))).opacity,
+      .4,
+    );
+  });
+
   test('primary requires a nonempty label', () {
     expect(() => TvButton(label: ''), throwsAssertionError);
     expect(() => TvButton(label: '  '), throwsAssertionError);
