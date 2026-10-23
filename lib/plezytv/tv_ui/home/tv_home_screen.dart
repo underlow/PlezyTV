@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -13,6 +14,7 @@ import '../../../mixins/refreshable.dart';
 import '../../../mixins/tab_visibility_aware.dart';
 import '../../../navigation/main_screen_scope.dart';
 import '../../../providers/discover_provider.dart';
+import '../../../providers/watch_state_store.dart';
 import '../../../screens/hub_detail_screen.dart';
 import '../../../services/device_performance.dart';
 import '../../../services/settings_service.dart';
@@ -43,7 +45,7 @@ class TvHomeScreen extends StatefulWidget {
 }
 
 class TvHomeScreenState extends State<TvHomeScreen>
-    with Refreshable, ManualRefreshable, FullRefreshable, TabVisibilityAware, FocusableTab {
+    with Refreshable, ManualRefreshable, FullRefreshable, TabVisibilityAware, FocusableTab, WidgetsBindingObserver {
   final _builder = TvHomeModelBuilder();
   final _hero = ValueNotifier<MediaItem?>(null);
   final _compact = ValueNotifier(false);
@@ -54,11 +56,13 @@ class TvHomeScreenState extends State<TvHomeScreen>
   late DiscoverProvider _provider;
   late TvHomeModel _model;
   ModalRoute<dynamic>? _route;
+  bool _routeWasCurrent = false;
   Timer? _skeletonTimer;
   bool _initialized = false, _visible = true, _showSkeleton = false;
   FocusNode? _loadingOwner;
   int _focusCommand = 0;
   String? _activeRow;
+  ({String row, String item})? _returnPosition;
 
   String _rowKey(TvHomeRow row) => row.kind == TvHomeRowKind.continueWatching
       ? 'continue'
@@ -70,10 +74,19 @@ class TvHomeScreenState extends State<TvHomeScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _route = ModalRoute.of(context);
-    if (_initialized) return;
+    final routeCurrent = _route?.isCurrent ?? true;
+    if (_initialized) {
+      if (!routeCurrent && _routeWasCurrent) _rememberReturnPosition();
+      if (routeCurrent && !_routeWasCurrent) _afterFrame(_restoreReturnedFocus);
+      _routeWasCurrent = routeCurrent;
+      return;
+    }
+    _routeWasCurrent = routeCurrent;
     _initialized = true;
     _provider = context.read<DiscoverProvider>();
     _model = _builder.build(_provider);
+    _syncHero();
+    WidgetsBinding.instance.addObserver(this);
     _provider.addListener(_changed);
     HardwareKeyboard.instance.addHandler(_observeKey);
     _updateSkeleton();
@@ -120,6 +133,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final previousKey = _activeRow;
     setState(() {
       _model = _builder.build(_provider);
+      _syncHero();
       _updateSkeleton();
     });
     if (!_current) {
@@ -152,6 +166,58 @@ class TvHomeScreenState extends State<TvHomeScreen>
           _focusReady();
         }
       });
+    }
+  }
+
+  // Hero selection is independent of focus ownership: the menu and covered
+  // Home still display the remembered item (or its R9 fallback).
+  void _syncHero() {
+    if (_model.state != TvHomeState.content) {
+      _hero.value = null;
+      return;
+    }
+    final active = _model.rows.where((row) => _rowKey(row) == (_returnPosition?.row ?? _activeRow)).firstOrNull;
+    final row = active ?? _model.rows.first;
+    if (active == null) _activeRow = null;
+    final same = row.items
+        .where((item) => item.globalKey == (_returnPosition?.item ?? _hero.value?.globalKey))
+        .firstOrNull;
+    final index = active == null
+        ? 0
+        : (_rows[_rowKey(row)]?.currentState?.focusedIndex ?? 0).clamp(0, row.items.length - 1);
+    _hero.value = same ?? row.items[index];
+    _compact.value = _model.rows.indexOf(row) > 1;
+    if (_returnPosition != null) {
+      _returnPosition = (
+        row: _rowKey(row),
+        item: active != null && _returnPosition!.item == 'all' && row.hasMore ? 'all' : _hero.value!.globalKey,
+      );
+    }
+  }
+
+  void _rememberReturnPosition() {
+    if (!_content.hasFocus || _returnPosition != null) return;
+    final row = _model.rows.where((row) => _rowKey(row) == _activeRow).firstOrNull;
+    if (row == null) return;
+    final index = (_rows[_activeRow]?.currentState?.focusedIndex ?? 0).clamp(
+      0,
+      row.items.length - (row.hasMore ? 0 : 1),
+    );
+    _returnPosition = (row: _activeRow!, item: index == row.items.length ? 'all' : row.items[index].globalKey);
+  }
+
+  void _restoreReturnedFocus() {
+    // Flutter can restore the Home scope after disposing a covered card/row.
+    // Repair only focus already owned by Home; an explicit menu choice wins.
+    if (!_current) return;
+    final position = _returnPosition;
+    _returnPosition = null;
+    if (!_content.hasFocus) return;
+    if (_model.state == TvHomeState.content && position != null) {
+      _activeRow = position.row;
+      _rows[position.row]?.currentState?.requestFocus(itemKey: position.item);
+    } else {
+      _focusReady();
     }
   }
 
@@ -190,6 +256,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   @override
   void onTabHidden() {
+    _rememberReturnPosition();
     _visible = false;
     _loadingOwner = null;
     _focusCommand++;
@@ -199,11 +266,22 @@ class TvHomeScreenState extends State<TvHomeScreen>
   void onTabShown() {
     _visible = true;
     _provider.refreshIfStale();
+    _afterFrame(_restoreReturnedFocus);
   }
 
   @override
   void refresh() {
     if (!_provider.refreshIfStale()) unawaited(_provider.refreshContinueWatching());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted || !_current) return;
+    final startedFullPass = _provider.refreshIfStale();
+    if (!startedFullPass &&
+        (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+      unawaited(_provider.refreshContinueWatching());
+    }
   }
 
   @override
@@ -234,17 +312,21 @@ class TvHomeScreenState extends State<TvHomeScreen>
   void _retry() {
     if (_model.isLoadInFlight) return;
     _loadingOwner = _button.hasFocus ? _button : null;
-    manualRefresh();
+    unawaited(_provider.load());
   }
 
   void _focused(TvHomeRow row, int index) {
+    if (_returnPosition != null) return;
     _activeRow = _rowKey(row);
     _loadingOwner = null;
     _focusCommand++;
     if (index < row.items.length) _hero.value = row.items[index];
     final rowIndex = _model.rows.indexOf(row);
     _compact.value = rowIndex > 1;
-    _afterFrame(() => _revealRow(_activeRow!));
+    final key = _activeRow!;
+    _afterFrame(() {
+      if (_current && _activeRow == key) _revealRow(key);
+    });
   }
 
   void _revealRow(String key) {
@@ -330,19 +412,23 @@ class TvHomeScreenState extends State<TvHomeScreen>
         if (index == row.items.length) {
           return TvAllCard(episode: wide, focusNode: node, onSelect: () => unawaited(_openAll(row)));
         }
-        final item = row.items[index];
-        final client = context.getMediaClientForItemOrNull(item);
-        void select() => unawaited(
-          navigateToMediaItem(
-            context,
-            item,
-            onRefresh: (_) => refresh(),
-            playDirectly: wide || (row.hub?.usesContinueWatchingAction ?? false),
-          ),
+        return Builder(
+          builder: (context) {
+            final item = context.withFreshWatchState(row.items[index]);
+            final client = context.getMediaClientForItemOrNull(item);
+            void select() => unawaited(
+              navigateToMediaItem(
+                context,
+                item,
+                onRefresh: _provider.updateItem,
+                playDirectly: wide || (row.hub?.usesContinueWatchingAction ?? false),
+              ),
+            );
+            return wide
+                ? TvEpisode(item: item, client: client, focusNode: node, onSelect: select)
+                : TvPoster(item: item, client: client, focusNode: node, onSelect: select);
+          },
         );
-        return wide
-            ? TvEpisode(item: item, client: client, focusNode: node, onSelect: select)
-            : TvPoster(item: item, client: client, focusNode: node, onSelect: select);
       },
     );
   }
@@ -363,11 +449,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
             Text(error ? TvStrings.noConnection : TvStrings.homeEmpty, style: theme.headline),
             if (error) ...[
               SizedBox(height: px(16)),
-              Text(
-                _model.errorMessage ?? TvStrings.noConnectionHelp,
-                style: theme.bodyLarge,
-                textAlign: TextAlign.center,
-              ),
+              Text(TvStrings.noConnectionHelp, style: theme.bodyLarge, textAlign: TextAlign.center),
             ],
             SizedBox(height: px(40)),
             TvButton(
@@ -422,15 +504,18 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 listenable:
                     SettingsService.instanceOrNull?.listenable(SettingsService.hideSpoilers) ??
                     const AlwaysStoppedAnimation(false),
-                builder: (context, _) => Padding(
-                  padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
-                  child: TvHero(
-                    item: item,
-                    compact: compact,
-                    hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
-                    client: item == null ? null : context.getMediaClientForItemOrNull(item),
-                  ),
-                ),
+                builder: (context, _) {
+                  final effective = item == null ? null : context.withFreshWatchState(item);
+                  return Padding(
+                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    child: TvHero(
+                      item: effective,
+                      compact: compact,
+                      hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
+                      client: effective == null ? null : context.getMediaClientForItemOrNull(effective),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -491,6 +576,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _provider.removeListener(_changed);
     HardwareKeyboard.instance.removeHandler(_observeKey);
     _skeletonTimer?.cancel();

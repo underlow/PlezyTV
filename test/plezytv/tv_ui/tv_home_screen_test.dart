@@ -1,6 +1,9 @@
 import "dart:async";
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:plezy/providers/watch_state_store.dart';
+import 'package:plezy/utils/watch_state_notifier.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +30,18 @@ import '../../test_helpers/media_items.dart';
 import '../../test_helpers/prefs.dart';
 import 'tv_theme_test_helper.dart';
 
+// Return the real details route's changed result before mounting its upstream
+// dependency tree. This exercises Home's actual navigateToMediaItem callback.
+class _ChangedDetails extends NavigatorObserver {
+  int opened = 0;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute == null) return;
+    opened++;
+    scheduleMicrotask(() => navigator!.removeRoute(route, true));
+  }
+}
+
 class _Discover extends ChangeNotifier implements DiscoverProvider {
   @override
   List<MediaItem> onDeck = [];
@@ -37,10 +52,21 @@ class _Discover extends ChangeNotifier implements DiscoverProvider {
   @override
   String? errorMessage;
   int loads = 0, staleChecks = 0, continueRefreshes = 0, manualRefreshes = 0, allLoads = 0;
-  bool stale = false;
+  bool stale = false, loadStartsLoading = false;
+  final updatedItems = <MediaItem>[];
+  @override
+  Future<void> updateItem(MediaItem item) async {
+    updatedItems.add(item);
+  }
+
   @override
   Future<void> load() async {
     loads++;
+    if (loadStartsLoading) {
+      isLoading = areHubsLoading = isLoadInFlight = true;
+      errorMessage = null;
+      emit();
+    }
   }
 
   @override
@@ -112,11 +138,19 @@ void main() {
     provider.dispose();
   });
 
-  Future<void> pump(WidgetTester tester, {bool reduced = true}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    bool reduced = true,
+    WatchStateStore? watchState,
+    List<NavigatorObserver> observers = const [],
+  }) async {
     await pumpTvWidget(
       tester,
-      ChangeNotifierProvider<DiscoverProvider>.value(
-        value: provider,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<DiscoverProvider>.value(value: provider),
+          if (watchState != null) ChangeNotifierProvider<WatchStateStore>.value(value: watchState),
+        ],
         child: MainScreenFocusScope(
           focusSidebar: menu.requestFocus,
           sideNavigationWidth: 0,
@@ -130,6 +164,7 @@ void main() {
       ),
       reduced: reduced,
       appTheme: monoTheme(MonoPalette.dark),
+      navigatorObservers: observers,
     );
     await tester.pump();
     await tester.pump();
@@ -300,12 +335,16 @@ void main() {
       final button = tester.widget<TvButton>(find.byType(TvButton));
       expect(button.focusNode!.hasFocus, isTrue);
       expect(button.label, error ? TvStrings.retry : TvStrings.refresh);
+      provider.loadStartsLoading = true;
       await key(tester, LogicalKeyboardKey.enter);
-      expect(provider.manualRefreshes, 1);
+      expect(provider.loads, 2);
+      expect(provider.manualRefreshes, 0);
       expect(tester.widget<TvButton>(find.byType(TvButton)).disabled, isTrue);
       expect(find.text(TvStrings.connecting), findsOneWidget);
+      provider.loadStartsLoading = true;
       await key(tester, LogicalKeyboardKey.enter);
-      expect(provider.manualRefreshes, 1);
+      expect(provider.loads, 2);
+      expect(provider.manualRefreshes, 0);
       provider.errorMessage = error ? 'Server failed again' : null;
       provider.ready();
       await tester.pumpAndSettle();
@@ -346,6 +385,7 @@ void main() {
         await tester.pump();
       } else {
         if (escape == 'retry-menu') {
+          provider.loadStartsLoading = true;
           await key(tester, LogicalKeyboardKey.enter);
           await key(tester, LogicalKeyboardKey.arrowLeft);
         } else {
@@ -486,4 +526,192 @@ void main() {
     expect(detail.isInContinueWatching, isFalse);
     expect(detail.usesContinueWatchingAction, isFalse);
   });
+  for (final removeRow in [true, false]) {
+    for (final hooks in [true, false]) {
+      testWidgets('B1: route return restores ${removeRow ? "first row" : "same-row neighbour"} (hooks=$hooks)', (
+        tester,
+      ) async {
+        provider.onDeck = items('episode', removeRow ? 1 : 3);
+        provider.hubs = [hub('movies')];
+        await pump(tester);
+        await tester.pumpAndSettle();
+        if (!removeRow) await key(tester, LogicalKeyboardKey.arrowRight);
+        final navigator = Navigator.of(home.currentContext!);
+        unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('details')))));
+        if (hooks) home.currentState!.onTabHidden();
+        await tester.pumpAndSettle();
+        provider.onDeck = removeRow ? [] : [provider.onDeck.first, provider.onDeck.last];
+        provider.emit();
+        await tester.pumpAndSettle();
+        navigator.pop();
+        if (hooks) {
+          home.currentState!.onTabShown();
+          home.currentState!.refresh();
+        }
+        await tester.pumpAndSettle();
+        expect(row(tester, 0).focusInside.value, isTrue);
+        expect(hero(tester).item!.id, removeRow ? 'movies0' : 'episode2');
+      });
+    }
+  }
+
+  testWidgets('B1: vanished All row returns to first card even when next row also has All', (tester) async {
+    provider.onDeck = items('episode', 1);
+    provider.hasMoreContinueWatching = true;
+    provider.hubs = [MediaHub(id: 'movies', title: 'Movies', type: 'movie', items: items('movies'), more: true)];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    final navigator = Navigator.of(home.currentContext!);
+    unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('list')))));
+    home.currentState!.onTabHidden();
+    await tester.pumpAndSettle();
+    provider.onDeck = [];
+    provider.emit();
+    await tester.pumpAndSettle();
+    navigator.pop();
+    home.currentState!.onTabShown();
+    await tester.pumpAndSettle();
+    expect(row(tester, 0).focusedIndex, 0);
+    expect(row(tester, 0).focusInside.value, isTrue);
+    expect(hero(tester).item!.id, 'movies0');
+  });
+
+  testWidgets('B2: WatchStateStore updates mounted card and hero without provider list replacement', (tester) async {
+    final store = WatchStateStore();
+    addTearDown(store.dispose);
+    provider.hubs = [hub('movies')];
+    await pump(tester, watchState: store);
+    await tester.pumpAndSettle();
+    final original = provider.hubs.single.items.first;
+    WatchStateNotifier().notifyProgress(item: original, viewOffset: 1800000, duration: 3600000);
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(tester.widget<TvPoster>(find.byType(TvPoster).first).item.viewOffsetMs, 1800000);
+    expect(hero(tester).item!.viewOffsetMs, 1800000);
+    WatchStateNotifier().notifyWatched(item: original, isNowWatched: true);
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(tester.widget<TvPoster>(find.byType(TvPoster).first).item.isWatched, isTrue);
+    expect(hero(tester).item!.isWatched, isTrue);
+    expect(provider.hubs.single.items.first, same(original));
+  });
+
+  testWidgets('B2: changed details result refreshes its source through provider.updateItem', (tester) async {
+    provider.hubs = [hub('movies')];
+    final observer = _ChangedDetails();
+    await pump(tester, observers: [observer]);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.enter);
+    expect(observer.opened, 1);
+    expect(provider.updatedItems.map((item) => item.globalKey), [provider.hubs.single.items.first.globalKey]);
+    expect(provider.continueRefreshes, 0);
+  });
+
+  testWidgets('B3: arriving content fills hero without taking menu focus', (tester) async {
+    provider.isLoading = provider.areHubsLoading = true;
+    await pump(tester);
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    content();
+    provider.ready();
+    await tester.pumpAndSettle();
+    expect(menu.hasFocus, isTrue);
+    expect(hero(tester).item?.id, 'episode0');
+  });
+
+  testWidgets('B3: menu hero follows remembered card, then first card when its row vanishes', (tester) async {
+    content();
+    await pump(tester);
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      await key(tester, LogicalKeyboardKey.arrowRight);
+    }
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    menu.requestFocus();
+    await tester.pumpAndSettle();
+    provider.emit();
+    await tester.pumpAndSettle();
+    expect(hero(tester).item!.id, 'movies0');
+    expect(menu.hasFocus, isTrue);
+    provider.hubs = provider.hubs.skip(1).toList();
+    provider.emit();
+    await tester.pumpAndSettle();
+    expect(hero(tester).item!.id, 'episode0');
+    expect(menu.hasFocus, isTrue);
+  });
+
+  testWidgets('B4: error uses helpful copy instead of raw provider exception', (tester) async {
+    provider.errorMessage = 'Exception: No servers available';
+    await pump(tester);
+    await tester.pumpAndSettle();
+    expect(find.text(provider.errorMessage!), findsNothing);
+    expect(find.text(TvStrings.noConnectionHelp), findsOneWidget);
+  });
+
+  testWidgets('B5: failed error retry uses load without manual-refresh snackbar', (tester) async {
+    provider.errorMessage = 'Failed';
+    await pump(tester);
+    await tester.pumpAndSettle();
+    provider.loadStartsLoading = true;
+    await key(tester, LogicalKeyboardKey.enter);
+    expect(provider.loads, 2);
+    expect(provider.manualRefreshes, 0);
+    provider.errorMessage = 'Failed again';
+    provider.ready();
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsNothing);
+    expect(tester.widget<TvButton>(find.byType(TvButton)).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('B6: deferred row reveal tolerates removal in the same frame', (tester) async {
+    content();
+    await pump(tester);
+    await tester.pumpAndSettle();
+    provider.onDeck = [];
+    provider.emit();
+    // Focus flush queues a reveal behind the already queued removed-row fallback.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(row(tester, 0).focusInside.value, isTrue);
+  });
+
+  for (final error in [true, false]) {
+    testWidgets('B7: terminal error=$error clears stale tinted backdrop', (tester) async {
+      content();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(TvTintedBackground), findsOneWidget);
+      provider.onDeck = [];
+      provider.hubs = [];
+      provider.errorMessage = error ? 'Failed' : null;
+      provider.emit();
+      await tester.pumpAndSettle();
+      expect(find.byType(TvTintedBackground), findsNothing);
+      expect(find.byType(TvPlainBackground), findsOneWidget);
+    });
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS, TargetPlatform.macOS]) {
+    testWidgets('I1: resume refresh branch on $platform', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      content();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      final before = provider.staleChecks;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      expect(provider.staleChecks, before + 1);
+      expect(provider.continueRefreshes, platform == TargetPlatform.macOS ? 0 : 1);
+      provider.stale = true;
+      home.currentState!.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      expect(provider.continueRefreshes, platform == TargetPlatform.macOS ? 0 : 1);
+      home.currentState!.onTabHidden();
+      final hidden = provider.staleChecks;
+      home.currentState!.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      expect(provider.staleChecks, hidden);
+      debugDefaultTargetPlatformOverride = null;
+    });
+  }
 }

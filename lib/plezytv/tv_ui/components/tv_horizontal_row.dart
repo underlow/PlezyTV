@@ -66,9 +66,18 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
     return false;
   }
 
-  /// Re-enter the remembered item, revealing it if it left the lazy viewport.
-  void requestFocus() {
+  /// Re-enter the remembered item, or an explicit stable [itemKey], revealing
+  /// it if it left the lazy viewport.
+  void requestFocus({String? itemKey}) {
     if (widget.itemCount == 0) return;
+    if (itemKey != null) {
+      for (var i = 0; i < widget.itemCount; i++) {
+        if (_key(i) == itemKey) {
+          _index = i;
+          break;
+        }
+      }
+    }
     if (widget.itemKey == null && _memory.lastFocusedKey != null) {
       _scope.requestFocus();
     } else {
