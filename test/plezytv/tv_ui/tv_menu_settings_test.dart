@@ -113,6 +113,87 @@ void main() {
     expect(find.byType(Divider), findsOneWidget);
   });
 
+  for (final reduced in [false, true]) {
+    testWidgets('long menu keeps last and first focused items visible reduced=$reduced', (tester) async {
+      final nodes = List.generate(24, (_) => FocusNode());
+      for (final node in nodes) {
+        addTearDown(node.dispose);
+      }
+      await pumpTvWidget(
+        tester,
+        TvSideMenu(
+          items: List.generate(
+            nodes.length,
+            (i) => TvSideMenuItem(key: ValueKey(i), icon: Icons.home, label: 'Item $i', focusNode: nodes[i]),
+          ),
+          child: const SizedBox.expand(),
+        ),
+        reduced: reduced,
+      );
+      await enter(tester, nodes.first);
+      for (var i = 1; i < nodes.length; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(nodes[i].hasFocus, isTrue);
+      }
+      void visible(int i) {
+        final rect = tester.getRect(find.byKey(ValueKey(i)));
+        expect(rect.top, greaterThanOrEqualTo(0));
+        expect(rect.bottom, lessThanOrEqualTo(1080));
+      }
+
+      visible(23);
+      await enter(tester, nodes.first);
+      if (!reduced) await tester.pumpAndSettle();
+      visible(0);
+      expect(find.byWidgetPredicate((w) => w is ColoredBox && w.color == TvTokens.color.accent.normal), findsNothing);
+    });
+  }
+
+  for (final current in <int?>[null, 1]) {
+    testWidgets('stable identities survive reorder and focused removal current=$current', (tester) async {
+      final entry = FocusNode();
+      addTearDown(entry.dispose);
+      var labels = ['A', 'B', 'C'];
+      late StateSetter rebuild;
+      await pumpTvWidget(
+        tester,
+        StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return TvSideMenu(
+              currentIndex: current,
+              focusNode: entry,
+              items: [for (final label in labels) TvSideMenuItem(key: ValueKey(label), icon: Icons.home, label: label)],
+              child: const SizedBox.expand(),
+            );
+          },
+        ),
+      );
+      FocusNode node(String label) => tester
+          .widget<TvFocusable>(find.descendant(of: find.byKey(ValueKey(label)), matching: find.byType(TvFocusable)))
+          .focusNode!;
+      // Enter through the menu target rather than targeting an item.
+      entry.requestFocus();
+      await tester.pumpAndSettle();
+      expect(node(current == null ? 'A' : 'B').hasFocus, isTrue);
+      await enter(tester, node('B'));
+      entry.requestFocus();
+      await tester.pumpAndSettle();
+      expect(node(current == null ? 'A' : 'B').hasFocus, isTrue);
+      await enter(tester, node('B'));
+      final original = node('B');
+      rebuild(() => labels = ['C', 'A', 'B']);
+      await tester.pumpAndSettle();
+      expect(node('B'), same(original));
+      expect(node('B').hasFocus, isTrue);
+      rebuild(() => labels = ['C', 'A']);
+      await tester.pumpAndSettle();
+      expect(node(current == null ? 'C' : 'A').hasFocus, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('A13 geometry, outline without focus scale, pressed outline and disabled reason inert', (tester) async {
     final node = FocusNode();
     addTearDown(node.dispose);
