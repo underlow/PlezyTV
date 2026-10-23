@@ -8,6 +8,7 @@ abstract final class TvStrings {
   static const connecting = 'Connecting…';
   static const connectionSettings = 'Connection settings';
   static const connectionFailed = 'Could not connect to the server';
+  static const all = 'All';
   static const moreLibraries = 'More';
   static const showDownloads = 'Show downloads';
   static const onServer = 'On server';
