@@ -8,6 +8,53 @@ import 'tv_theme_test_helper.dart';
 
 void main() {
   for (final reduced in [false, true]) {
+    testWidgets('disabled run beyond lazy boundary (reduced=$reduced)', (tester) async {
+      final nodes = <int, FocusNode>{};
+      await pumpTvWidget(
+        tester,
+        Align(
+          alignment: Alignment.topLeft,
+          child: TvHorizontalRow(
+            title: 'Sparse',
+            itemCount: 40,
+            cardWidth: 216,
+            cardHeight: 404,
+            cardBuilder: (context, index, node) {
+              nodes[index] = node;
+              return TvPoster(
+                key: ValueKey(index),
+                item: testMediaItem(title: '$index'),
+                focusNode: node,
+                disabled: index != 0 && index != 30,
+              );
+            },
+          ),
+        ),
+        reduced: reduced,
+      );
+      expect(find.byType(TvPoster).evaluate().length, lessThan(20));
+      nodes[0]!.requestFocus();
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(nodes[30]?.hasFocus, isTrue);
+      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, 200);
+      expect(find.byType(TvPoster).evaluate().length, lessThan(25));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(nodes[30]!.hasFocus, isTrue);
+      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, 200);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(nodes[0]!.hasFocus, isTrue);
+      expect(tester.widget<ListView>(find.byType(ListView)).controller!.offset, 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(nodes[0]!.hasFocus, isTrue);
+    });
+  }
+
+  for (final reduced in [false, true]) {
     testWidgets('A7 lazy rail, geometry, memory and scroll timing (reduced=$reduced)', (tester) async {
       final key = GlobalKey<TvHorizontalRowState>();
       final outside = FocusNode();

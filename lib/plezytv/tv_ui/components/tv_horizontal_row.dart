@@ -27,6 +27,7 @@ class TvHorizontalRow extends StatefulWidget {
   final String title;
   final String? counter;
   final int itemCount;
+
   /// Full card layout size, including captions; headroom is added by the row.
   final double cardWidth, cardHeight;
   final Widget Function(BuildContext context, int index, FocusNode focusNode) cardBuilder;
@@ -79,21 +80,40 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
     }
   }
 
+  int _seekGeneration = 0;
+
+  void _seek(int target, int step, int generation) {
+    if (!mounted || generation != _seekGeneration) return;
+    while (target >= 0 && target < widget.itemCount) {
+      final candidate = _memory.nodeFor('$target');
+      if (candidate == null || candidate.context?.mounted != true || !candidate.ancestors.contains(_scope)) {
+        // Reveal one cache-sized region at a time rather than building the
+        // entire disabled run. Retry after layout attaches its focus nodes.
+        _scroll.jumpTo((target * _extent).clamp(0.0, _scroll.position.maxScrollExtent));
+        final next = target;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _seek(next, step, generation));
+        return;
+      }
+      if (candidate.canRequestFocus) {
+        candidate.requestFocus();
+        return;
+      }
+      target += step;
+    }
+    // No enabled item in this direction: restore the original slot and focus.
+    _scrollTo(_index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && generation == _seekGeneration) _memory.nodeFor('$_index')?.requestFocus();
+    });
+  }
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.arrowLeft && event.logicalKey != LogicalKeyboardKey.arrowRight) {
       return KeyEventResult.ignored;
     }
     if (event is KeyDownEvent || event is KeyRepeatEvent) {
       final step = event.logicalKey == LogicalKeyboardKey.arrowRight ? 1 : -1;
-      var target = _index + step;
-      while (target >= 0 && target < widget.itemCount) {
-        final candidate = _memory.nodeFor('$target');
-        if (candidate != null && candidate.context != null && candidate.canRequestFocus) {
-          candidate.requestFocus();
-          break;
-        }
-        target += step;
-      }
+      _seek(_index + step, step, ++_seekGeneration);
     }
     return KeyEventResult.handled;
   }

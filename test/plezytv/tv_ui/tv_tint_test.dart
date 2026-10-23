@@ -151,6 +151,49 @@ void main() {
     }
   });
 
+  testWidgets('30 interrupted fades keep layers and live images bounded', (tester) async {
+    final decoded = <ui.Image>[];
+    final template = await tester.runAsync(() => image(Colors.red, width: 1280, height: 1));
+    final service = StubTintService(
+      fetch: (_, _, _) async => Uint8List(1),
+      decode: (_, _) async {
+        final result = template!.clone();
+        decoded.add(result);
+        return result;
+      },
+    );
+    final current = ValueNotifier(source('0'));
+    await pumpTvWidget(
+      tester,
+      ValueListenableBuilder<TvArtworkSource>(
+        valueListenable: current,
+        builder: (_, value, _) => TvTintedBackground(source: value, service: service),
+      ),
+    );
+    service.answers['0']!.complete(Colors.red);
+    await tester.pump();
+    await tester.pump();
+    for (var i = 1; i <= 30; i++) {
+      current.value = source('$i');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      service.answers['$i']!.complete(Colors.blue);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(find.byType(Opacity).evaluate().length, lessThanOrEqualTo(3));
+      expect(find.byType(RawImage).evaluate().length, lessThanOrEqualTo(3));
+      expect(decoded.where((image) => !image.debugDisposed).length, lessThanOrEqualTo(3));
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(RawImage), findsOneWidget);
+    expect(decoded.where((image) => !image.debugDisposed).length, 1);
+    await tester.pumpWidget(const SizedBox());
+    expect(decoded.every((image) => image.debugDisposed), isTrue);
+    current.dispose();
+    template!.dispose();
+  });
+
   testWidgets('stale asynchronous result cannot replace the current item', (tester) async {
     final service = StubTintService();
     final current = ValueNotifier(source('A'));
