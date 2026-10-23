@@ -105,19 +105,22 @@ class TvHomeModelBuilder {
     }
     // Preserve the retry/refresh button while the provider clears its error
     // and switches to loading on the next microtask. Existing rows always win.
-    final retryState = provider.isLoadInFlight && _rows.isEmpty ? _terminalState : null;
+    final partsLoading = provider.isLoading || provider.areHubsLoading;
+    final retryState = provider.isLoadInFlight && partsLoading && _rows.isEmpty ? _terminalState : null;
     final model = TvHomeModel._(
       rows: _rows,
       onDeckState: provider.isLoading ? TvHomePartState.loading : TvHomePartState.ready,
       hubsState: provider.areHubsLoading ? TvHomePartState.loading : TvHomePartState.ready,
       errorMessage: retryState == TvHomeState.error ? _terminalError : provider.errorMessage,
-      isLoadInFlight: provider.isLoadInFlight,
+      // The coordinator is still busy during the last notification and does
+      // not notify when its drain ends. Part readiness settles the UI instead.
+      isLoadInFlight: provider.isLoadInFlight && partsLoading,
       retryState: retryState,
     );
     if (model.state == TvHomeState.content) {
       _terminalState = null;
       _terminalError = null;
-    } else if (!provider.isLoadInFlight && (model.state == TvHomeState.error || model.state == TvHomeState.empty)) {
+    } else if (!partsLoading && (model.state == TvHomeState.error || model.state == TvHomeState.empty)) {
       _terminalState = model.state;
       _terminalError = model.errorMessage;
     }
