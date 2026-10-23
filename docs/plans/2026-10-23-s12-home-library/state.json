@@ -2,5 +2,6 @@
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S12",
   "phase": "analysis",
-  "base_commit": "bcde609d9573a54b515d466283ffe8e79d4a3a11"
+  "base_commit": "bcde609d9573a54b515d466283ffe8e79d4a3a11",
+  "profile": "full"
 }
