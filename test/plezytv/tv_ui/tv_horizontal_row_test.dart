@@ -8,6 +8,86 @@ import 'tv_theme_test_helper.dart';
 
 void main() {
   for (final reduced in [false, true]) {
+    testWidgets('held arrow moves across enabled cards (reduced=$reduced)', (tester) async {
+      final nodes = <int, FocusNode>{};
+      await pumpTvWidget(
+        tester,
+        Align(
+          alignment: Alignment.topLeft,
+          child: TvHorizontalRow(
+            title: 'Enabled',
+            itemCount: 4,
+            cardWidth: 216,
+            cardHeight: 404,
+            cardBuilder: (context, index, node) {
+              nodes[index] = node;
+              return TvPoster(
+                item: testMediaItem(title: '$index'),
+                focusNode: node,
+              );
+            },
+          ),
+        ),
+        reduced: reduced,
+      );
+      nodes[0]!.requestFocus();
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(nodes[1]!.hasFocus, isTrue);
+      for (var index = 2; index < 4; index++) {
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(nodes[index]!.hasFocus, isTrue);
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    });
+    for (final opposite in [false, true]) {
+      testWidgets(
+        'pending seek preserves origin across ${opposite ? "opposite arrow" : "repeats"} (reduced=$reduced)',
+        (tester) async {
+          final nodes = <int, FocusNode>{};
+          await pumpTvWidget(
+            tester,
+            Align(
+              alignment: Alignment.topLeft,
+              child: TvHorizontalRow(
+                title: 'Sparse',
+                itemCount: 40,
+                cardWidth: 216,
+                cardHeight: 404,
+                cardBuilder: (context, index, node) {
+                  nodes[index] = node;
+                  return TvPoster(
+                    key: ValueKey(index),
+                    item: testMediaItem(title: '$index'),
+                    focusNode: node,
+                    disabled: index != 0,
+                  );
+                },
+              ),
+            ),
+            reduced: reduced,
+          );
+          nodes[0]!.requestFocus();
+          await tester.pumpAndSettle();
+          final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+          expect(scroll.offset, 0);
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+          expect(scroll.offset, greaterThan(0));
+          // No frame between these keys: the reveal continuation is pending.
+          await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+          await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+          if (opposite) {
+            await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          }
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+          expect(scroll.offset, 0);
+          expect(nodes[0]!.hasFocus, isTrue);
+        },
+      );
+    }
     for (final origin in [0, 2]) {
       testWidgets('unsuccessful seek restores initial viewport $origin (reduced=$reduced)', (tester) async {
         final nodes = <int, FocusNode>{};
