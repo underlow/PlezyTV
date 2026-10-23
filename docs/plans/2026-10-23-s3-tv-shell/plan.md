@@ -39,3 +39,21 @@ choice, screen-link targeting, the S12 replace-not-wrap contract). Depends on T1
 ## Not in scope / limits
 
 No visible change; TV run (A6) only if a TV has free storage.
+
+## Outcome
+
+Delivered 2026-10-23 (branch `flow/s3-tv-shell`, based on unmerged `flow/s5-dev-tools`; not pushed):
+- T1 registry `TvUi`, `TvShell` (renders upstream `MainScreen`), per-session hook in
+  `profile_session_screen.dart` (import + 5 lines) — `dbf8fc42e`.
+- T2 convention guide `docs/plezytv/tv-ui.md` — `b46d0e02e`.
+
+Verification: 91 tests (`test/navigation`, `test/plezytv`) and `flutter analyze` rerun by the coordinator;
+new tests fail without the hook (developer's negative control). Independent whole-change review: no
+significant findings; it confirmed the session choice refreshes on profile switch, offline→online and
+Force TV toggle (root rebuild).
+
+Limits: tests use probes instead of mounting the real `MainScreen` (A1/A3b proven at selection level);
+no test for refresh on profile switch (holds by `ValueKey` construction); not run on a TV (A6).
+For S6+: add screens per `docs/plezytv/tv-ui.md`; S12 must replace `MainScreen` and provide
+`MainScreenFocusScope`, inset reporting and first-prompt handling. The detail hook site (`mediaDetailRoute`
+lives in the 5k-line `media_detail_screen.dart`) is an open decision for S7/S8.
