@@ -71,7 +71,8 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     this.bindingFallback = const Duration(seconds: 15),
   }) : systemShelf = systemShelf ?? SystemShelfService(),
        _contentResumeGate = contentResumeGate ?? ContentRefreshResumeGate(),
-       _isOffline = isOfflineMode,
+       // The shell selects its initial section before start() runs.
+       _isOffline = isOfflineMode || offlineMode.isOffline,
        _offlineUntilConnected = isOfflineMode;
 
   final ActiveProfileProvider activeProfile;
