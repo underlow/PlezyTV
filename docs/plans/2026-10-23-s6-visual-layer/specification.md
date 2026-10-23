@@ -99,7 +99,11 @@ visuals themselves:
   themselves: animated per tokens normally, instant (jump) when
   `DevicePerformance.isReduced`. The TV focusable defaults to upstream
   auto-scroll off. Vertical page scrolling is done by the screen stages under
-  the same rule. (Added 2026-10-23, user decision.)
+  the same rule. (Added 2026-10-23, user decision.) Instant-when-reduced is a
+  hypothesis (an animated scroll redraws every frame; a jump redraws once, but
+  building and decoding newly visible cards costs the same either way), to be
+  confirmed by S2 measurements or first screen acceptance; keep the choice in
+  one place so it is a one-line change.
 - Focus visuals appear in keyboard/D-pad mode as upstream decides
   (`InputModeTracker`); pointer and touch are not a target for S6.
 
