@@ -15,6 +15,8 @@ import '../../providers/offline_mode_provider.dart';
 import '../../services/companion_remote/companion_remote_receiver.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/media_navigation_helper.dart';
+import '../update/updater.dart';
+import '../update/startup_trigger.dart';
 import 'screen_link.dart';
 import 'screen_link_queue.dart';
 
@@ -39,8 +41,18 @@ class ScreenLinkRouter {
       ScreenTarget.settings: (link, current) => _tab(link, _receiver.onTabSettings, NavigationTabId.settings),
       ScreenTarget.library: _resolve,
       ScreenTarget.item: _resolve,
-      ScreenTarget.update: (link, current) => throw StateError('update unavailable'),
+      ScreenTarget.update: (link, current) => PlezyTvUpdater.instance.check(() => _context, automatic: false),
     };
+    startUpdates();
+  }
+
+  UpdateStartupTrigger? _updateTrigger;
+  void startUpdates() {
+    _updateTrigger ??= UpdateStartupTrigger(
+      enabled: PlezyTvUpdater.enabled,
+      isReady: _isReady,
+      fire: () => PlezyTvUpdater.instance.ready(() => _isReady() ? _context : null),
+    );
   }
 
   static final instance = ScreenLinkRouter._();

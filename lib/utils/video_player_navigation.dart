@@ -54,6 +54,10 @@ class VideoPlayerRoute extends PageRouteBuilder<bool> {
   // Reserve at route commit, not screen initState: another launch can arrive
   // before the first frame. Navigator identity also isolates profile sessions.
   static final _activeRoutes = Expando<VideoPlayerRoute>();
+
+  /// Includes covered players that still own the native video session.
+  static bool hasActivePlayer(NavigatorState? navigator) =>
+      navigator != null && _activeRoutes[navigator]?.isActive == true;
   bool get isReplacingWithVideo => _isReplacingWithVideo;
   bool _isReplacingWithVideo = false;
   final bool joinsWatchTogether;
