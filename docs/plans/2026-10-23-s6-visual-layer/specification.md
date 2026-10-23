@@ -94,6 +94,12 @@ visuals themselves:
   focusable so their reason can be read, but select does nothing.
 - **Timing:** focusIn 120 ms, focusOut 100, press 80, easeOutCubic; instant when
   reduced (as upstream `FocusTheme` does).
+- **Scrolling:** TV components do not use upstream auto-scroll (its 200 ms
+  duration in `FocusableWrapper` ignores the reduced tier). They scroll
+  themselves: animated per tokens normally, instant (jump) when
+  `DevicePerformance.isReduced`. The TV focusable defaults to upstream
+  auto-scroll off. Vertical page scrolling is done by the screen stages under
+  the same rule. (Added 2026-10-23, user decision.)
 - Focus visuals appear in keyboard/D-pad mode as upstream decides
   (`InputModeTracker`); pointer and touch are not a target for S6.
 

@@ -96,6 +96,10 @@ skeletons (spec 4.6.1, 4.6.2, 4.6.8, 4.6.11). Data from `MediaItem` via Plezy
 getters (`isWatched`, `unwatchedCount`, progress); images via
 `OptimizedMediaImage`.
 
+Also (spec 4.4 Scrolling, added after T2): change the `TvFocusable`
+`autoScroll` default to off, with a test that a focused item inside a
+scrollable does not trigger the upstream 200 ms scroll by default.
+
 Checks: A4 on the real poster (title style change, caption not scaled), A11,
 A14, A15 skeleton part. Catches own watch-state logic diverging from Plezy and
 decode at full image size.
