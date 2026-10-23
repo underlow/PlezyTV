@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../plezytv/update/updater.dart';
+import '../../plezytv/tv_ui/tv_settings.dart';
 import '../../focus/focus_memory_tracker.dart';
 import '../../focus/focusable_text_field.dart';
 import '../../focus/input_mode_tracker.dart';
@@ -236,6 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> with FocusableTab, Moun
                   _buildAdvancedSection(),
 
                   if (PlezyTvUpdater.enabled) PlezyTvUpdater.settingsTile(context),
+                  ?TvSettings.settingsTile(context),
                   if (UpdateService.isUpdateCheckAvailable) ...[_buildUpdateSection()],
 
                   // Hidden on Android TV / tvOS (no document picker); desktop in
