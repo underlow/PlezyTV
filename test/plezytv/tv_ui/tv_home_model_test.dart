@@ -59,6 +59,7 @@ void main() {
     expect(model.rows.map((row) => row.title), ['Continue Watching', 'mixed', 'last']);
     expect(model.rows.first.kind, TvHomeRowKind.continueWatching);
     expect(model.rows.first.hasMore, isTrue);
+    expect(model.rows.first.count, isNull); // Plezy TV headers show no counter.
     expect(model.rows[1].items, supported);
     expect(model.rows[1].hasMore, isTrue);
     expect(model.rows[1].count, isNull);
@@ -104,23 +105,48 @@ void main() {
     expect(ready.rows, same(loading.rows));
   });
 
-  test('A9b: early hubs wait for onDeck publication', () {
-    provider.isLoading = true;
-    provider.hubs = [
-      hub('early', [testMediaItem()]),
-    ];
+  test('A9b: hubs are unpublished until onDeck completes', () {
+    provider.isLoading = provider.areHubsLoading = true;
     final waiting = builder.build(provider);
     expect(waiting.state, TvHomeState.loading);
     expect(waiting.hubsState, TvHomePartState.loading);
     expect(waiting.rows, isEmpty);
-    provider.isLoading = false;
-    final ready = builder.build(provider);
-    expect(ready.state, TvHomeState.content);
-    expect(ready.rows.single.title, 'early');
-    expect(ready.hubsState, TvHomePartState.ready);
+    provider.isLoading = provider.areHubsLoading = false;
+    provider.hubs = [
+      hub('published', [testMediaItem()]),
+    ];
+    expect(builder.build(provider).state, TvHomeState.content);
   });
 
-  test('A10: loading -> error -> retry -> loading uses current flags with identical lists', () {
+  for (final withOnDeck in [false, true]) {
+    test('refresh preserves hub rows and identity (onDeck=$withOnDeck)', () {
+      if (withOnDeck) provider.onDeck = [testMediaItem()];
+      provider.hubs = [
+        hub('existing', [testMediaItem()]),
+      ];
+      final before = builder.build(provider);
+      provider.isLoading = provider.areHubsLoading = provider.isLoadInFlight = true;
+      final refreshing = builder.build(provider);
+      expect(refreshing.state, TvHomeState.content);
+      expect(refreshing.rows, same(before.rows));
+      expect(refreshing.rows.length, withOnDeck ? 2 : 1);
+      expect(refreshing.hubsState, TvHomePartState.loading);
+    });
+  }
+
+  test('cancelled onDeck does not hide successfully published hubs', () {
+    provider.isLoading = true;
+    provider.hubs = [
+      hub('published', [testMediaItem()]),
+    ];
+    final model = builder.build(provider);
+    expect(model.state, TvHomeState.content);
+    expect(model.rows.single.title, 'published');
+    expect(model.onDeckState, TvHomePartState.loading);
+    expect(model.hubsState, TvHomePartState.ready);
+  });
+
+  test('A10: retry retains error across real provider loading sequence', () {
     final onDeck = provider.onDeck;
     final hubs = provider.hubs;
     provider.isLoading = provider.areHubsLoading = true;
@@ -137,12 +163,19 @@ void main() {
     provider.isLoading = provider.areHubsLoading = true;
     provider.errorMessage = null;
     final loading = builder.build(provider);
-    expect(loading.state, TvHomeState.loading);
+    expect(loading.state, TvHomeState.error);
+    expect(loading.errorMessage, 'failed');
+    expect(loading.isLoadInFlight, isTrue);
     expect(loading.onDeckState, TvHomePartState.loading);
     expect(loading.hubsState, TvHomePartState.loading);
     expect(provider.onDeck, same(onDeck));
     expect(provider.hubs, same(hubs));
     expect(loading.rows, same(error.rows));
+    provider.isLoadInFlight = provider.isLoading = provider.areHubsLoading = false;
+    expect(builder.build(provider).state, TvHomeState.empty);
+    provider.errorMessage = 'new failure';
+    expect(builder.build(provider).errorMessage, 'new failure');
+    expect(builder.build(provider).state, TvHomeState.error);
   });
 
   test('A10b/A11: loaded without error and rows is empty', () {
@@ -150,6 +183,12 @@ void main() {
     provider.isLoadInFlight = true;
     expect(builder.build(provider).state, TvHomeState.empty);
     expect(builder.build(provider).isLoadInFlight, isTrue);
+    provider.isLoading = provider.areHubsLoading = true;
+    expect(builder.build(provider).state, TvHomeState.empty);
+    provider.onDeck = [testMediaItem()];
+    expect(builder.build(provider).state, TvHomeState.content);
+    provider.isLoadInFlight = provider.isLoading = provider.areHubsLoading = false;
+    expect(builder.build(provider).state, TvHomeState.content);
   });
 
   test('existing content wins over an error; rows cached until list replacement', () {
