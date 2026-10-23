@@ -21,7 +21,7 @@ import '../../../models/companion_remote/remote_command.dart';
 import '../../../providers/hidden_libraries_provider.dart';
 import '../../../providers/libraries_provider.dart';
 import '../../../providers/multi_server_provider.dart';
-import '../../../screens/discover_screen.dart';
+import '../home/tv_home_screen.dart';
 import '../../../screens/downloads/downloads_screen.dart';
 import '../../../screens/explore_screen.dart';
 import '../../../screens/libraries/libraries_screen.dart';
@@ -410,7 +410,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     final probe = TvSectionShell.sectionBuilderForTesting;
     if (probe != null) return probe(context, tab, key);
     return switch (tab) {
-      NavigationTabId.discover => DiscoverScreen(key: key),
+      NavigationTabId.discover => TvHomeScreen(key: key),
       NavigationTabId.libraries => LibrariesScreen(
         key: key,
         onLibraryOrderChanged: () => setState(() {}),
