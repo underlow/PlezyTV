@@ -72,22 +72,35 @@ class TvHero extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ClearLogoImage(
-                        client: client,
-                        logoPath: media.clearLogoPath,
-                        width: px(TvTokens.size.hero.logoMaxW * (compact ? .7 : 1)),
-                        // Reserve two full display lines, including in compact mode.
+                      // Keep the title baseline fixed while the artwork box shrinks.
+                      SizedBox(
+                        key: const ValueKey('hero-title-slot'),
                         height: px(TvTokens.type.display.lineHeight * 2),
-                        alignment: Alignment.bottomLeft,
-                        fallbackWidth: px(TvTokens.size.hero.textMaxW),
-                        fadeInDuration: Duration.zero,
-                        fallbackBuilder: (context) => Align(
+                        child: Align(
                           alignment: Alignment.bottomLeft,
-                          child: Text(
-                            media.displayTitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.display,
+                          child: ClearLogoImage(
+                            client: client,
+                            logoPath: media.clearLogoPath,
+                            width: px(TvTokens.size.hero.logoMaxW * (compact ? .7 : 1)),
+                            height: px(compact ? 90 : 128),
+                            alignment: Alignment.bottomLeft,
+                            fallbackWidth: px(TvTokens.size.hero.textMaxW),
+                            fadeInDuration: Duration.zero,
+                            // A missing or failed image still gets two full title lines.
+                            fallbackBuilder: (context) => OverflowBox(
+                              alignment: Alignment.bottomLeft,
+                              minHeight: px(TvTokens.type.display.lineHeight * 2),
+                              maxHeight: px(TvTokens.type.display.lineHeight * 2),
+                              child: Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Text(
+                                  media.displayTitle,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.display,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),

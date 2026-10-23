@@ -64,8 +64,30 @@ void main() {
     expect(logo.logoPath, '/logo');
     expect(logo.width, 560);
     expect(logo.height, lessThanOrEqualTo(200));
+    final normalImage = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
+    final normalImageSize = Size(normalImage.width!, normalImage.height!);
+    expect(normalImageSize, const Size(560, 128));
     compact.value = true;
     await tester.pump();
+    final compactImage = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
+    final compactImageSize = Size(compactImage.width!, compactImage.height!);
+    expect(compactImage.fit, BoxFit.contain);
+    // Test the contained artwork, independent of a network response or fallback.
+    for (final aspect in [1.0, 2.0, 3.0, 5.0]) {
+      final source = Size(100 * aspect, 100);
+      final normal = applyBoxFit(BoxFit.contain, source, normalImageSize).destination;
+      final compact = applyBoxFit(BoxFit.contain, source, compactImageSize).destination;
+      expect(compact.width, lessThan(normal.width));
+      expect(compact.height, lessThan(normal.height));
+    }
+    expect(compactImageSize, const Size(392, 90));
+    expect(compactImageSize.width, lessThan(normalImageSize.width));
+    expect(compactImageSize.height, lessThan(normalImageSize.height));
+    expect(tester.getSize(find.byKey(const ValueKey('hero-title-slot'))).height, 128);
+    expect(
+      tester.getRect(find.byType(OptimizedMediaImage)).bottom,
+      tester.getRect(find.byKey(const ValueKey('hero-title-slot'))).bottom,
+    );
     expect(tester.getSize(find.byType(TvHero)).height, 420);
     expect(tester.widget<Text>(find.text('Summary')).maxLines, 2);
     expect(tester.widget<ClearLogoImage>(find.byType(ClearLogoImage)).height, lessThan(200));
@@ -234,7 +256,7 @@ void main() {
         final text = tester.renderObject<RenderParagraph>(find.text(title));
         expect(text.didExceedMaxLines, isFalse);
         if (title != 'Short') expect(text.size.height, 128);
-        final logo = tester.getRect(find.byType(ClearLogoImage));
+        final logo = tester.getRect(find.byKey(const ValueKey('hero-title-slot')));
         final titleRect = tester.getRect(find.text(title));
         expect(logo.top, compact ? 72 : 110);
         expect(titleRect.bottom, logo.bottom);
