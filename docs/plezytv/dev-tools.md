@@ -24,7 +24,8 @@ IDs from your server. Add `&server=<machineId>` to disambiguate library/item
 IDs; otherwise the first connected server resolving the ID wins. Keep the URI
 quoted and percent-encode query text and IDs when needed.
 
-`update` is reserved and currently logs "update unavailable". Invalid links,
+`update` runs a manual PlezyTV update check in tagged builds. Untagged builds
+(no `PLEZYTV_VERSION`) have no updater UI or network checks. Invalid links,
 missing IDs, unknown servers/IDs and invisible tabs leave the current screen
 unchanged and produce one `appLogger` warning with the URI and reason. Existing
 `plezytv://play`, `plezytv://live` and shelf IDs retain their original handling.
@@ -40,3 +41,23 @@ adb exec-out screencap -p > plezytv-settings.png
 For a cold-start check, close PlezyTV first, issue the same screen command,
 complete any profile/sign-in step, then capture. Back and D-pad navigation use
 the existing main screen and profile navigator.
+
+## PlezyTV updates
+
+Tagged Android builds check the anonymous `underlow/PlezyTV` latest release once
+per six hours after the main screen is ready. Automatic failures only log;
+manual checks (Settings or the link above) report the result and ignore the
+cooldown and skipped version. Only exact `vX.Y.Z` tags and the installed app’s
+ARM ABI asset qualify. An automatic offer waits while any video route is active.
+
+Install downloads into app cache with progress and Cancel. If Android asks for
+permission to install apps, allow it for PlezyTV, return, and press Install again;
+the completed download is reused. Old update downloads are removed at the next
+startup and before downloading another APK. This is separate from the disabled
+upstream updater. Fork-owned dialog strings support English and Russian.
+
+Local checks cover mocked releases, failure/cancel cleanup, permission retry,
+remote dialog focus, startup timer shutdown and active/covered video routes.
+A real signed release and device are still needed to verify the complete
+GitHub download → Android permission setting → package installer → replacement
+flow. No TV installation was attempted for T4 (device storage is full).

@@ -31,6 +31,7 @@ class SystemShelfService {
   factory SystemShelfService() => _testingInstance ?? _instance;
 
   SystemShelfService._internal() : _channelOverride = null, _supportOverride = null, _tvosTargetOverride = null {
+    ScreenLinkRouter.instance.startUpdates();
     _androidChannel.setMethodCallHandler(_handleMethodCall);
     _tvosChannel.setMethodCallHandler(_handleMethodCall);
   }
