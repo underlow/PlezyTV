@@ -7,8 +7,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:plezy/plezytv/update/update_service.dart';
 import 'package:plezy/plezytv/update/updater.dart';
 import 'package:plezy/plezytv/update/player_guard.dart';
+import 'package:plezy/plezytv/screen_links/screen_link.dart';
+import 'package:plezy/plezytv/screen_links/screen_link_queue.dart';
 import 'package:plezy/utils/video_player_navigation.dart' show VideoPlayerRoute;
 import 'package:plezy/widgets/dialog_action_button.dart';
+import 'package:plezy/main.dart' show rootNavigatorKey;
 
 class DialogService extends UpdateService {
   DialogService(SharedPreferences prefs)
@@ -19,6 +22,9 @@ class DialogService extends UpdateService {
         cache: Directory.systemTemp,
         log: (_) {},
       );
+  @override
+  Future<UpdateRelease?> check({required bool automatic}) async =>
+      UpdateRelease('0.3.0', Uri.https('github.com', '/apk'), 3);
   Completer<File>? pending;
   bool holdDownload = false;
   bool cancelled = false;
@@ -127,6 +133,78 @@ void main() {
     await tester.pumpAndSettle();
     expect(hasActiveUpdatePlayer(navigator.currentState), isFalse);
   });
+  testWidgets('automatic dialog waits through playback and appears after playback ends', (tester) async {
+    BuildContext? owner;
+    final updater = PlezyTvUpdater(service: () async => service, enabledForChecks: () => true);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: rootNavigatorKey,
+        home: Builder(
+          builder: (context) {
+            owner = context;
+            return const Scaffold(body: Text('home'));
+          },
+        ),
+      ),
+    );
+    unawaited(
+      VideoPlayerRoute(builder: (_) => const Scaffold(body: Text('Video'))).push(rootNavigatorKey.currentState!),
+    );
+    await tester.pumpAndSettle();
+    final check = updater.check(() => owner, automatic: true);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byType(PlezyTvUpdateDialog), findsNothing);
+    rootNavigatorKey.currentState!.pop();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlezyTvUpdateDialog), findsOneWidget);
+    await tester.tap(find.text('Later'));
+    await tester.pumpAndSettle();
+    await check;
+  });
+
+  testWidgets('superseded manual check never displays after playback', (tester) async {
+    BuildContext? owner;
+    var playing = true;
+    final updater = PlezyTvUpdater(
+      service: () async => service,
+      enabledForChecks: () => true,
+      playerActive: () => playing,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            owner = context;
+            return const Scaffold();
+          },
+        ),
+      ),
+    );
+    final actions = <ScreenTarget>[];
+    final queue = ScreenLinkQueue(
+      isReady: () => true,
+      dispatch: (link, isCurrent) async {
+        if (link.target == ScreenTarget.update) {
+          updater.checkFromLink(() => owner, isCurrent);
+        } else {
+          actions.add(link.target);
+        }
+      },
+      warn: (_, reason) => fail(reason),
+    );
+    addTearDown(queue.dispose);
+    queue.claim('plezytv://screen/update');
+    await tester.pump();
+    queue.claim('plezytv://screen/settings');
+    await tester.pump();
+    expect(actions, [ScreenTarget.settings]);
+    playing = false;
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PlezyTvUpdateDialog), findsNothing);
+  });
+
   testWidgets('A21 progress and cancel keep dialog usable', (tester) async {
     service.holdDownload = true;
     await show(tester);

@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:plezy/screens/profile/profile_switch_screen.dart';
+import 'package:plezy/profiles/active_profile_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:plezy/main.dart' show rootNavigatorKey;
@@ -25,22 +28,32 @@ class _OfflineMode extends ChangeNotifier implements OfflineModeProvider {
 const _library = MediaLibrary(id: '42', backend: MediaBackend.plex, title: 'Movies', serverId: 'b');
 
 class _Client implements MediaServerClient {
-  _Client(this.libraries);
+  _Client(this.libraries, this.fetchGate);
+  final Future<void>? fetchGate;
   final List<MediaLibrary> libraries;
   @override
-  Future<List<MediaLibrary>> fetchLibraries() async => libraries;
+  Future<List<MediaLibrary>> fetchLibraries() async {
+    await fetchGate;
+    return libraries;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _Servers extends ChangeNotifier implements MultiServerProvider {
   bool connected = false;
+  List<String> online = ['a', 'b'];
+  Future<void>? fetchGate;
+  @override
+  List<String> get expectedServerIds => ['a', 'b'];
   @override
   bool get hasConnectedServers => connected;
   @override
-  List<String> get onlineServerIds => connected ? ['a', 'b'] : [];
+  List<String> get onlineServerIds => connected ? online : [];
   @override
-  MediaServerClient? getClientForServer(ServerId serverId) => _Client(serverId == ServerId('b') ? [_library] : []);
+  MediaServerClient? getClientForServer(ServerId serverId) =>
+      _Client(serverId == ServerId('b') ? [_library] : [], fetchGate);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -48,14 +61,41 @@ class _Servers extends ChangeNotifier implements MultiServerProvider {
 class _Libraries extends ChangeNotifier implements LibrariesProvider {
   @override
   bool get isLoading => false;
+  LibrariesLoadState state = LibrariesLoadState.loaded;
+  @override
+  LibrariesLoadState get loadState => state;
   @override
   List<MediaLibrary> get libraries => [_library];
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+// Keep the real picker widget type while avoiding unrelated profile UI dependencies.
+class _Picker extends ProfileSwitchScreen {
+  const _Picker() : super(requireSelection: true);
+  @override
+  State<ProfileSwitchScreen> createState() => _PickerState();
+}
+
+class _PickerState extends State<ProfileSwitchScreen> {
+  @override
+  Widget build(BuildContext context) => const Scaffold(body: Text('picker'));
+}
+
+class _Profile extends ChangeNotifier implements ActiveProfileProvider {
+  bool binding = false;
+  @override
+  bool get isBinding => binding;
+  @override
+  bool get isInitialized => true;
+  @override
+  String? get activeId => 'profile';
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _Owner extends StatefulWidget {
-  const _Owner({this.selectLibrary});
+  const _Owner({super.key, this.selectLibrary});
   final void Function(String)? selectLibrary;
   @override
   State<_Owner> createState() => _OwnerState();
@@ -165,6 +205,17 @@ void main() {
     await tester.pump();
     expect(selected, isEmpty);
     servers.connected = true;
+    libraries.state = LibrariesLoadState.initial;
+    servers.online = ['a'];
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(selected, isEmpty);
+    libraries.state = LibrariesLoadState.loaded;
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(selected, isEmpty);
+    router.claim('plezytv://screen/library?id=42&server=b');
+    await tester.pump();
+    expect(selected, isEmpty);
+    servers.online = ['a', 'b'];
     await tester.pump(const Duration(milliseconds: 250));
     expect(selected, [_library.globalKey]);
     expect(find.text('main'), findsOneWidget);
@@ -174,6 +225,77 @@ void main() {
     await tester.pump();
     expect(selected, [_library.globalKey]);
     expect(find.text('main'), findsOneWidget);
+  });
+
+  testWidgets('binding keeps warm tab links pending until profile settles', (tester) async {
+    final offline = _OfflineMode();
+    addTearDown(offline.dispose);
+    final profile = _Profile()..binding = true;
+    addTearDown(profile.dispose);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ActiveProfileProvider>.value(value: profile),
+          ChangeNotifierProvider<OfflineModeProvider>.value(value: offline),
+        ],
+        child: MaterialApp(navigatorKey: rootNavigatorKey, home: const _Owner()),
+      ),
+    );
+    profileNavigationRegistry.attachNavigator(rootNavigatorKey);
+    var calls = 0;
+    receiver.onHome = () {};
+    receiver.onTabSettings = () => calls++;
+    rootNavigatorKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => const _Picker()));
+    await tester.pumpAndSettle();
+    router.claim('plezytv://screen/settings');
+    await tester.pump();
+    expect(find.text('picker'), findsOneWidget);
+    expect(calls, 0);
+    profile.binding = false;
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(calls, 0);
+    expect(find.text('picker'), findsOneWidget);
+    rootNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+  });
+
+  testWidgets('old owner fetch failure retries for replacement owner', (tester) async {
+    final offline = _OfflineMode();
+    final servers = _Servers()..connected = true;
+    final libraries = _Libraries();
+    addTearDown(offline.dispose);
+    addTearDown(servers.dispose);
+    addTearDown(libraries.dispose);
+    final gate = Completer<void>();
+    servers.fetchGate = gate.future;
+    final selected = <String>[];
+    Widget app(int owner) => MultiProvider(
+      providers: [
+        ChangeNotifierProvider<OfflineModeProvider>.value(value: offline),
+        ChangeNotifierProvider<MultiServerProvider>.value(value: servers),
+        ChangeNotifierProvider<LibrariesProvider>.value(value: libraries),
+      ],
+      child: MaterialApp(
+        navigatorKey: rootNavigatorKey,
+        home: _Owner(key: ValueKey(owner), selectLibrary: selected.add),
+      ),
+    );
+    await tester.pumpWidget(app(1));
+    profileNavigationRegistry.attachNavigator(rootNavigatorKey);
+    receiver.onHome = () {};
+    receiver.onTabSettings = () {};
+    router.claim('plezytv://screen/library?id=42&server=b');
+    await tester.pump();
+    await tester.pumpWidget(app(2));
+    servers.fetchGate = null;
+    gate.completeError(StateError('old profile disconnected'));
+    await tester.pump();
+    expect(selected, isEmpty);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(selected, [_library.globalKey]);
   });
 
   testWidgets('pending latest link survives six minutes before callbacks register', (tester) async {

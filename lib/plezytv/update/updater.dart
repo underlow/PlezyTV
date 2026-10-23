@@ -19,20 +19,28 @@ class PlezyTvUpdater {
   static bool get enabled => Platform.isAndroid && ReleaseVersion.parse(version) != null;
   static final instance = PlezyTvUpdater();
   static const channel = MethodChannel('com.underlow.plezytv/update');
+  PlezyTvUpdater({Future<UpdateService> Function()? service, this.enabledForChecks, bool Function()? playerActive})
+    : _serviceFactory = service,
+      _player = playerActive;
+  final Future<UpdateService> Function()? _serviceFactory;
+  final bool Function()? enabledForChecks;
+  final bool Function()? _player;
   Future<UpdateService>? _service;
   bool _busy = false;
   bool _started = false;
-  Future<UpdateService> _getService() => _service ??= () async {
-    final service = UpdateService(
-      version: version,
-      preferences: await SharedPreferences.getInstance(),
-      abi: () async => (await channel.invokeMethod<String>('abi'))!,
-      cache: await getTemporaryDirectory(),
-      log: appLogger.w,
-    );
-    await service.cleanup();
-    return service;
-  }();
+  Future<UpdateService> _getService() => _service ??=
+      _serviceFactory?.call() ??
+      () async {
+        final service = UpdateService(
+          version: version,
+          preferences: await SharedPreferences.getInstance(),
+          abi: () async => (await channel.invokeMethod<String>('abi'))!,
+          cache: await getTemporaryDirectory(),
+          log: appLogger.w,
+        );
+        await service.cleanup();
+        return service;
+      }();
 
   /// Called only after the screen-link router observes its main-screen readiness.
   void ready(BuildContext? Function() context) {
@@ -45,21 +53,29 @@ class PlezyTvUpdater {
       hasActiveUpdatePlayer(rootNavigatorKey.currentState) ||
       hasActiveUpdatePlayer(profileNavigationRegistry.navigator);
 
-  Future<void> check(BuildContext? Function() context, {required bool automatic}) async {
-    if (!enabled) return;
+  /// Release the screen-link queue immediately; newer links cancel pending UI.
+  void checkFromLink(BuildContext? Function() context, bool Function() isCurrent) {
+    unawaited(check(context, automatic: false, isCurrent: isCurrent));
+  }
+
+  Future<void> check(BuildContext? Function() context, {required bool automatic, bool Function()? isCurrent}) async {
+    bool current() => isCurrent?.call() ?? true;
+    if (!(enabledForChecks?.call() ?? enabled) || !current()) return;
     if (automatic && _busy) return;
     while (_busy) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
+    if (!current()) return;
     _busy = true;
     try {
       final service = await _getService();
       final release = await service.check(automatic: automatic);
       if (release == null && automatic) return;
       // Readiness can disappear during a request (profile switch/sign-out).
-      while ((automatic && context() == null) || _playerActive()) {
+      while (current() && ((automatic && context() == null) || (_player?.call() ?? _playerActive()))) {
         await Future<void>.delayed(const Duration(seconds: 1));
       }
+      if (!current()) return;
       final owner = context();
       if (owner == null || !owner.mounted) return;
       if (release == null) {
@@ -76,7 +92,9 @@ class PlezyTvUpdater {
         appLogger.w('PlezyTV update failed: $error');
       } else {
         final owner = context();
-        if (owner != null && owner.mounted) await _message(owner, '${UpdateStrings(owner).failed}: $error');
+        if (current() && owner != null && owner.mounted) {
+          await _message(owner, '${UpdateStrings(owner).failed}: $error');
+        }
       }
     } finally {
       _busy = false;
