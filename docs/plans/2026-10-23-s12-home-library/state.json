@@ -1,7 +1,7 @@
 {
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S12",
-  "phase": "implementation",
+  "phase": "review",
   "base_commit": "bcde609d9573a54b515d466283ffe8e79d4a3a11",
   "profile": "full",
   "development_agent": {
@@ -19,6 +19,5 @@
     "T5": {
       "effort": "medium"
     }
-  },
-  "task": "T7"
+  }
 }
