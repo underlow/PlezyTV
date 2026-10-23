@@ -20,7 +20,3 @@ Placement: `android/app/src/main/res/mipmap-{density}/ic_launcher.png`,
 `values/colors.xml` (`ic_launcher_background`), and
 `drawable-{xhdpi,xxhdpi,xxxhdpi}/tv_banner.png`. Preserve alternate icon assets.
 
-Until final art arrives, run `swift scripts/plezytv/make_placeholder_icons.swift`
-on macOS from the repository root. It reads pinned upstream originals and adds
-an amber TV badge to default legacy icons, adaptive foreground and banners.
-The existing monochrome layer remains upstream artwork until final art arrives.
