@@ -1,8 +1,8 @@
 package com.edde746.plezy.watchnext
 
 import android.content.ContentProvider
-import android.content.Context
 import android.content.ContentValues
+import android.content.Context
 import android.database.Cursor
 import android.graphics.BitmapFactory
 import android.net.Uri
