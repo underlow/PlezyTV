@@ -4,7 +4,7 @@
   "phase": "implementation",
   "base_commit": "e71a004d09598e6d81d85f7c853e2894d461580d",
   "profile": "medium",
-  "task": "T1",
+  "task": "T2",
   "development_agent": {
     "platform": "codex",
     "model": "gpt-6.1-sol",
