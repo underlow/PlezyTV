@@ -126,7 +126,9 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     offlineMode.addListener(_offlineChanged);
     multiServer.addListener(_offlineChanged);
     WidgetsBinding.instance.addObserver(this);
-    if (!_isOffline) {
+    // MainScreen registers these from the route flag before reconciling the
+    // provider. Keep navigation callbacks available after this session recovers.
+    if (!isOfflineMode) {
       watchTogether?.navigatorOpener = _openWatch;
       if (supportsShelf) {
         systemShelf.onShelfItemTap = _onShelfTap;
