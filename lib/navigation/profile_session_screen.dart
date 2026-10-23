@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
 import '../connection/connection_registry.dart';
+import '../plezytv/tv_ui/tv_ui.dart';
 import '../focus/covered_route_focus_boundary.dart';
 import '../focus/key_event_utils.dart';
 import '../media/ids.dart';
@@ -329,6 +330,7 @@ class _ProfileSessionNavigator extends StatefulWidget {
 }
 
 class _ProfileSessionNavigatorState extends State<_ProfileSessionNavigator> {
+  late final bool _tvUiEnabled;
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _mainScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final _routeObserver = RouteObserver<PageRoute<dynamic>>();
@@ -343,6 +345,7 @@ class _ProfileSessionNavigatorState extends State<_ProfileSessionNavigator> {
   @override
   void initState() {
     super.initState();
+    _tvUiEnabled = TvUi.enabled;
     profileNavigationRegistry.attachNavigator(_navigatorKey);
     profileNavigationRegistry.attachMainScaffoldMessenger(_mainScaffoldMessengerKey);
   }
@@ -425,6 +428,8 @@ class _ProfileSessionNavigatorState extends State<_ProfileSessionNavigator> {
       settings: settings,
       builder: (context) =>
           widget.profileShellBuilder?.call(context) ??
+          TvUi.profileHome(context, enabled: _tvUiEnabled,
+              isOfflineMode: widget.isOfflineMode, initialPromptHandled: widget.initialPromptHandled) ??
           MainScreen(isOfflineMode: widget.isOfflineMode, initialPromptHandled: widget.initialPromptHandled),
     );
   }
