@@ -65,10 +65,15 @@ secret and rerun to proceed. Detection covers every incoming commit, including
 workflow edits subsequently reverted in that history.
 
 **PlezyTV upstream sync** runs weekly and manually. It recreates `upstream-sync`
-from main, merges upstream/main, runs analyze/tests/debug build, and opens or
+from main, merges upstream/main, installs root and wakelock_plus dependencies,
+runs the upstream analyzer wrapper, native formatting, Flutter tests and a debug
+Android build, and opens or
 updates a PR. That branch is automation-owned: do not put manual work there.
 Conflicts produce an `upstream-sync` issue with paths; failed checks still produce
-a PR plus an issue with logs. Successful later runs close the status issue.
+a PR plus an issue with logs. When repository issues are disabled, the report
+is written to the Actions job summary instead; a failed sync still fails the run.
+Successful later runs close the status issue when issues are enabled. All GitHub
+CLI operations explicitly target this fork via `GH_REPO`.
 Review and merge the PR manually. `GITHUB_TOKEN` pushes do not trigger other
 Actions workflows; PAT pushes can trigger enabled workflows. The sync workflow
 itself performs validation when push authorization permits it. Conflicts,

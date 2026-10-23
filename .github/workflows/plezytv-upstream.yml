@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 env:
   FLUTTER_VERSION: '3.47.1'
+  GH_REPO: ${{ github.repository }}
   GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
 jobs:
   sync:
@@ -80,8 +81,10 @@ jobs:
           set +e
           failed=0
           for command in \
-            'flutter pub get --enforce-lockfile --no-example' \
-            'flutter analyze' \
+            'flutter pub get --enforce-lockfile' \
+            '(cd packages/wakelock_plus && flutter pub get --enforce-lockfile --no-example)' \
+            'dart run scripts/checks/check_analyzer.dart' \
+            'scripts/format_native.sh --check' \
             'flutter test' \
             'flutter build apk --debug'; do
             echo "::group::$command"
@@ -120,14 +123,16 @@ jobs:
           CHECK_RESULT: ${{ steps.checks.outcome }}
           JOB_STATUS: ${{ job.status }}
         run: |
-          gh label create upstream-sync --description 'Automated upstream merge status' --color D93F0B --force
-          number=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number // empty')
+          succeeded=false
           if [[ "$PUSH_ALLOWED" == true && "$MERGE_CLEAN" == true && "$CHECK_RESULT" == success && "$JOB_STATUS" == success ]]; then
-            if [[ -n "$number" ]]; then gh issue close "$number" --comment "Upstream checks now pass: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
-            exit 0
+            succeeded=true
           fi
           {
-            printf 'Upstream sync needs attention. Merge clean: %s; checks: %s; job: %s.\n\n' "$MERGE_CLEAN" "$CHECK_RESULT" "$JOB_STATUS"
+            if [[ "$succeeded" == true ]]; then
+              echo 'Upstream sync checks passed.'
+            else
+              printf 'Upstream sync needs attention. Merge clean: %s; checks: %s; job: %s.\n\n' "$MERGE_CLEAN" "$CHECK_RESULT" "$JOB_STATUS"
+            fi
             printf 'Logs: %s/%s/actions/runs/%s\n\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             if [[ -f "$RUNNER_TEMP/upstream-details.txt" ]]; then cat "$RUNNER_TEMP/upstream-details.txt"; fi
             if [[ -f "$RUNNER_TEMP/upstream-checks.log" ]]; then
@@ -135,6 +140,19 @@ jobs:
               tail -c 20000 "$RUNNER_TEMP/upstream-checks.log"
             fi
           } > "$RUNNER_TEMP/upstream-issue.md"
+          has_issues=$(gh api "repos/$GH_REPO" -q .has_issues)
+          if [[ "$has_issues" != true ]]; then
+            echo 'Issues are disabled; reporting upstream sync status here.' >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/upstream-issue.md" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$succeeded" == true ]]; then exit 0; fi
+            exit 1
+          fi
+          gh label create upstream-sync --description 'Automated upstream merge status' --color D93F0B --force
+          number=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number // empty')
+          if [[ "$succeeded" == true ]]; then
+            if [[ -n "$number" ]]; then gh issue close "$number" --comment "Upstream checks now pass: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
+            exit 0
+          fi
           if [[ -n "$number" ]]; then
             gh issue edit "$number" --body-file "$RUNNER_TEMP/upstream-issue.md"
           else
