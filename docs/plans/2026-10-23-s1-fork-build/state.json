@@ -4,6 +4,5 @@
   "profile": "small",
   "phase": "implementation",
   "base_commit": "052942a64455fa8b26cd1c38284819226389fe1b",
-  "status": "paused",
   "development_agent": {"platform": "codex", "model": "gpt-6.1-sol", "effort": "low"}
 }
