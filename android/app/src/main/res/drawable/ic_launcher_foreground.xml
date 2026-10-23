@@ -20,8 +20,4 @@
             </aapt:attr>
         </path>
     </group>
-    <group android:scaleX="8.441" android:scaleY="8.441">
-    <path android:fillColor="#E5A00D" android:pathData="M48,61 L82,61 L82,79 L48,79 Z"/>
-    <path android:fillColor="#16130A" android:pathData="M51,64 L63,64 L63,67 L59,67 L59,76 L55,76 L55,67 L51,67 Z M64,64 L68,64 L72,72 L76,64 L80,64 L74,76 L70,76 Z"/>
-    </group>
 </vector>
