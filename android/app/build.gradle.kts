@@ -10,6 +10,12 @@ plugins {
   id("dev.flutter.flutter-gradle-plugin")
 }
 
+// PlezyTV distributes ABI-specific APKs with one tag-derived versionCode.
+// Flutter reads this property when configuring split outputs; preserve AMAZON numbering.
+if (System.getenv("AMAZON") == null) {
+  extra["force-version-code-ignoring-abi"] = true
+}
+
 apply(from = rootProject.file("gradle/native-artifacts.gradle.kts"))
 
 @Suppress("UNCHECKED_CAST")
