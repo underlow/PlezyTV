@@ -276,7 +276,11 @@ class _Harness {
   int pickers = 0, seerr = 0, hostStarts = 0, updates = 0;
   DateTime now = DateTime(2026);
 
-  TvShellSessionController create({bool offlineStart = false, bool handled = true}) {
+  TvShellSessionController create({
+    bool offlineStart = false,
+    bool handled = true,
+    Future<SettingsService> Function() settings = SettingsService.getInstance,
+  }) {
     manager.clients['a'] = _Client();
     controller = TvShellSessionController(
       activeProfile: active,
@@ -324,6 +328,7 @@ class _Harness {
       },
       isOfflineMode: offlineStart,
       initialPromptHandled: handled,
+      settings: settings,
       contentResumeGate: ContentRefreshResumeGate(now: () => now),
     );
     addTearDown(() async {
@@ -399,8 +404,51 @@ void main() {
     expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.downloads));
     await c.start();
     expect(h.hostStarts, 1);
-    expect(h.updates, 0);
+    expect(h.updates, 1);
+
+    h.offline.isOffline = true;
+    h.offline.emit();
+    await tester.pumpAndSettle();
+    h.offline.isOffline = false;
+    h.offline.emit();
+    await tester.pumpAndSettle();
+    expect(h.updates, 1);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('provider-offline recovery respects disabled startup update setting', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.autoCheckUpdatesOnStartup, false);
+    final h = _Harness();
+    h.offline.isOffline = true;
+    h.servers.hasConnectedServers = false;
+    await h.create().start();
+    h.servers.hasConnectedServers = true;
+    h.offline.isOffline = false;
+    h.offline.emit();
+    await flush(tester);
+    expect(h.updates, 0);
+  });
+
+  testWidgets('dispose during deferred startup settings read skips update check', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.autoCheckUpdatesOnStartup, true);
+    final h = _Harness();
+    h.offline.isOffline = true;
+    h.servers.hasConnectedServers = false;
+    final gate = Completer<SettingsService>();
+    var deferSettings = false;
+    final c = h.create(settings: () async => deferSettings ? gate.future : settings);
+    await c.start();
+    deferSettings = true;
+    h.servers.hasConnectedServers = true;
+    h.offline.isOffline = false;
+    h.offline.emit();
+    await flush(tester);
+    c.dispose();
+    gate.complete(settings);
+    await flush(tester);
+    expect(h.updates, 0);
   });
 
   testWidgets('provider-offline bootstrap still prompts with companion setting disabled', (tester) async {
