@@ -38,6 +38,7 @@ import 'package:plezy/widgets/overlay_sheet.dart';
 import 'package:plezy/providers/discover_provider.dart';
 import 'package:plezy/plezytv/tv_ui/home/tv_home_screen.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_hero.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_server_client.dart';
 import '../../test_helpers/media_items.dart';
@@ -360,6 +361,57 @@ void main() {
     expect(homeProvider.staleChecks, beforeShown + 2); // onTabShown and refresh
     expect(rail.focusInside.value, isTrue);
   });
+
+  for (final hadContinue in [false, true]) {
+    for (final lowerRail in [false, true]) {
+      testWidgets('T4 shell return reveals shifted rail (hadContinue=$hadContinue lower=$lowerRail)', (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1920, 1080);
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        realHome = true;
+        homeProvider.onDeck = hadContinue ? [testMediaItem(id: 'episode', title: 'Episode')] : [];
+        homeProvider.hubs = [
+          for (var i = 0; i < 4; i++)
+            MediaHub(
+              id: 'hub$i',
+              title: 'Hub $i',
+              type: 'movie',
+              items: [testMediaItem(id: 'movie$i', title: 'Movie $i')],
+            ),
+        ];
+        await pump(tester);
+        final hubIndex = lowerRail
+            ? 2
+            : hadContinue
+            ? 1
+            : 0;
+        final beforeIndex = hubIndex + (hadContinue ? 1 : 0);
+        for (var i = 0; i < beforeIndex; i++) {
+          await key(tester, LogicalKeyboardKey.arrowDown);
+        }
+        final target = tester.widget<TvHero>(find.byType(TvHero)).item!.globalKey;
+        unawaited(
+          navigator.currentState!.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Details')))),
+        );
+        await tester.pumpAndSettle();
+        homeProvider.onDeck = hadContinue ? [] : [testMediaItem(id: 'episode', title: 'Episode')];
+        homeProvider.emit();
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        final afterIndex = hubIndex + (hadContinue ? 0 : 1);
+        final restored = tester.state<TvHorizontalRowState>(find.byType(TvHorizontalRow).at(afterIndex));
+        final hero = tester.widget<TvHero>(find.byType(TvHero));
+        expect(restored.focusInside.value, isTrue);
+        expect(hero.item!.globalKey, target);
+        expect(hero.compact, afterIndex > 1);
+        expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(afterIndex)).dy, afterIndex > 1 ? 420 : 600);
+      });
+    }
+  }
 
   testWidgets('T4 A17: loading Home never takes focus back from Settings', (tester) async {
     realHome = true;

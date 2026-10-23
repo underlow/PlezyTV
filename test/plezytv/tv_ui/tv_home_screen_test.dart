@@ -714,4 +714,47 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     });
   }
+  for (final reduced in [false, true]) {
+    for (final scenario in [
+      (hadContinue: false, hubIndex: 0, dialog: false),
+      (hadContinue: true, hubIndex: 1, dialog: false),
+      (hadContinue: false, hubIndex: 2, dialog: true),
+      (hadContinue: true, hubIndex: 2, dialog: true),
+    ]) {
+      testWidgets('return reveals shifted rail: $scenario reduced=$reduced', (tester) async {
+        provider.hubs = [hub('zero'), hub('one'), hub('two'), hub('three')];
+        provider.onDeck = scenario.hadContinue ? items('episode', 1) : [];
+        await pump(tester, reduced: reduced);
+        await tester.pumpAndSettle();
+        final beforeIndex = scenario.hubIndex + (scenario.hadContinue ? 1 : 0);
+        for (var i = 0; i < beforeIndex; i++) {
+          await key(tester, LogicalKeyboardKey.arrowDown);
+        }
+        final target = hero(tester).item!.globalKey;
+        final navigator = Navigator.of(home.currentContext!);
+        if (scenario.dialog) {
+          unawaited(
+            showDialog<void>(
+              context: home.currentContext!,
+              builder: (_) => const AlertDialog(content: Text('dialog')),
+            ),
+          );
+        } else {
+          unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('details')))));
+        }
+        await tester.pumpAndSettle();
+        provider.onDeck = scenario.hadContinue ? [] : items('episode', 1);
+        provider.emit();
+        await tester.pumpAndSettle();
+        navigator.pop();
+        await tester.pumpAndSettle();
+        final afterIndex = scenario.hubIndex + (scenario.hadContinue ? 0 : 1);
+        final expectedHeight = afterIndex > 1 ? 420.0 : 600.0;
+        expect(row(tester, afterIndex).focusInside.value, isTrue);
+        expect(hero(tester).item!.globalKey, target);
+        expect(hero(tester).compact, afterIndex > 1);
+        expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(afterIndex)).dy, expectedHeight);
+      });
+    }
+  }
 }

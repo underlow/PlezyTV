@@ -219,6 +219,18 @@ class TvHomeScreenState extends State<TvHomeScreen>
     } else {
       _focusReady();
     }
+    // Restoring an already-focused node emits no focus change. Rows above it
+    // may have changed while covered, so reconcile its viewport explicitly.
+    if (_model.state == TvHomeState.content) {
+      final index = _model.rows.indexWhere((row) => _rowKey(row) == _activeRow);
+      final rowIndex = index < 0 ? 0 : index;
+      final key = _rowKey(_model.rows[rowIndex]);
+      _activeRow = key;
+      _compact.value = rowIndex > 1;
+      _afterFrame(() {
+        if (_current && _activeRow == key) _revealRow(key);
+      });
+    }
   }
 
   void _parkInMenu() {
