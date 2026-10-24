@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/library_first_character.dart';
 import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/library_change_event.dart';
+import 'package:plezy/utils/library_content_notifier.dart';
 import 'package:plezy/media/library_query.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
@@ -238,20 +240,38 @@ void main() {
 
   testWidgets('A10/A11: held down traverses 300+ slots; Back goes to start then bubbles', (tester) async {
     final client = FakeMediaServerClient()..items = List.generate(360, movie);
+    final delayed = Completer<LibraryPage<MediaItem>>();
+    client.onPage = (q) async => q.offset == 60
+        ? delayed.future
+        : LibraryPage(items: client.items.skip(q.offset).take(q.limit).toList(), totalCount: 360);
     final c = make(client);
     var sidebar = 0;
     await mount(tester, c, sidebar: () => sidebar++);
     await settle(tester);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.pump();
+    expect(focus, 'TV grid 6');
     for (var i = 0; i < 25; i++) {
-      await tester.pump();
-      await tester.pump();
       await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
-      expect(focus, startsWith('TV grid '));
+      await tester.pump();
+      await tester.pump();
+      final expected = (i + 2) * 6;
+      expect(focus, 'TV grid $expected');
+      expect(c.focusedIndex, expected);
+      if (expected == 78) {
+        expect(c.source[expected], isNull);
+        final node = FocusManager.instance.primaryFocus;
+        delayed.complete(LibraryPage(items: client.items.skip(60).take(60).toList(), totalCount: 360));
+        await settle(tester);
+        expect(c.source[expected]?.id, '$expected');
+        expect(FocusManager.instance.primaryFocus, same(node));
+        expect(c.focusedIndex, expected);
+      }
     }
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
     await settle(tester);
-    expect(c.focusedIndex, greaterThan(60));
+    expect(c.focusedIndex, 156);
     expect(client.queries.length, lessThan(10));
     await press(tester, LogicalKeyboardKey.escape);
     expect(focus, 'TV grid 0');
@@ -635,4 +655,56 @@ void main() {
     expect(tester.widget<TvPoster>(find.byType(TvPoster)).item.isWatched, isTrue);
     expect(focus, 'TV grid 0');
   });
+  for (final fail in [false, true]) {
+    testWidgets('Plex first page ${fail ? 'error' : 'focus'} does not wait for alphabet', (tester) async {
+      final alphabet = Completer<List<LibraryFirstCharacter>>();
+      final client = FakePlexLibraryClient()
+        ..items = List.generate(120, movie)
+        ..onCharacters = () => alphabet.future;
+      if (fail) client.onPage = (_) async => throw StateError('offline');
+      final c = make(
+        client,
+        lib: const MediaLibrary(
+          id: '1',
+          backend: MediaBackend.plex,
+          title: 'Movies',
+          kind: MediaKind.movie,
+          serverId: 'server',
+        ),
+      );
+      await mount(tester, c);
+      await settle(tester);
+      expect(client.characterCalls, 1);
+      expect(c.loading, isFalse);
+      expect(focus, fail ? 'Library state action' : 'TV grid 0');
+      if (fail) expect(find.text(TvStrings.retry), findsOneWidget);
+      await c.select(sort: client.sorts.last);
+      await settle(tester);
+      expect(client.characterCalls, 1, reason: 'hidden sort must not request buckets');
+      alphabet.complete([LibraryFirstCharacter(key: 'A', title: 'A', size: 120)]);
+      await settle(tester);
+      expect(c.characters, isEmpty, reason: 'late old alphabet must be discarded');
+    });
+  }
+  for (final selection in [false, true]) {
+    testWidgets('event during ${selection ? 'selection' : 'initialize'} still completes L17 focus', (tester) async {
+      final gate = Completer<LibraryPage<MediaItem>>();
+      final client = FakeMediaServerClient()..items = [movie(0)];
+      final c = make(client);
+      if (selection) await c.initialize();
+      client.onPage = (_) => gate.future;
+      if (selection) unawaited(c.select(descending: true));
+      await mount(tester, c);
+      await settle(tester);
+      LibraryContentNotifier().notifyChanged(
+        LibraryChangeEvent(serverId: ServerId('server'), libraryIds: {'1'}, itemsUpdated: true),
+      );
+      await settle(tester);
+      client.onPage = null;
+      gate.complete(LibraryPage(items: [movie(0)], totalCount: 1));
+      await settle(tester);
+      expect(c.loading, isFalse);
+      expect(focus, 'TV grid 0');
+    });
+  }
 }

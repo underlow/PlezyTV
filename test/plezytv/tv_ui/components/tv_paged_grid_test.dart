@@ -10,9 +10,11 @@ void main() {
   testWidgets('3000 slots: held down retains focus; sparse jump waits for load', (tester) async {
     final calls = <int>[];
     final destination = Completer<TvPage<int>>();
+    final nextPage = Completer<TvPage<int>>();
     final source = TvPagedSource<int>(
       loadPage: (offset, limit) async {
         calls.add(offset);
+        if (offset == 60) return nextPage.future;
         if (offset == 2460) return destination.future;
         return TvPage(List.generate(limit, (i) => offset + i), 3000);
       },
@@ -38,11 +40,24 @@ void main() {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     await tester.pump();
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'TV grid 6');
     for (var i = 0; i < 80; i++) {
       await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
       await tester.pump();
-      expect(FocusManager.instance.primaryFocus?.debugLabel, startsWith('TV grid '));
+      final expected = (i + 2) * 6;
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'TV grid $expected');
+      expect(key.currentState!.focusedIndex, expected);
+      if (expected == 78) {
+        expect(source[expected], isNull);
+        final node = FocusManager.instance.primaryFocus;
+        nextPage.complete(TvPage(List.generate(60, (i) => 60 + i), 3000));
+        await tester.pump();
+        await tester.pump();
+        expect(source[expected], expected);
+        expect(FocusManager.instance.primaryFocus, same(node));
+        expect(key.currentState!.focusedIndex, expected);
+      }
     }
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
     final previous = FocusManager.instance.primaryFocus;

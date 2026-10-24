@@ -7,10 +7,14 @@ import '../tv_tokens.dart';
 /// A page of settings rows. Use stable keys for rows whose values can change.
 /// [changes] rebuilds the open page without replacing its focus or scroll state.
 class TvRightPanelPage {
-  const TvRightPanelPage({required this.title, required this.itemsBuilder, this.changes});
+  const TvRightPanelPage({required this.title, this.itemsBuilder, this.bodyBuilder, this.changes})
+    : assert((itemsBuilder == null) != (bodyBuilder == null));
 
   final String title;
-  final List<Widget> Function(BuildContext context) itemsBuilder;
+  final List<Widget> Function(BuildContext context)? itemsBuilder;
+
+  /// A bounded body for pages that own their lazy scrolling viewport.
+  final WidgetBuilder? bodyBuilder;
   final Listenable? changes;
 }
 
@@ -130,12 +134,19 @@ class TvRightPanelState extends State<TvRightPanel> {
                             child: Text('${i > 0 ? '‹ ' : ''}${_pages[i].title}', style: theme.title),
                           ),
                           Expanded(
-                            child: SingleChildScrollView(
-                              padding: EdgeInsets.all(px(TvTokens.space.lg)),
-                              child: ListenableBuilder(
-                                listenable: _pages[i].changes ?? const AlwaysStoppedAnimation(0),
-                                builder: (context, _) => Column(children: _pages[i].itemsBuilder(context)),
-                              ),
+                            child: ListenableBuilder(
+                              listenable: _pages[i].changes ?? const AlwaysStoppedAnimation(0),
+                              builder: (context, _) =>
+                                  (_pages[i].bodyBuilder == null
+                                      ? null
+                                      : Padding(
+                                          padding: EdgeInsets.all(px(TvTokens.space.lg)),
+                                          child: _pages[i].bodyBuilder!(context),
+                                        )) ??
+                                  SingleChildScrollView(
+                                    padding: EdgeInsets.all(px(TvTokens.space.lg)),
+                                    child: Column(children: _pages[i].itemsBuilder!(context)),
+                                  ),
                             ),
                           ),
                         ],

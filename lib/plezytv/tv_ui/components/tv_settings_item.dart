@@ -20,6 +20,8 @@ class TvSettingsItem extends StatelessWidget {
     this.autofocus = false,
     this.kind = TvSettingsItemKind.standard,
     this.selected = false,
+    this.onNavigateUp,
+    this.onNavigateDown,
     this.onMoveUp,
     this.onMoveDown,
   });
@@ -38,6 +40,7 @@ class TvSettingsItem extends StatelessWidget {
   /// Reorder rows use Left to move up and Right to move down. Callers supply
   /// localized instructions in [description] and omit callbacks at boundaries.
   final VoidCallback? onMoveUp, onMoveDown;
+  final VoidCallback? onNavigateUp, onNavigateDown;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +62,8 @@ class TvSettingsItem extends StatelessWidget {
         onLongPress: onLongPress,
         checked: checked ? selected : null,
         autoScroll: panel,
+        onNavigateUp: onNavigateUp,
+        onNavigateDown: onNavigateDown,
         onNavigateLeft: kind == TvSettingsItemKind.reorder ? () => onMoveUp?.call() : null,
         onNavigateRight: kind == TvSettingsItemKind.reorder ? () => onMoveDown?.call() : null,
         semanticLabel: '$title, ${disabledReason ?? description}',

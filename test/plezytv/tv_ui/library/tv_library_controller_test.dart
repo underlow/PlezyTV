@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/library_change_event.dart';
+import 'package:plezy/providers/libraries_provider.dart';
+import 'package:plezy/utils/library_content_notifier.dart';
 import 'package:plezy/media/library_filter_result.dart';
 import 'package:plezy/media/library_query.dart';
 import 'package:plezy/media/media_backend.dart';
@@ -27,6 +30,17 @@ const library = MediaLibrary(
 MediaItem item(String id, {MediaKind kind = MediaKind.movie, int? leafCount}) =>
     MediaItem(id: id, backend: MediaBackend.jellyfin, title: id, kind: kind, serverId: 'server', leafCount: leafCount);
 Future<void> flush() => Future<void>.delayed(Duration.zero);
+
+class EventLibraries extends LibrariesProvider {
+  int epoch = 0;
+  @override
+  int libraryContentEpoch(String globalKey) => epoch;
+  void changed() {
+    epoch++;
+    notifyListeners();
+  }
+}
+
 void main() {
   setUp(resetSharedPreferencesForTest);
   TvLibraryController controller(
@@ -328,4 +342,63 @@ void main() {
     await flush();
     expect(c.folders.single.items.single.id, 'b');
   });
+  for (final selection in [false, true]) {
+    for (final duringPage in [false, true]) {
+      for (final providerEvent in [false, true]) {
+        test(
+          'refresh during ${selection ? 'selection' : 'initialize'} ${duringPage ? 'page' : 'options'} via ${providerEvent ? 'provider' : 'library event'} completes',
+          () async {
+            final provider = EventLibraries();
+            final client = FakeMediaServerClient()..items = [item('a')];
+            final c = TvLibraryController(
+              library: library,
+              client: client,
+              store: TvMemoryLibraryPreferences(),
+              librariesProvider: provider,
+            );
+            addTearDown(provider.dispose);
+            addTearDown(c.dispose);
+            if (selection) await c.initialize();
+            final sorts = Completer<List<MediaSort>>();
+            final page = Completer<LibraryPage<MediaItem>>();
+            if (duringPage) {
+              client.onPage = (_) => page.future;
+            } else {
+              client.onSorts = (_, _) => sorts.future;
+            }
+            final load = selection ? c.select(sort: client.sorts.last) : c.initialize();
+            await flush();
+            final generation = c.generation;
+            if (providerEvent) {
+              provider.changed();
+            } else {
+              LibraryContentNotifier().notifyChanged(
+                LibraryChangeEvent(serverId: ServerId('server'), libraryIds: {'1'}, itemsUpdated: true),
+              );
+            }
+            await flush();
+            expect(c.generation, generation, reason: 'refresh must defer to the load owner');
+            expect(c.loading, isTrue);
+            client.onPage = null;
+            client.onSorts = null;
+            if (duringPage) {
+              page.complete(LibraryPage(items: [item('a')], totalCount: 1));
+            } else {
+              sorts.complete(client.sorts);
+            }
+            await load;
+            await flush();
+            expect(c.loading, isFalse);
+            expect(c.sorts, client.sorts);
+            expect(c.selectedSort?.key, selection ? 'addedAt' : null);
+            expect(c.source[0]?.id, 'a');
+            final count = client.queries.length;
+            await c.refresh();
+            expect(client.queries.length, greaterThan(count));
+            expect(c.loading, isFalse);
+          },
+        );
+      }
+    }
+  }
 }
