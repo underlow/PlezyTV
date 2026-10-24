@@ -40,6 +40,7 @@ abstract final class TvStrings {
   static const movieUnavailable = 'This movie is no longer available';
   static String left(int milliseconds) => '${formatDurationTextual(milliseconds)} left';
   static String unwatched(int count) => '$count unwatched';
+  static const playerUpNextInQueue = 'Up next in queue';
   static String episode({required int season, required int episode, required String title}) =>
       '${formatSeasonEpisodeLabel(season, episode)} · $title';
 }

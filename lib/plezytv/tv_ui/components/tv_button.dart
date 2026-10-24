@@ -92,12 +92,19 @@ class TvIconButton extends StatefulWidget {
     this.onSelect,
     this.focusNode,
     this.autofocus = false,
+    this.onFocusChange,
+    this.onNavigateLeft,
+    this.onNavigateRight,
+    this.onNavigateUp,
+    this.onNavigateDown,
   });
   final IconData icon;
   final String caption;
   final bool disabled, autofocus;
   final VoidCallback? onSelect;
   final FocusNode? focusNode;
+  final ValueChanged<bool>? onFocusChange;
+  final VoidCallback? onNavigateLeft, onNavigateRight, onNavigateUp, onNavigateDown;
   @override
   State<TvIconButton> createState() => _TvIconButtonState();
 }
@@ -121,7 +128,14 @@ class _TvIconButtonState extends State<TvIconButton> {
           autofocus: widget.autofocus,
           onSelect: widget.onSelect,
           semanticLabel: widget.caption,
-          onFocusChange: (value) => setState(() => _focused = value),
+          onFocusChange: (value) {
+            setState(() => _focused = value);
+            widget.onFocusChange?.call(value);
+          },
+          onNavigateLeft: widget.onNavigateLeft,
+          onNavigateRight: widget.onNavigateRight,
+          onNavigateUp: widget.onNavigateUp,
+          onNavigateDown: widget.onNavigateDown,
           builder: (context, state) => Container(
             width: px(TvTokens.size.iconButton.w),
             height: px(TvTokens.size.iconButton.h),

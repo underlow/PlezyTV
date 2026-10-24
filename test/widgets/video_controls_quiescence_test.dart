@@ -18,6 +18,7 @@ import 'package:plezy/widgets/video_controls/player_chrome_controller.dart';
 import 'package:plezy/widgets/video_controls/video_controls.dart';
 import 'package:plezy/widgets/video_controls/widgets/linux_keep_alive.dart';
 import 'package:plezy/widgets/video_controls/widgets/player_toast_indicator.dart';
+import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 
 import '../test_helpers/media_items.dart';
 import '../test_helpers/prefs.dart';
@@ -42,6 +43,7 @@ void main() {
     late AppDatabase database;
 
     setUp(() async {
+      TvUi.enabledForTesting = () => false; // Plezy's desktop controls under test, not the TV panel
       LocaleSettings.setLocaleSync(AppLocale.en);
       await initializeDateFormatting('en');
       resetSharedPreferencesForTest();
@@ -62,6 +64,7 @@ void main() {
     });
 
     tearDown(() async {
+      TvUi.resetForTesting();
       LinuxKeepAlive.debugIsLinuxOverride = null;
       TvDetectionService.debugSetAppleTVOverride(null);
       PlatformDetector.debugSetIsDesktopOSOverride(null);

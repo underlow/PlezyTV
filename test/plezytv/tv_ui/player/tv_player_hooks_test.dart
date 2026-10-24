@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_hooks.dart';
+import 'package:plezy/plezytv/tv_ui/player/tv_player_panel.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_session.dart';
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:plezy/screens/video_player/widgets/player_prompt_overlays.dart';
@@ -114,11 +115,12 @@ void main() {
       await stand.unmount(tester);
     });
 
-    testWidgets('production builders keep Plezy on TV until a task switches them on', (tester) async {
+    testWidgets('production builders: TV gets our panel (T2)', (tester) async {
       await stand.setUp();
       TvUi.enabledForTesting = () => true;
       await stand.pumpControls(tester, stand.controls(chapters: tvStandChapters()));
-      expect(find.byType(DesktopVideoControls), findsOneWidget);
+      expect(find.byType(TvPlayerPanel), findsOneWidget);
+      expect(find.byType(DesktopVideoControls), findsNothing);
       await stand.unmount(tester);
     });
   });

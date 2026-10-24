@@ -13,6 +13,7 @@ import '../../widgets/video_controls/player_chrome_controller.dart';
 import '../../widgets/video_controls/video_controls.dart';
 import '../../widgets/video_controls/widgets/skip_marker_button.dart';
 import 'player/tv_player_hooks.dart';
+import 'player/tv_player_panel.dart';
 import 'player/tv_player_session.dart';
 
 /// Typed replacement lookups for upstream screen factories.
@@ -31,9 +32,9 @@ abstract final class TvUi {
     _player = _productionPlayer;
   }
 
-  /// Player builders in production. Every hook keeps Plezy until its task
+  /// Player builders in production. A null builder keeps Plezy until its task
   /// switches it on (S9: T2 — panel, T5 — the rest).
-  static const _productionPlayer = TvPlayerBuilders();
+  static final _productionPlayer = TvPlayerBuilders(panel: (context, args) => TvPlayerPanel(args: args));
   static TvPlayerBuilders _player = _productionPlayer;
 
   /// Replaces the player builders; gating on TV and Live TV still applies.
