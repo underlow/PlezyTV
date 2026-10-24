@@ -92,6 +92,7 @@ abstract final class TvTokens {
     chip: (h: 36, padX: 14),
     tab: (h: 52, padX: 24, underline: 4),
     sidebar: (collapsedW: 136, expandedW: 392, padLeft: 32, itemW: 72, itemH: 64, iconSize: 32, currentMarker: [4, 32]),
+    rightPanel: (w: 600, iconSize: 28, background: Color(0xF21A1C21)),
     settingsItem: (h: 88, iconSize: 36, maxW: 1200),
     progressBar: (h: 6),
     unwatchedBadge: (minW: 36, h: 32),
