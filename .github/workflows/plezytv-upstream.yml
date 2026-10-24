@@ -130,6 +130,12 @@ jobs:
             lib/utils/download_utils.dart; then
             printf '\nWarning: upstream changes S7 show dependencies. Review show orchestration and public action parity in lib/plezytv/tv_ui/show/ against design D2 and docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
           fi
+          if ! git diff --quiet origin/main HEAD -- \
+            lib/screens/media_detail_screen.dart \
+            lib/screens/media_detail/action_buttons.dart \
+            lib/utils/media_navigation_helper.dart; then
+            printf '\nWarning: upstream changes S8 movie dependencies. Review copied action visibility, watchlist/download handlers and missing-item handling in lib/plezytv/tv_ui/movie/ against docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
+          fi
           number=$(gh pr list --head upstream-sync --base main --state open --json number --jq '.[0].number // empty')
           title='Sync upstream Plezy'
           if [[ "$CHECK_RESULT" != success ]]; then title='Sync upstream Plezy (checks failing)'; fi

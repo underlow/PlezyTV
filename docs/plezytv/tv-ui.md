@@ -202,8 +202,8 @@ paths listed in the S16 warning in `plezytv-upstream.yml` (design D1).
 season/episode parents first, then calls `TvUi.showDetailRoute` with the resolved
 metadata and initial season/episode arguments, falling back to `mediaDetailRoute`.
 The synchronous lookup returns an opaque TV fade route only for online shows
-when TV UI is enabled. Movie support belongs beside this branch in S8. Phone,
-offline details, movies and seasons without a known show retain Plezy's route.
+when TV UI is enabled; online movies take the S8 branch beside it. Phone,
+offline details and seasons without a known show retain Plezy's route.
 The accepted gap is “go to series” in `media_context_menu.dart`, plus navigation
 inside upstream details: those direct `mediaDetailRoute` calls remain upstream.
 Do not add hooks to those large files.
@@ -227,3 +227,34 @@ to each candidate source's snapshot changes.
 The upstream workflow warns on the seven S7 D2 dependency paths. Recheck the
 show's copied orchestration and action visibility against those upstream files
 when merging; private detail-screen handlers are not shared with this screen.
+
+## Movie screen (S8)
+
+`TvUi.showDetailRoute` returns a `TvMovieScreen` route for online `MediaKind.movie`
+items under the same conditions as shows; `media_navigation_helper.dart` is
+unchanged and `playDirectly` still bypasses details. The route pops `true` when
+watch state changed. Movie screens stack: a related movie pushes a new screen and
+Back pops one at a time. Accepted gap: movies opened inside upstream screens by a
+direct `mediaDetailRoute` call stay on Plezy's details screen.
+
+`movie/TvMovieController` owns data: `fetchItemWithOnDeck`, community ratings,
+extras, related hubs, watch-event patching and the changed flag. `tv_movie_logic`
+holds pure rules (button label, chosen version, tech info). `TvMovieScreen` owns
+focus, last-button memory, scrolling, the collapsed title line, Back and player
+return. `TvMovieActions` mirrors Plezy's action visibility and the watchlist and
+download handlers of `action_buttons.dart`. The main button calls
+`navigateToVideoPlayer`, not the refreshing variant, so Rewatch starts from zero;
+the screen reloads afterwards. Partial, queued, paused and failed downloads open
+Downloads, as in S7.
+
+Quality chips and the bottom technical block (R7) describe the version Plezy will
+play: the remembered choice, else the first. Studio, audio, subtitles and file
+(resolution, codec, size) come from that version's already loaded
+`mediaVersions`/parts/streams, for Plex and Jellyfin, with no extra request;
+missing fields and an empty block are hidden.
+
+Server deletion closes the screen; download-only deletion does not. When the
+server reports the movie missing, the screen follows `media_detail_screen.dart`:
+it closes, or shows an unavailable state when it is the first route. A failed
+full-metadata load keeps the passed metadata. The upstream workflow warns on the
+S8 paths; recheck the copied rules against them when merging.
