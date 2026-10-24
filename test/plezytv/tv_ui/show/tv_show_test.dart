@@ -85,12 +85,15 @@ void main() {
   });
   FakeShowClient fixture() => FakeShowClient()
     ..show = item('show', MediaKind.show)
-    ..seasons = [item('s1', MediaKind.season, number: 1), item('s2', MediaKind.season, number: 2)]
+    ..seasons = [
+      item('s1', MediaKind.season, number: 1),
+      item('s2', MediaKind.season, number: 2).copyWith(leafCount: 0, viewedLeafCount: 0),
+    ]
     ..episodes = {
       's1': [item('e1', MediaKind.episode, season: 1, watched: 1), item('e2', MediaKind.episode, season: 1)],
       's2': [],
     };
-  test('metadata precedes rows; paged target resolves beyond watched first page; refresh reloads cache', () async {
+  test('metadata precedes rows; fallback uses loaded pages without scanning; refresh reloads cache', () async {
     final client = fixture();
     final controller = TvShowController(client: client, metadata: client.show, pageSize: 1);
     addTearDown(controller.dispose);
@@ -98,8 +101,12 @@ void main() {
     expect(controller.error, null);
     expect(client.calls.first, 'metadata');
     expect(controller.flattened, false);
+    expect(controller.primaryAction!.episode.id, 'e1');
+    expect(controller.primaryAction!.restart, false);
+    expect(controller.episodesFor('s1'), hasLength(1));
+    expect(client.calls.where((call) => call.startsWith('page:')), ['page:s1:0']);
+    await controller.loadMoreEpisodes('s1');
     expect(controller.primaryAction!.episode.id, 'e2');
-    expect(controller.episodesFor('s1'), hasLength(2));
     await controller.refresh();
     expect(controller.episodesFor('s1'), hasLength(2));
   });
@@ -113,6 +120,25 @@ void main() {
     await controller.load();
     expect(controller.primaryAction!.restart, true);
     expect(controller.primaryAction!.episode.id, 'e1');
+  });
+  test('aggregate regular season counts allow rewatch without fetching other seasons', () async {
+    final client = fixture();
+    client.seasons = [
+      item('s0', MediaKind.season, number: 0).copyWith(leafCount: 1, viewedLeafCount: 0),
+      item('s1', MediaKind.season, number: 1).copyWith(leafCount: 100, viewedLeafCount: 100),
+      item('s2', MediaKind.season, number: 2).copyWith(leafCount: 100, viewedLeafCount: 100),
+    ];
+    client.episodes['s1'] = [for (var i = 0; i < 100; i++) item('e$i', MediaKind.episode, season: 1, watched: 1)];
+    final c = TvShowController(client: client, metadata: client.show, pageSize: 1);
+    addTearDown(c.dispose);
+    await c.load();
+    expect(c.primaryAction!.restart, true);
+    expect(client.calls.where((call) => call.startsWith('page:')), ['page:s1:0']);
+    final old = c.episodesFor('s1');
+    client.onPage = (_, _, _) => Future.error(StateError('offline'));
+    await c.refresh();
+    expect(c.error, isA<StateError>());
+    expect(c.episodesFor('s1'), old);
   });
   test('new refresh supersedes late metadata and errors', () async {
     final client = fixture();

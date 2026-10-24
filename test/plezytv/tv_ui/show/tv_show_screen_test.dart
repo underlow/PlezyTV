@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'package:plezy/plezytv/tv_ui/tv_tinted_background.dart';
+import 'package:plezy/utils/deletion_notifier.dart';
+import 'package:plezy/media/ids.dart';
+import 'package:plezy/widgets/media_context_menu.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,9 +35,12 @@ MediaItem media(String id, MediaKind kind, {int? number, int? watched, int? offs
 ).copyWith(parentIndex: 1, viewCount: watched, viewOffsetMs: offset);
 
 FakeShowClient fixture() => FakeShowClient()
-  ..show = media('The show', MediaKind.show)
+  ..show = media('The show', MediaKind.show).copyWith(leafCount: 5, viewedLeafCount: 2)
   ..onDeck = media('e3', MediaKind.episode, number: 3, offset: 1500000)
-  ..seasons = [media('Season 1', MediaKind.season, number: 1), media('Season 2', MediaKind.season, number: 2)]
+  ..seasons = [
+    media('Season 1', MediaKind.season, number: 1).copyWith(leafCount: 4, viewedLeafCount: 2),
+    media('Season 2', MediaKind.season, number: 2).copyWith(leafCount: 1, viewedLeafCount: 0),
+  ]
   ..episodes = {
     'Season 1': [
       media('e1', MediaKind.episode, number: 1, watched: 1),
@@ -73,6 +80,117 @@ String focusedEpisode(WidgetTester tester) =>
     tester.widgetList<TvEpisode>(find.byType(TvEpisode)).firstWhere((e) => e.focusNode!.hasFocus).item.id;
 
 void main() {
+  testWidgets('menu and deletion refresh preserve focused episode while replacement is pending', (tester) async {
+    final client = fixture();
+    final c = await mount(tester, client, seasonId: 'Season 1', episodeId: 'e3');
+    for (final deletion in [false, true]) {
+      final pending = Completer<LibraryPage<MediaItem>>();
+      client.onPage = (_, _, _) => pending.future;
+      if (deletion) {
+        DeletionNotifier().notify(
+          DeletionEvent(
+            itemId: 'other',
+            serverId: ServerId('server'),
+            parentChain: [client.show.id],
+            mediaType: 'episode',
+          ),
+        );
+      } else {
+        final menu = tester
+            .widgetList<MediaContextMenu>(find.byType(MediaContextMenu))
+            .firstWhere((m) => (m.item as MediaItem).id == 'e3');
+        menu.onRefresh!(menu.item as MediaItem);
+      }
+      await tester.pump();
+      expect(c.loading, true);
+      expect(focusedEpisode(tester), 'e3');
+      expect(c.episodesFor('Season 1'), hasLength(4));
+      pending.complete(LibraryPage(items: client.episodes['Season 1']!, totalCount: 4));
+      await tester.pumpAndSettle();
+      expect(focusedEpisode(tester), 'e3');
+      client.onPage = null;
+    }
+  });
+
+  testWidgets('refresh remaps selected season by id and falls back when removed', (tester) async {
+    final client = fixture();
+    client.seasons.add(media('Season 3', MediaKind.season, number: 3));
+    final c = await mount(tester, client, seasonId: 'Season 2');
+    client.seasons = [client.seasons[1], client.seasons.first];
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(tabs(tester).selectedIndex, 1);
+    expect(focusedEpisode(tester), 'second');
+    client.seasons = [client.seasons.last, media('Season 3', MediaKind.season, number: 3)];
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(tabs(tester).selectedIndex, 0);
+    expect(tester.takeException(), null);
+  });
+
+  testWidgets('refresh failure shows feedback and retains episodes and focus', (tester) async {
+    final client = fixture();
+    final c = await mount(tester, client, seasonId: 'Season 1', episodeId: 'e3');
+    client.onFetch = () => Future.error(StateError('offline'));
+    await c.refresh();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Unable to refresh. Check your connection.'), findsOneWidget);
+    expect(focusedEpisode(tester), 'e3');
+    expect(c.episodesFor('Season 1'), hasLength(4));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('episode backdrop waits for focus to settle with the hero', (tester) async {
+    await mount(tester, fixture(), seasonId: 'Season 1', episodeId: 'e3');
+    String background() => tester.widget<TvTintedBackground>(find.byType(TvTintedBackground)).source.item.id;
+    expect(background(), 'e3');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(focusedEpisode(tester), 'e4');
+    await tester.pump(const Duration(milliseconds: 299));
+    expect(background(), 'e3');
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(background(), 'e4');
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('show deletion removes its own route while leaving an open dialog', (tester) async {
+    final client = fixture();
+    final c = TvShowController(client: client, metadata: client.show);
+    addTearDown(c.dispose);
+    await pumpTvWidget(
+      tester,
+      Builder(
+        builder: (context) => TextButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => TvShowScreen(metadata: client.show, controller: c),
+            ),
+          ),
+          child: const Text('Open show'),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open show'));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byType(TvShowScreen));
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (_) => const AlertDialog(content: Text('Dialog stays')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    DeletionNotifier().notify(
+      DeletionEvent(itemId: client.show.id, serverId: ServerId('server'), parentChain: [], mediaType: 'show'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Dialog stays'), findsOneWidget);
+    expect(find.byType(TvShowScreen), findsNothing);
+    expect(tester.takeException(), null);
+  });
+
   testWidgets('A3 primary resumes on-deck with remaining time and initial focus', (tester) async {
     MediaItem? played;
     bool? restarted;

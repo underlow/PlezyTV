@@ -74,7 +74,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
   bool _playing = false, _pendingEntryFocus = false;
   int _tab = 0, _selection = 0;
   MediaItem? _hero, _backdropEpisode;
-  Object? _connectionError;
+  Object? _connectionError, _reportedError;
+  String? _selectedSeasonKey;
+  bool _wasLoading = false, _restoreEpisodeFocus = false;
+
+  bool get _episodeHasFocus =>
+      FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TvHorizontalRow>()?.key == _episodes;
 
   String get _key => _controller!.flattened ? _controller!.flattenedKey : _controller!.seasons[_tab - 1].id;
 
@@ -103,7 +108,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
         final c = _controller!;
         if (event.isDownloadOnly || event.serverId.toString() != c.show.serverId) return;
         if (event.itemId == c.show.id) {
-          Navigator.of(context).pop(c.watchStateChanged);
+          final route = ModalRoute.of(context);
+          if (route?.isCurrent == true) {
+            Navigator.of(context).pop(c.watchStateChanged);
+          } else if (route != null) {
+            Navigator.of(context).removeRoute(route, c.watchStateChanged);
+          }
         } else if (event.parentChain.contains(c.show.id)) {
           unawaited(c.refresh());
         }
@@ -126,6 +136,25 @@ class _TvShowScreenState extends State<TvShowScreen> {
   void _changed() {
     if (!mounted) return;
     final c = _controller!;
+    if (c.loading && !_wasLoading) _restoreEpisodeFocus = _episodeHasFocus;
+    final finishedRefresh = _wasLoading && !c.loading;
+    _wasLoading = c.loading;
+    if (_ready && _tab > 0) {
+      final index = c.flattened
+          ? (_selectedSeasonKey == c.flattenedKey ? 1 : 0)
+          : c.seasons.indexWhere((season) => season.id == _selectedSeasonKey) + 1;
+      if (_tab != index) {
+        _tab = index;
+        ++_selection;
+        _heroTimer?.cancel();
+        if (index == 0) {
+          _hero = _backdropEpisode = null;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _primary.requestFocus();
+          });
+        }
+      }
+    }
     if (!c.loading) {
       _skeletonTimer?.cancel();
       if (!_ready && c.error == null) {
@@ -137,6 +166,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
           seasonIndex: widget.initialSeasonIndex,
           episodeId: widget.initialEpisodeId,
         );
+        _selectedSeasonKey = _tab > 0 ? _key : null;
         final selection = ++_selection;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || selection != _selection) return;
@@ -149,6 +179,16 @@ class _TvShowScreenState extends State<TvShowScreen> {
       } else if (_ready && !_initialFocus && c.primaryAction != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _focusPrimaryOnce());
       }
+      if (_ready && c.error != null && !identical(_reportedError, c.error)) {
+        _reportedError = c.error;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Unable to refresh. Check your connection.')));
+          }
+        });
+      }
       if (c.error != null && !_ready) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _retry.requestFocus();
@@ -158,6 +198,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (_ready && _tab > 0 && !c.loading) {
       final updated = c.episodesFor(_key).where((e) => e.id == _hero?.id).firstOrNull;
       if (updated != null) _hero = updated;
+      if (finishedRefresh &&
+          !_playing &&
+          (_restoreEpisodeFocus || _episodeHasFocus) &&
+          ModalRoute.of(context)?.isCurrent == true) {
+        _restoreEpisodeFocus = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _tab > 0) unawaited(_enterSeason(focus: true));
+        });
+      }
       if (_pendingEntryFocus && !c.isLoadingEpisodes(_key)) {
         _pendingEntryFocus = false;
         final selection = _selection;
@@ -181,6 +230,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
     _heroTimer?.cancel();
     setState(() {
       _tab = index;
+      _selectedSeasonKey = index > 0 ? _key : null;
       _hero = null;
       _backdropEpisode = null;
     });
@@ -230,11 +280,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (index >= items.length) return;
     final episode = items[index];
     _lastEpisode[key] = episode.id;
-    if (_backdropEpisode?.id != episode.id) setState(() => _backdropEpisode = episode);
     _heroTimer?.cancel();
     if (_hero?.id != episode.id) {
       _heroTimer = Timer(const Duration(milliseconds: 300), () {
-        if (mounted && _tab > 0 && _key == key) setState(() => _hero = episode);
+        if (mounted && _tab > 0 && _key == key) {
+          setState(() {
+            _hero = episode;
+            _backdropEpisode = episode;
+          });
+        }
       });
     }
     if (!_playing && index >= items.length - 5) unawaited(_controller!.loadMoreEpisodes(key));
