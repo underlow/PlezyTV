@@ -39,8 +39,11 @@ class TvPoster extends StatelessWidget {
     this.onSelect,
     this.onLongPress,
     this.onFocusChange,
+    this.externalFocus,
   });
 
+  /// Visual-only mode for containers that already own focus (paged grids).
+  final bool? externalFocus;
   final MediaItem item;
   final TvPosterSize size;
   final String? caption, localFilePath;
@@ -65,6 +68,7 @@ class TvPoster extends StatelessWidget {
     onSelect: onSelect,
     onLongPress: onLongPress,
     onFocusChange: onFocusChange,
+    externalFocus: externalFocus,
   );
 }
 
@@ -81,7 +85,11 @@ class TvEpisode extends StatelessWidget {
     this.onSelect,
     this.onLongPress,
     this.onFocusChange,
+    this.externalFocus,
   });
+
+  /// Visual-only mode for containers that already own focus (paged grids).
+  final bool? externalFocus;
   final MediaItem item;
   final MediaServerClient? client;
   final String? localFilePath;
@@ -114,6 +122,7 @@ class TvEpisode extends StatelessWidget {
       onSelect: onSelect,
       onLongPress: onLongPress,
       onFocusChange: onFocusChange,
+      externalFocus: externalFocus,
     );
   }
 }
@@ -134,7 +143,11 @@ class _MediaCard extends StatefulWidget {
     this.onSelect,
     this.onLongPress,
     this.onFocusChange,
+    this.externalFocus,
   });
+
+  /// Visual-only mode for containers that already own focus (paged grids).
+  final bool? externalFocus;
   final MediaItem item;
   final Size dimensions;
   final String title, caption;
@@ -155,7 +168,7 @@ class _MediaCardState extends State<_MediaCard> {
     final theme = TvTheme.of(context);
     final px = theme.px;
     final width = px(widget.dimensions.width), height = px(widget.dimensions.height);
-    final focused = _focused && !widget.disabled && InputModeTracker.isKeyboardMode(context);
+    final focused = (widget.externalFocus ?? _focused) && !widget.disabled && InputModeTracker.isKeyboardMode(context);
     final count = widget.item.unwatchedCount;
     final showCount = !widget.episode && focused && count != null && count > 0;
     Widget placeholder(BuildContext context, String path) => ColoredBox(color: TvTokens.color.surface.level2);
@@ -180,46 +193,57 @@ class _MediaCardState extends State<_MediaCard> {
             placeholder: placeholder,
             errorWidget: (context, path, error) => placeholder(context, path),
           );
+    final artwork = RepaintBoundary(
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(px(TvTokens.radius.card)),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(color: TvTokens.color.surface.level2),
+              image,
+              TvMediaBadges(item: widget.item, onServer: widget.onServer),
+              if (widget.item.hasActiveProgress)
+                Positioned(left: 0, right: 0, bottom: 0, child: TvMediaProgress(item: widget.item)),
+            ],
+          ),
+        ),
+      ),
+    );
     return SizedBox(
       width: width,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TvFocusable(
-            focusNode: widget.focusNode,
-            autofocus: widget.autofocus,
-            disabled: widget.disabled,
-            scaleAlignment: Alignment.bottomCenter,
-            focusedScale: widget.episode ? TvTokens.focus.episodeScale : TvTokens.focus.cardScale,
-            onSelect: widget.onSelect,
-            onLongPress: widget.onLongPress,
-            semanticLabel: widget.title,
-            semanticValue: showCount ? TvStrings.unwatched(count) : widget.caption,
-            onFocusChange: (value) {
-              setState(() => _focused = value);
-              widget.onFocusChange?.call(value);
-            },
-            builder: (context, state) => RepaintBoundary(
-              child: SizedBox(
-                width: width,
-                height: height,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(px(TvTokens.radius.card)),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ColoredBox(color: TvTokens.color.surface.level2),
-                      image,
-                      TvMediaBadges(item: widget.item, onServer: widget.onServer),
-                      if (widget.item.hasActiveProgress)
-                        Positioned(left: 0, right: 0, bottom: 0, child: TvMediaProgress(item: widget.item)),
-                    ],
-                  ),
-                ),
-              ),
+          if (widget.externalFocus != null)
+            TvFocusVisual(
+              state: TvFocusState(focused: focused, pressed: false, disabled: widget.disabled),
+              kind: TvFocusKind.ring,
+              focusedScale: widget.episode ? TvTokens.focus.episodeScale : TvTokens.focus.cardScale,
+              alignment: Alignment.bottomCenter,
+              radius: null,
+              builder: (_, _) => artwork,
+            )
+          else
+            TvFocusable(
+              focusNode: widget.focusNode,
+              autofocus: widget.autofocus,
+              disabled: widget.disabled,
+              scaleAlignment: Alignment.bottomCenter,
+              focusedScale: widget.episode ? TvTokens.focus.episodeScale : TvTokens.focus.cardScale,
+              onSelect: widget.onSelect,
+              onLongPress: widget.onLongPress,
+              semanticLabel: widget.title,
+              semanticValue: showCount ? TvStrings.unwatched(count) : widget.caption,
+              onFocusChange: (value) {
+                setState(() => _focused = value);
+                widget.onFocusChange?.call(value);
+              },
+              builder: (context, state) => artwork,
             ),
-          ),
           SizedBox(height: px(20)),
           Opacity(
             opacity: widget.disabled ? TvTokens.focus.disabledOpacity : 1,

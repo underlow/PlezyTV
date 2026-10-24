@@ -32,6 +32,7 @@ class TvFocusable extends StatefulWidget {
     super.key,
     required this.builder,
     this.kind = TvFocusKind.ring,
+    this.decorateFocus = true,
     this.focusedScale,
     this.scaleAlignment = Alignment.center,
     this.radius,
@@ -59,6 +60,7 @@ class TvFocusable extends StatefulWidget {
   });
 
   final Widget Function(BuildContext context, TvFocusState state) builder;
+  final bool decorateFocus;
   final TvFocusKind kind;
   final double? focusedScale;
   final Alignment scaleAlignment;
@@ -147,7 +149,9 @@ class _TvFocusableState extends State<TvFocusable> {
       builder: (context) {
         final focused = !widget.disabled && (CardFocusScope.maybeOf(context) ?? false);
         final pressed = focused && _pressed;
-        return _TvFocusVisual(
+        final state = TvFocusState(focused: focused, pressed: pressed, disabled: widget.disabled);
+        if (!widget.decorateFocus) return widget.builder(context, state);
+        return TvFocusVisual(
           state: TvFocusState(focused: focused, pressed: pressed, disabled: widget.disabled),
           kind: widget.kind,
           focusedScale: widget.focusedScale ?? TvTokens.focus.cardScale,
@@ -160,8 +164,10 @@ class _TvFocusableState extends State<TvFocusable> {
   );
 }
 
-class _TvFocusVisual extends ImplicitlyAnimatedWidget {
-  _TvFocusVisual({
+/// Paint-only focus chrome for items whose container owns input and focus.
+class TvFocusVisual extends ImplicitlyAnimatedWidget {
+  TvFocusVisual({
+    super.key,
     required this.state,
     required this.kind,
     required this.focusedScale,
@@ -187,14 +193,14 @@ class _TvFocusVisual extends ImplicitlyAnimatedWidget {
   final double? radius;
   final Widget Function(BuildContext, TvFocusState) builder;
   @override
-  AnimatedWidgetBaseState<_TvFocusVisual> createState() => _TvFocusVisualState();
+  AnimatedWidgetBaseState<TvFocusVisual> createState() => _TvFocusVisualState();
 }
 
-class _TvFocusVisualState extends AnimatedWidgetBaseState<_TvFocusVisual> {
+class _TvFocusVisualState extends AnimatedWidgetBaseState<TvFocusVisual> {
   Tween<double>? _scale, _opacity;
   bool _wasPressed = false;
   @override
-  void didUpdateWidget(_TvFocusVisual oldWidget) {
+  void didUpdateWidget(TvFocusVisual oldWidget) {
     // Both press and release use the press duration.
     _wasPressed = oldWidget.state.pressed;
     super.didUpdateWidget(oldWidget);
