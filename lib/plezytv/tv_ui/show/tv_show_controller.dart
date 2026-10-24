@@ -75,7 +75,16 @@ class TvShowController extends ChangeNotifier {
     return tvShowPrimaryAction(
       onDeck: onDeckEpisode,
       episodes: episodes,
-      complete: keys.every(isComplete),
+      complete:
+          (show.leafCount != null && show.viewedLeafCount != null && show.viewedLeafCount! >= show.leafCount!) ||
+          keys.every((key) {
+            final season = flattened ? show : regularSeasons.firstWhere((s) => s.id == key);
+            return (isComplete(key) &&
+                    !episodesFor(key).any((e) => !e.isWatched && !isSpecialSeasonNumber(e.parentIndex))) ||
+                (season.leafCount != null &&
+                    season.viewedLeafCount != null &&
+                    season.viewedLeafCount! >= season.leafCount!);
+          }),
       firstEpisode: first,
     );
   }
@@ -145,38 +154,27 @@ class TvShowController extends ChangeNotifier {
       extras = values[2] as List<MediaItem>;
       relatedHubs = values[3] as List<MediaHub>;
       watchlistCandidates = values[4] as List<WatchlistCandidate>;
-      _episodes.clear();
-      _complete.clear();
-      _totals.clear();
+      final replacement = <String, List<MediaItem>>{};
+      final totals = <String, int?>{};
+      final complete = <String>{};
       final keys = flattened ? [flattenedKey] : seasons.map((s) => s.id).toList();
       final defaultKey = flattened ? flattenedKey : defaultPlaybackSeason(seasons)?.id;
       for (final key in keys) {
         if (key != defaultKey && !previousLengths.containsKey(key)) continue;
         do {
-          await _loadPage(key, generation);
+          await _loadPage(key, generation, replacement: replacement, totals: totals, complete: complete);
           if (!_current(generation)) return;
-        } while (!isComplete(key) && episodesFor(key).length < (previousLengths[key] ?? pageSize));
+        } while (!complete.contains(key) && (replacement[key]?.length ?? 0) < (previousLengths[key] ?? pageSize));
       }
-      // Resolve the first regular unwatched target without mistaking unloaded
-      // episodes (or unwatched specials) for a completely watched show.
-      if (onDeckEpisode == null) {
-        for (final key in keys) {
-          if (!flattened && isSpecialSeasonNumber(seasons.firstWhere((s) => s.id == key).index)) continue;
-          while (_current(generation)) {
-            if (firstUnwatchedEpisode(episodesFor(key).where((e) => !isSpecialSeasonNumber(e.parentIndex)).toList()) !=
-                null) {
-              break;
-            }
-            if (isComplete(key)) break;
-            await _loadPage(key, generation);
-          }
-          if (!_current(generation)) return;
-          if (firstUnwatchedEpisode(episodesFor(key).where((e) => !isSpecialSeasonNumber(e.parentIndex)).toList()) !=
-              null) {
-            break;
-          }
-        }
-      }
+      _episodes
+        ..clear()
+        ..addAll({for (final entry in replacement.entries) entry.key: entry.value.map(_applyPending).toList()});
+      _totals
+        ..clear()
+        ..addAll(totals);
+      _complete
+        ..clear()
+        ..addAll(complete);
     } catch (failure) {
       if (_current(generation)) error = failure;
     } finally {
@@ -206,20 +204,29 @@ class TvShowController extends ChangeNotifier {
     if (_current(generation)) notifyListeners();
   }
 
-  Future<void> _loadPage(String key, int generation) async {
+  Future<void> _loadPage(
+    String key,
+    int generation, {
+    Map<String, List<MediaItem>>? replacement,
+    Map<String, int?>? totals,
+    Set<String>? complete,
+  }) async {
+    final episodes = replacement ?? _episodes;
+    final pageTotals = totals ?? _totals;
+    final completed = complete ?? _complete;
     if (!_current(generation)) return;
     _paging.add(key);
     pageErrors.remove(key);
-    notifyListeners();
+    if (replacement == null) notifyListeners();
     try {
-      final start = _episodes[key]?.length ?? 0;
+      final start = episodes[key]?.length ?? 0;
       final season = seasons.where((s) => s.id == key).firstOrNull;
       final page = flattened
           ? await client.fetchPlayableDescendantsPage(show.id, start: start, size: pageSize)
           : await fetchSeasonEpisodePage(client, show: show, season: season!, start: start, size: pageSize);
       if (!_current(generation)) return;
-      _episodes[key] = [
-        ...?_episodes[key],
+      episodes[key] = [
+        ...?episodes[key],
         ...page.items.map(
           (episode) => _applyPending(
             flattened
@@ -235,14 +242,14 @@ class TvShowController extends ChangeNotifier {
           ),
         ),
       ];
-      _totals[key] = page.totalCount;
+      pageTotals[key] = page.totalCount;
       if (page.items.isEmpty || start + page.items.length >= page.totalCount) {
-        _complete.add(key);
+        completed.add(key);
       }
     } finally {
       if (_current(generation)) {
         _paging.remove(key);
-        notifyListeners();
+        if (replacement == null) notifyListeners();
       }
     }
   }
