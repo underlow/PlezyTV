@@ -86,6 +86,7 @@ class TvEpisode extends StatelessWidget {
     this.onLongPress,
     this.onFocusChange,
     this.externalFocus,
+    this.caption,
   });
 
   /// Visual-only mode for containers that already own focus (paged grids).
@@ -93,6 +94,9 @@ class TvEpisode extends StatelessWidget {
   final MediaItem item;
   final MediaServerClient? client;
   final String? localFilePath;
+
+  /// Replaces the progress or duration line (the player queue's current item).
+  final String? caption;
   final bool onServer, disabled, autofocus;
   final FocusNode? focusNode;
   final VoidCallback? onSelect, onLongPress;
@@ -107,11 +111,13 @@ class TvEpisode extends StatelessWidget {
       title: label == null
           ? item.title ?? ''
           : TvStrings.episode(season: item.parentIndex!, episode: item.index!, title: item.title ?? ''),
-      caption: item.hasActiveProgress
-          ? TvStrings.left(item.durationMs! - item.viewOffsetMs!)
-          : item.durationMs == null
-          ? ''
-          : formatDurationTextual(item.durationMs!),
+      caption:
+          caption ??
+          (item.hasActiveProgress
+              ? TvStrings.left(item.durationMs! - item.viewOffsetMs!)
+              : item.durationMs == null
+              ? ''
+              : formatDurationTextual(item.durationMs!)),
       episode: true,
       client: client,
       localFilePath: localFilePath,
