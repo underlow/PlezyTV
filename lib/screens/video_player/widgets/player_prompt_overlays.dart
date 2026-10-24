@@ -25,6 +25,7 @@ import '../../../widgets/app_icon.dart';
 import '../../../widgets/optimized_media_image.dart';
 import '../../../widgets/settings_builder.dart';
 import '../../../widgets/video_controls/player_chrome_controller.dart';
+import '../../../plezytv/tv_ui/tv_ui.dart';
 
 class VideoPlayerMacPipPlaceholder extends StatelessWidget {
   const VideoPlayerMacPipPlaceholder({super.key});
@@ -94,6 +95,7 @@ class VideoPlayerBufferingOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (TvUi.playerBuffering(context, this) case final tv?) return tv;
     return ValueListenableBuilder<bool>(
       valueListenable: PipService().isPipActive,
       builder: (context, isInPip, child) {
@@ -329,13 +331,14 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
     // Resolved only while shown: the overlay sits in the player build with
     // visible=false for the whole episode, and the lookup hashes the artwork
     // path per call.
-    final backdrop = visible ? _buildThumbnailBackdrop(context, episode) : null;
+    final tvCard = TvUi.playerUpNextCard(context, this);
+    final backdrop = visible && tvCard == null ? _buildThumbnailBackdrop(context, episode) : null;
     return _VideoPlayerPromptShell(
       visible: visible,
       chromeController: chromeController,
       focusNodes: [cancelFocusNode, confirmFocusNode],
       backdrop: backdrop,
-      children: [
+      children: tvCard != null ? [tvCard] : [
         // Clear region that keeps the still visible above the scrimmed text.
         if (backdrop != null) const SizedBox(height: 110),
         _PlayNextEpisodeHeader(episode: episode),

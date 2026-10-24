@@ -85,6 +85,8 @@ import 'widgets/performance_overlay/performance_overlay.dart';
 import '../rasterized_gradient.dart';
 import 'mobile_video_controls.dart';
 import 'desktop_video_controls.dart';
+import '../../plezytv/tv_ui/tv_ui.dart';
+import '../../plezytv/tv_ui/player/tv_player_hooks.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/shader_preset.dart';

@@ -97,6 +97,7 @@ extension _PlexVideoControlsMarkerMethods on _PlexVideoControlsState {
         // appearing must not pull focus out from under them.
         if (OverlaySheetController.maybeOf(context)?.isOpen ?? false) return;
         if (ModalRoute.of(context)?.isCurrent == false) return;
+        if (TvUi.playerPanelOwnsRemote(isLive: widget.isLive, controlsVisible: _showControls)) return;
         _skipMarkerFocusNode.requestFocus();
       });
     }

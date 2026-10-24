@@ -103,6 +103,7 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
   /// up and Flutter drops a later autofocus request once the scope already
   /// has a focused child. See [VideoPlayerScreenState._initializationErrorFocusNode].
   Widget _buildPlaybackFailure(String message, {required VoidCallback onRetry}) {
+    if (TvUi.playerPlaybackError(TvPlaybackErrorArgs(message: message, onRetry: onRetry, retryFocusNode: _initializationErrorFocusNode, onBack: () => unawaited(_handleBackButton())), isLive: widget.isLive) case final tv?) return tv;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Center(
@@ -366,6 +367,7 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                 onPause: _onStillWatchingPause,
                 onContinue: _onStillWatchingContinue,
               ),
+              ?TvUi.playerPauseIndicator(player: player, chromeController: _chromeController, isLive: widget.isLive),
               // Buffering indicator (also shows during initial load, but not when exiting)
               // Hidden in PiP mode
               VideoPlayerBufferingOverlay(

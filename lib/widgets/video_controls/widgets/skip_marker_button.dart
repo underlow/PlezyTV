@@ -7,6 +7,7 @@ import '../../../i18n/strings.g.dart';
 import '../../../media/media_source_info.dart';
 import '../../../theme/mono_tokens.dart';
 import '../../app_icon.dart';
+import '../../../plezytv/tv_ui/tv_ui.dart';
 
 class SkipMarkerButton extends StatelessWidget {
   final MediaMarker marker;
@@ -36,6 +37,7 @@ class SkipMarkerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (TvUi.playerSkipButton(context, this) case final tv?) return tv;
     final isCredits = marker.isCredits;
     final creditsAtEnd =
         isCredits && playerDuration > Duration.zero && (playerDuration - marker.endTime).inMilliseconds <= 1000;
