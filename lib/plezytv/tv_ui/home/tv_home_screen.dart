@@ -530,8 +530,16 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final px = TvTheme.of(context).px;
     Widget content;
     if (_model.state == TvHomeState.content) {
-      // Built only on provider/dependency changes. ValueListenableBuilder's
-      // child preserves these exact widget instances during hero updates.
+      // Keep row widget instances stable when the animated hero changes the
+      // viewport constraints. Only the trailing space depends on its height.
+      final railChildren = <Widget>[
+        for (final row in _model.rows) ...[_rail(row), SizedBox(height: px(TvTokens.space.rowGap))],
+        if (_model.hubsState == TvHomePartState.loading && !_model.rows.any((r) => r.kind == TvHomeRowKind.hub))
+          Padding(
+            padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+            child: const TvRowSkeleton(),
+          ),
+      ];
       final rails = LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
           controller: _vertical,
@@ -539,12 +547,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final row in _model.rows) ...[_rail(row), SizedBox(height: px(TvTokens.space.rowGap))],
-              if (_model.hubsState == TvHomePartState.loading && !_model.rows.any((r) => r.kind == TvHomeRowKind.hub))
-                Padding(
-                  padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
-                  child: const TvRowSkeleton(),
-                ),
+              ...railChildren,
               SizedBox(height: constraints.maxHeight),
             ],
           ),

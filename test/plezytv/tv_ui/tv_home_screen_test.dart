@@ -380,6 +380,46 @@ void main() {
     expect(image.height, 225);
   });
 
+  testWidgets('R10: compact hero animation preserves rails/cards and row focus geometry', (tester) async {
+    content();
+    await pump(tester, reduced: false);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList();
+    var railBuilds = 0, cardBuilds = 0;
+    final previous = debugOnRebuildDirtyWidget;
+    debugOnRebuildDirtyWidget = (element, builtOnce) {
+      previous?.call(element, builtOnce);
+      if (element.widget is TvHorizontalRow) railBuilds++;
+      if (element.widget is TvEpisode || element.widget is TvPoster) cardBuilds++;
+    };
+    addTearDown(() => debugOnRebuildDirtyWidget = previous);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    // Focus changes may build newly visible cards. Count only animation frames.
+    railBuilds = cardBuilds = 0;
+    for (var frame = 0; frame < 24; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (frame == 0) {
+        expect(tester.getSize(find.byType(TvHero)).height, inExclusiveRange(420, 600));
+      }
+      expect(railBuilds, 0, reason: 'hero animation frame $frame');
+      expect(cardBuilds, 0, reason: 'hero animation frame $frame');
+      if (frame == 3) await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    }
+    await tester.pumpAndSettle();
+    expect(tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList(), orderedEquals(rails));
+    expect(hero(tester).compact, isTrue);
+    expect(hero(tester).item!.id, 'shows1');
+    expect(row(tester, 2).focusInside.value, isTrue);
+    expect(row(tester, 2).focusedIndex, 1);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 420);
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    expect(hero(tester).compact, isFalse);
+    expect(row(tester, 1).focusInside.value, isTrue);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 600);
+  });
+
   testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
     final settings = await SettingsService.getInstance();
     await settings.write(SettingsService.continueWatchingAction, ContinueWatchingAction.play);
