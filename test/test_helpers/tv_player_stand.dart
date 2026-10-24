@@ -24,6 +24,7 @@ import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/video_volume_controller.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/watch_together/providers/watch_together_provider.dart';
+import 'package:plezy/widgets/video_controls/desktop_video_controls.dart';
 import 'package:plezy/widgets/video_controls/player_chrome_controller.dart';
 import 'package:plezy/widgets/video_controls/video_controls.dart';
 import 'package:plezy/widgets/video_controls/widgets/player_toast_indicator.dart';
@@ -156,15 +157,82 @@ class TvPlayerStand {
   int previousCalls = 0;
 
   /// Queue items the panel handed to Plezy's `onQueueItemSelected`, recorded
-  /// once [observeQueueSelections] is on (Plezy's handler itself needs the
-  /// player screen, which the stand does not mount).
+  /// once [observeQueueSelections] is on. The recorder wraps the callback
+  /// Plezy gives the panel and then calls it (its handler needs the player
+  /// screen, which the stand does not mount, so it does nothing further).
   final List<MediaItem> queueSelections = [];
 
-  /// Builds the TV panel with an observer of queue selections. Call after
-  /// `TvUi.enabledForTesting`; `TvUi.resetForTesting` undoes it.
+  /// Builds the TV panel on Plezy's controls with `onQueueItemSelected`
+  /// recorded. Call after `TvUi.enabledForTesting`; `TvUi.resetForTesting`
+  /// undoes it.
   void observeQueueSelections() {
     TvUi.playerBuildersForTesting = TvPlayerBuilders(
-      panel: (context, args) => TvPlayerPanel(args: args, onQueueItemSelectedForTesting: queueSelections.add),
+      panel: (context, args) {
+        final p = args.plezy;
+        final select = p.onQueueItemSelected;
+        final plezy = DesktopVideoControls(
+          player: p.player,
+          volumeController: p.volumeController,
+          metadata: p.metadata,
+          onNext: p.onNext,
+          onPrevious: p.onPrevious,
+          onPlayPause: p.onPlayPause,
+          chapters: p.chapters,
+          chaptersLoaded: p.chaptersLoaded,
+          showChapterMarkersOnTimeline: p.showChapterMarkersOnTimeline,
+          seekTimeSmall: p.seekTimeSmall,
+          onSeekToPreviousChapter: p.onSeekToPreviousChapter,
+          onSeekToNextChapter: p.onSeekToNextChapter,
+          onSeekBackward: p.onSeekBackward,
+          onSeekForward: p.onSeekForward,
+          onSeek: p.onSeek,
+          onSeekEnd: p.onSeekEnd,
+          onScrubStart: p.onScrubStart,
+          onScrubEnd: p.onScrubEnd,
+          getReplayIcon: p.getReplayIcon,
+          getForwardIcon: p.getForwardIcon,
+          onFocusActivity: p.onFocusActivity,
+          onRequestPlayPauseFocus: p.onRequestPlayPauseFocus,
+          onHideControls: p.onHideControls,
+          trackControlsState: p.trackControlsState,
+          onBack: p.onBack,
+          hasFirstFrame: p.hasFirstFrame,
+          thumbnailDataBuilder: p.thumbnailDataBuilder,
+          liveChannelName: p.liveChannelName,
+          captureBuffer: p.captureBuffer,
+          isAtLiveEdge: p.isAtLiveEdge,
+          liveEpochForPosition: p.liveEpochForPosition,
+          onLiveSeek: p.onLiveSeek,
+          onLiveSeekBy: p.onLiveSeekBy,
+          onJumpToLive: p.onJumpToLive,
+          useDpadNavigation: p.useDpadNavigation,
+          serverId: p.serverId,
+          showQueueTab: p.showQueueTab,
+          onCancelAutoHide: p.onCancelAutoHide,
+          onStartAutoHide: p.onStartAutoHide,
+          onContentStripVisibilityChanged: p.onContentStripVisibilityChanged,
+          chromeController: p.chromeController,
+          onSeekRequested: p.onSeekRequested,
+          onSeekCompleted: p.onSeekCompleted,
+          onQueueItemSelected: select == null
+              ? null
+              : (MediaItem item) {
+                  queueSelections.add(item);
+                  select(item);
+                },
+        );
+        return TvPlayerPanel(
+          args: TvPlayerPanelArgs(
+            plezy: plezy,
+            canControl: args.canControl,
+            canNavigateMediaItems: args.canNavigateMediaItems,
+            playbackPromptOpen: args.playbackPromptOpen,
+            playNextFocusNode: args.playNextFocusNode,
+            isOfflinePlayback: args.isOfflinePlayback,
+            skipMarkerFocusNode: args.skipMarkerFocusNode,
+          ),
+        );
+      },
     );
   }
 

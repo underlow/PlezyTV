@@ -4,12 +4,14 @@ import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:provider/provider.dart';
 
 import '../../../focus/dpad_navigator.dart';
 import '../../../i18n/strings.g.dart';
 import '../../../media/media_item.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/stepped_seek.dart';
+import '../../../providers/playback_state_provider.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/platform_detector.dart';
 import '../../../widgets/app_icon.dart';
@@ -40,14 +42,9 @@ enum TvPlayerPanelElement { bar, previous, play, next, subtitles, audio, setting
 /// the panel, moves focus inside it and seeks from the bar (R4–R8, D8). Keys it
 /// does not use (Play/Pause, ⏪/⏩, Back) go on to Plezy.
 class TvPlayerPanel extends StatefulWidget {
-  const TvPlayerPanel({super.key, required this.args, this.onQueueItemSelectedForTesting});
+  const TvPlayerPanel({super.key, required this.args});
 
   final TvPlayerPanelArgs args;
-
-  /// Sees each queue selection after it went to Plezy, whose handler needs the
-  /// player screen around it.
-  @visibleForTesting
-  final ValueChanged<MediaItem>? onQueueItemSelectedForTesting;
 
   @override
   State<TvPlayerPanel> createState() => TvPlayerPanelState();
@@ -86,8 +83,12 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   bool get _nextEnabled => _canControl && _plezy.onNext != null;
 
   /// Whether the queue hint shows and ↓ opens the queue: Plezy's own rule,
-  /// which already leaves out guests without control and offline (R2, R3, R9).
-  bool get _hasQueue => _plezy.showQueueTab && _plezy.onQueueItemSelected != null;
+  /// which already leaves out guests without control and offline (R2, R3, R9),
+  /// and something for the row to show.
+  bool get _hasQueue =>
+      _plezy.showQueueTab &&
+      _plezy.onQueueItemSelected != null &&
+      TvPlayerQueue.of(context.read<PlaybackStateProvider>()).items.isNotEmpty;
 
   /// The queue row is up (R10); mirrors `contentStripVisible` so Plezy's Back
   /// chain and hiding know about it (design §4).
@@ -144,12 +145,6 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
       // Plezy's abandonPendingSeek through the key).
       _timelineSeek.cancel();
       _resetSeekState();
-    }
-    if (_queueOpen && !_hasQueue) {
-      // Plezy stopped offering the queue (no longer active, rights revoked).
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _queueOpen && !_hasQueue) _closeQueue(focusBar: _queueHasFocus);
-      });
     }
     final wasPromptOpen = oldWidget.args.playNextFocusNode != null || oldWidget.args.playbackPromptOpen;
     if (_promptOpen != wasPromptOpen) {
@@ -258,7 +253,6 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     // As Plezy's own handler: a burst armed here must not land on the next item.
     _timelineSeek.cancel();
     _plezy.onQueueItemSelected?.call(item);
-    widget.onQueueItemSelectedForTesting?.call(item);
   }
 
   /// ↑ closes the row; ↓ has nothing below it. ←/→ and OK stay with the row.
@@ -485,6 +479,15 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // The hint and ↓ follow the queue's items.
+    context.watch<PlaybackStateProvider>();
+    if (_queueOpen && !_hasQueue) {
+      // Plezy stopped offering the queue (no longer active, rights revoked,
+      // nothing left to show).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _queueOpen && !_hasQueue) _closeQueue(focusBar: _queueHasFocus);
+      });
+    }
     // R11a: invisible and inert while a prompt is open, whatever controlsVisible.
     final promptOpen = _promptOpen;
     return ExcludeFocus(
