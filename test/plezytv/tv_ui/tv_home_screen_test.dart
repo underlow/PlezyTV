@@ -1,3 +1,20 @@
+import 'package:plezy/models/download_models.dart';
+import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/media_backend.dart';
+import 'package:plezy/media/media_server_client.dart';
+import 'package:plezy/media/server_capabilities.dart';
+import 'package:plezy/database/app_database.dart';
+import 'package:plezy/providers/download_provider.dart';
+import 'package:plezy/providers/multi_server_provider.dart';
+import 'package:plezy/providers/offline_mode_provider.dart';
+import 'package:plezy/profiles/active_profile_provider.dart';
+import 'package:plezy/services/offline_watch_sync_service.dart';
+import 'package:plezy/utils/video_player_navigation.dart';
+import 'package:plezy/screens/video_player_screen.dart';
+import 'package:plezy/widgets/media_context_menu.dart';
+import 'package:plezy/i18n/strings.g.dart';
+import '../../test_helpers/multi_server_fixtures.dart';
+import '../../test_helpers/profile_stack.dart';
 import "dart:async";
 
 import 'package:flutter/material.dart';
@@ -29,6 +46,66 @@ import 'package:plezy/widgets/optimized_media_image.dart';
 import '../../test_helpers/media_items.dart';
 import '../../test_helpers/prefs.dart';
 import 'tv_theme_test_helper.dart';
+
+class _ActionClient implements MediaServerClient {
+  final watched = <MediaItem>[];
+  final removed = <MediaItem>[];
+  final lookups = <String>[];
+  MediaItem? nextEpisode;
+  @override
+  ServerId get serverId => ServerId('server');
+  @override
+  void close() {}
+  @override
+  MediaBackend get backend => MediaBackend.plex;
+  @override
+  ServerCapabilities get capabilities =>
+      const ServerCapabilities(videoTranscoding: false, continueWatchingRemoval: true);
+  @override
+  Future<({MediaItem? item, MediaItem? onDeckEpisode})> fetchItemWithOnDeck(
+    String id, {
+    void Function(MediaItem item)? onItemReady,
+  }) async {
+    lookups.add(id);
+    return (item: null, onDeckEpisode: nextEpisode);
+  }
+
+  @override
+  Future<void> markWatched(MediaItem item) async => watched.add(item);
+  @override
+  Future<void> removeFromContinueWatching(MediaItem item) async => removed.add(item);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NoDownloads extends ChangeNotifier implements DownloadProvider {
+  @override
+  String syncRuleKeyForClient(MediaServerClient client, String ratingKey, {ServerId? serverId}) => ratingKey;
+  @override
+  bool hasSyncRule(String key) => false;
+  @override
+  DownloadProgress? getProgress(String key) => null;
+  @override
+  Future<DownloadedMediaItem?> getCompletedDownload(String key) async => null;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _OfflineWatch extends ChangeNotifier implements OfflineWatchSyncService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Launches extends NavigatorObserver {
+  final routes = <VideoPlayerRoute>[];
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is VideoPlayerRoute) {
+      routes.add(route);
+      scheduleMicrotask(() => navigator!.removeRoute(route));
+    }
+  }
+}
 
 // Return the real details route's changed result before mounting its upstream
 // dependency tree. This exercises Home's actual navigateToMediaItem callback.
@@ -143,12 +220,27 @@ void main() {
     bool reduced = true,
     WatchStateStore? watchState,
     List<NavigatorObserver> observers = const [],
+    _ActionClient? actionClient,
+    ActiveProfileProvider? profile,
   }) async {
+    final servers = actionClient == null ? null : testMultiServer(clients: [actionClient]);
+    final downloads = _NoDownloads();
+    final offlineWatch = _OfflineWatch();
+    final offline = servers == null ? null : OfflineModeProvider(servers.manager);
+    addTearDown(downloads.dispose);
+    addTearDown(offlineWatch.dispose);
+    if (offline != null) addTearDown(offline.dispose);
     await pumpTvWidget(
       tester,
       MultiProvider(
+        builder: (context, child) => Scaffold(body: child),
         providers: [
           ChangeNotifierProvider<DiscoverProvider>.value(value: provider),
+          if (servers != null) ChangeNotifierProvider<MultiServerProvider>.value(value: servers.provider),
+          ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
+          ChangeNotifierProvider<OfflineWatchSyncService>.value(value: offlineWatch),
+          if (offline != null) ChangeNotifierProvider<OfflineModeProvider>.value(value: offline),
+          if (profile != null) ChangeNotifierProvider<ActiveProfileProvider>.value(value: profile),
           if (watchState != null) ChangeNotifierProvider<WatchStateStore>.value(value: watchState),
         ],
         child: MainScreenFocusScope(
@@ -287,6 +379,100 @@ void main() {
     expect(image.width, 400);
     expect(image.height, 225);
   });
+
+  testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
+    final settings = await SettingsService.getInstance();
+    await settings.write(SettingsService.continueWatchingAction, ContinueWatchingAction.play);
+    provider.onDeck = items('episode', 1);
+    final observer = _Launches();
+    await pump(tester, actionClient: _ActionClient(), observers: [observer]);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.enter);
+    expect(observer.routes, hasLength(1));
+    final player =
+        observer.routes.single.buildPage(
+              home.currentContext!,
+              const AlwaysStoppedAnimation(1.0),
+              const AlwaysStoppedAnimation(0.0),
+            )
+            as VideoPlayerScreen;
+    expect(player.metadata.id, 'episode0');
+  });
+
+  for (final transport in [LogicalKeyboardKey.mediaPlayPause, LogicalKeyboardKey.mediaPlay]) {
+    testWidgets('A15: $transport bypasses details settings for episode and show', (tester) async {
+      final settings = await SettingsService.getInstance();
+      await settings.write(SettingsService.continueWatchingAction, ContinueWatchingAction.details);
+      await settings.write(SettingsService.episodeAction, EpisodeAction.details);
+      provider.onDeck = items('episode', 1);
+      provider.hubs = [
+        MediaHub(
+          id: 'shows',
+          title: 'Shows',
+          type: 'show',
+          items: [testMediaItem(id: 'show', kind: MediaKind.show, serverId: 'server')],
+        ),
+      ];
+      final client = _ActionClient()..nextEpisode = items('episode', 2).last;
+      final observer = _Launches();
+      await pump(tester, actionClient: client, observers: [observer]);
+      await tester.pumpAndSettle();
+      await key(tester, transport);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, transport);
+      expect(observer.routes, hasLength(2));
+      expect(client.lookups, ['show']);
+      final players = observer.routes
+          .map(
+            (route) =>
+                route.buildPage(
+                      home.currentContext!,
+                      const AlwaysStoppedAnimation(1.0),
+                      const AlwaysStoppedAnimation(0.0),
+                    )
+                    as VideoPlayerScreen,
+          )
+          .toList();
+      expect(players.map((p) => p.metadata.id), ['episode0', 'episode1']);
+      expect(players.map((p) => p.metadata.viewOffsetMs), everyElement(600000));
+      expect(find.byType(TvHomeScreen), findsOneWidget);
+    });
+  }
+
+  for (final longOk in [true, false]) {
+    testWidgets('A6: ${longOk ? "long OK" : "Menu"} opens Plezy actions and refreshes source', (tester) async {
+      final stack = await ProfileStack.create(withStorage: false);
+      addTearDown(stack.dispose);
+      final client = _ActionClient();
+      provider.onDeck = items('episode', 2);
+      final store = WatchStateStore();
+      addTearDown(store.dispose);
+      await pump(tester, actionClient: client, profile: stack.active, watchState: store);
+      await tester.pumpAndSettle();
+      if (longOk) {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+        await tester.pump(const Duration(seconds: 1));
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+      } else {
+        await key(tester, LogicalKeyboardKey.contextMenu);
+      }
+      expect(tester.widget<MediaContextMenu>(find.byType(MediaContextMenu).first).isInContinueWatching, isTrue);
+      expect(find.text(t.mediaMenu.markAsWatched), findsOneWidget);
+      expect(find.text(t.mediaMenu.removeFromContinueWatching), findsOneWidget);
+      await tester.tap(find.text(t.mediaMenu.markAsWatched));
+      await tester.pumpAndSettle();
+      expect(client.watched.map((e) => e.id), ['episode0']);
+      expect(provider.updatedItems.map((e) => e.id), ['episode0']);
+      expect(row(tester, 0).focusInside.value, isTrue);
+      await key(tester, LogicalKeyboardKey.contextMenu);
+      await tester.tap(find.text(t.mediaMenu.removeFromContinueWatching));
+      await tester.pumpAndSettle();
+      expect(client.removed.map((e) => e.id), ['episode0']);
+      expect(provider.continueRefreshes, 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('A8/A9b: 300ms skeleton, phased readiness and automatic focus transfer', (tester) async {
     provider.isLoading = provider.areHubsLoading = provider.isLoadInFlight = true;
