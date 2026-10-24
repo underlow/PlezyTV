@@ -18,10 +18,20 @@ class TvTabs extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   @override
-  State<TvTabs> createState() => _TvTabsState();
+  State<TvTabs> createState() => TvTabsState();
 }
 
-class _TvTabsState extends State<TvTabs> {
+class TvTabsState extends State<TvTabs> {
+  int? get focusedIndex => _focusedIndex;
+
+  /// Explicit entry from a screen's grid/header, retaining controlled selection.
+  void requestFocus() {
+    final index = widget.selectedIndex;
+    if (index >= 0 && index < _nodes.length && !widget.tabs[index].disabled) {
+      _nodes[index].requestFocus();
+    }
+  }
+
   final _scope = FocusScopeNode(debugLabel: 'TV tabs');
   final List<FocusNode> _nodes = [];
   Timer? _timer;

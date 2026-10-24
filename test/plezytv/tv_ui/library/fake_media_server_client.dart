@@ -19,6 +19,14 @@ class FakeMediaServerClient implements MediaServerClient {
   @override
   ServerCapabilities get capabilities =>
       backend == MediaBackend.plex ? ServerCapabilities.plex : ServerCapabilities.jellyfin;
+  @override
+  void close() {}
+  @override
+  Future<void> markWatched(MediaItem item) async {
+    calls.add('watched:${item.id}');
+    items = [for (final row in items) row.id == item.id ? row.copyWith(viewCount: 1) : row];
+  }
+
   final calls = <String>[];
   final queries = <LibraryQuery>[];
   List<MediaItem> items = [];

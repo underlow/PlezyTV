@@ -7,6 +7,10 @@ abstract final class TvStrings {
   static const retry = 'Retry';
   static const homeEmpty = 'Nothing here yet';
   static const refresh = 'Refresh';
+  static const defaultSort = 'Default';
+  static const refreshLibrary = 'Refresh library';
+  static const libraryNoMatches = 'Nothing matches the filters';
+  static String libraryEmpty(String name) => 'Nothing in “$name” yet';
   static const connecting = 'Connecting…';
   static const connectionSettings = 'Connection settings';
   static const connectionFailed = 'Could not connect to the server';

@@ -16,6 +16,7 @@ class TvPagedGrid<T> extends StatefulWidget {
     required this.cellWidth,
     required this.cellHeight,
     this.gap = 32,
+    this.decorateFocus = true,
     this.onUp,
     this.onLeft,
     this.onRight,
@@ -27,6 +28,9 @@ class TvPagedGrid<T> extends StatefulWidget {
        assert(cellHeight > 0);
   final TvPagedSource<T> source;
   final Widget Function(BuildContext, int, T?, bool focused) itemBuilder;
+
+  /// False when the item builder paints focus around its artwork only.
+  final bool decorateFocus;
   final int columns;
   final double cellWidth, cellHeight, gap;
   final VoidCallback? onUp, onLeft, onRight;
@@ -167,6 +171,7 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
             onSelect: () => widget.onSelect?.call(index),
             onLongPress: () => widget.onLongPress?.call(index),
             builder: widget.itemBuilder,
+            decorateFocus: widget.decorateFocus,
           ),
         ),
       ),
@@ -194,8 +199,10 @@ class _GridSlot<T> extends StatefulWidget {
     required this.onSelect,
     required this.onLongPress,
     required this.builder,
+    required this.decorateFocus,
   });
   final TvPagedSource<T> source;
+  final bool decorateFocus;
   final int index;
   final ValueChanged<FocusNode> register;
   final VoidCallback unregister, onFocus, onSelect, onLongPress;
@@ -238,6 +245,7 @@ class _GridSlotState<T> extends State<_GridSlot<T>> with AutomaticKeepAliveClien
       builder: (context, _) {
         if (widget.source.needsReload(widget.index)) widget.source.requestIndex(widget.index);
         return TvFocusable(
+          decorateFocus: widget.decorateFocus || widget.source[widget.index] == null,
           focusNode: node,
           onNavigateUp: () => navigate(LogicalKeyboardKey.arrowUp),
           onNavigateDown: () => navigate(LogicalKeyboardKey.arrowDown),
