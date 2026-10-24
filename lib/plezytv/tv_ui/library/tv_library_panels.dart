@@ -11,6 +11,7 @@ import '../../../services/plex_client.dart';
 import '../../../screens/libraries/library_browse_grouping.dart';
 import '../components/tv_right_panel.dart';
 import '../components/tv_settings_item.dart';
+import '../components/tv_settings_list.dart';
 import '../tv_strings.dart';
 import 'tv_library_controller.dart';
 import 'tv_library_query.dart';
@@ -22,8 +23,14 @@ Widget _row(
   bool? selected,
   String value = '',
   TvSettingsItemKind? kind,
+  FocusNode? focusNode,
+  VoidCallback? onUp,
+  VoidCallback? onDown,
 }) => TvSettingsItem(
   key: ValueKey(id),
+  focusNode: focusNode,
+  onNavigateUp: onUp,
+  onNavigateDown: onDown,
   icon: Icons.tune,
   title: title,
   description: '',
@@ -104,7 +111,11 @@ Future<void> showTvLibraryFilters(BuildContext context, FocusNode anchor, TvLibr
             TvRightPanelPage(
               title: filter.title,
               changes: c,
-              itemsBuilder: (_) => [TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter)],
+              bodyBuilder: (_) => filter.editorKind == FilterEditorKind.valueList
+                  ? TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter)
+                  : SingleChildScrollView(
+                      child: TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter),
+                    ),
             ),
           ),
           kind: TvSettingsItemKind.page,
@@ -203,78 +214,115 @@ class _TvLibraryFilterEditorState extends State<TvLibraryFilterEditor> {
       if (int.tryParse(pair.$1.text.trim()) case final value?) clause('${value * f.unit.scale}', pair.$2),
   ]);
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      _row('clear', t.libraries.all, () {
-        text.clear();
-        lower.clear();
-        upper.clear();
-        apply([]);
-      }, selected: clauses.isEmpty),
-      if (f.editorKind == FilterEditorKind.toggle)
-        for (final value in ['1', '0'])
-          _row(
-            value,
-            value == '1' ? t.libraries.advancedFilters.yes : t.libraries.advancedFilters.no,
-            () => apply([clause('1', value == '1' ? LibraryFilterOperator.is_ : LibraryFilterOperator.isNot)]),
-            selected: clauses.isNotEmpty && clauses.first.op.isNegated == (value == '0'),
+  Widget build(BuildContext context) => f.editorKind == FilterEditorKind.valueList
+      ? _valueList()
+      : Column(
+          children: [
+            _row('clear', t.libraries.all, () {
+              text.clear();
+              lower.clear();
+              upper.clear();
+              apply([]);
+            }, selected: clauses.isEmpty),
+            if (f.editorKind == FilterEditorKind.toggle)
+              for (final value in ['1', if (f.supportsExclusion) '0'])
+                _row(
+                  value,
+                  value == '1' ? t.libraries.advancedFilters.yes : t.libraries.advancedFilters.no,
+                  () => apply([clause('1', value == '1' ? LibraryFilterOperator.is_ : LibraryFilterOperator.isNot)]),
+                  selected: clauses.isNotEmpty && clauses.first.op.isNegated == (value == '0'),
+                ),
+            if (f.editorKind == FilterEditorKind.number) ...[
+              field(lower, t.libraries.advancedFilters.from, emitBounds, number: true),
+              field(upper, t.libraries.advancedFilters.to, emitBounds, number: true),
+            ],
+            if (f.editorKind == FilterEditorKind.date)
+              for (final op in [LibraryFilterOperator.atLeast, LibraryFilterOperator.atMost])
+                if (f.operators.contains(op))
+                  for (final window in relativeDateWindows)
+                    _row(
+                      '$op:$window',
+                      relativeDateLabel(window, older: op == LibraryFilterOperator.atMost),
+                      () => apply([clause(window, op)]),
+                      selected: clauses.any((x) => x.op == op && x.values.contains(window)),
+                    ),
+            if (f.editorKind == FilterEditorKind.text) ...[
+              for (final op in f.operators)
+                _row(op.id, _operatorLabel(op), () {
+                  setState(() => mode = op);
+                  emitText();
+                }, selected: mode == op),
+              field(text, f.title, emitText),
+            ],
+          ],
+        );
+  Widget _valueList() {
+    final ready = error == null && values != null;
+    final headerCount = ready && f.supportsExclusion ? 2 : 1;
+    return Column(
+      children: [
+        if (!ready && error == null) const LinearProgressIndicator(),
+        Expanded(
+          key: const ValueKey('filter-values'),
+          child: TvSettingsList(
+            itemCount: ready
+                ? values!.length + headerCount
+                : error == null
+                ? 1
+                : 2,
+            itemBuilder: (context, index, node, up, down) {
+              if (index == 0) {
+                return _row(
+                  'clear',
+                  t.libraries.all,
+                  () => apply([]),
+                  selected: clauses.isEmpty,
+                  focusNode: node,
+                  onUp: up,
+                  onDown: down,
+                );
+              }
+              if (error != null) {
+                return _row('retry', TvStrings.retry, () => unawaited(load()), focusNode: node, onUp: up, onDown: down);
+              }
+              if (index < headerCount) {
+                return _row(
+                  'exclude',
+                  TvStrings.exclude,
+                  () {
+                    setState(() => mode = mode.isNegated ? LibraryFilterOperator.is_ : LibraryFilterOperator.isNot);
+                    apply([for (final x in clauses) x.copyWith(op: mode)]);
+                  },
+                  selected: mode.isNegated,
+                  kind: TvSettingsItemKind.toggle,
+                  focusNode: node,
+                  onUp: up,
+                  onDown: down,
+                );
+              }
+              final value = values![index - headerCount];
+              final id = libraryFilterValueId(value.key, f.filter);
+              return _row(
+                value.key,
+                value.title,
+                () {
+                  final selected = clauses.expand((x) => x.values).toSet();
+                  if (!selected.remove(id)) selected.add(id);
+                  apply(selected.isEmpty ? [] : [LibraryFilter(field: f.filter, op: mode, values: selected.toList())]);
+                },
+                selected: clauses.any((x) => x.values.contains(id)),
+                kind: TvSettingsItemKind.multipleChoice,
+                focusNode: node,
+                onUp: up,
+                onDown: down,
+              );
+            },
           ),
-      if (f.editorKind == FilterEditorKind.valueList) ...[
-        if (error != null)
-          _row('retry', TvStrings.retry, () => unawaited(load()))
-        else if (values == null)
-          const LinearProgressIndicator()
-        else ...[
-          if (f.supportsExclusion)
-            _row(
-              'exclude',
-              TvStrings.exclude,
-              () {
-                setState(() => mode = mode.isNegated ? LibraryFilterOperator.is_ : LibraryFilterOperator.isNot);
-                apply([for (final x in clauses) x.copyWith(op: mode)]);
-              },
-              selected: mode.isNegated,
-              kind: TvSettingsItemKind.toggle,
-            ),
-          for (final value in values!)
-            _row(
-              value.key,
-              value.title,
-              () {
-                final id = libraryFilterValueId(value.key, f.filter);
-                final selected = clauses.expand((x) => x.values).toSet();
-                if (!selected.remove(id)) selected.add(id);
-                apply(selected.isEmpty ? [] : [LibraryFilter(field: f.filter, op: mode, values: selected.toList())]);
-              },
-              selected: clauses.any((x) => x.values.contains(libraryFilterValueId(value.key, f.filter))),
-              kind: TvSettingsItemKind.multipleChoice,
-            ),
-        ],
+        ),
       ],
-      if (f.editorKind == FilterEditorKind.number) ...[
-        field(lower, t.libraries.advancedFilters.from, emitBounds, number: true),
-        field(upper, t.libraries.advancedFilters.to, emitBounds, number: true),
-      ],
-      if (f.editorKind == FilterEditorKind.date)
-        for (final op in [LibraryFilterOperator.atLeast, LibraryFilterOperator.atMost])
-          if (f.operators.contains(op))
-            for (final window in relativeDateWindows)
-              _row(
-                '$op:$window',
-                relativeDateLabel(window, older: op == LibraryFilterOperator.atMost),
-                () => apply([clause(window, op)]),
-                selected: clauses.any((x) => x.op == op && x.values.contains(window)),
-              ),
-      if (f.editorKind == FilterEditorKind.text) ...[
-        for (final op in f.operators)
-          _row(op.id, _operatorLabel(op), () {
-            setState(() => mode = op);
-            emitText();
-          }, selected: mode == op),
-        field(text, f.title, emitText),
-      ],
-    ],
-  );
+    );
+  }
+
   String _operatorLabel(LibraryFilterOperator op) => switch (op) {
     LibraryFilterOperator.is_ => t.libraries.advancedFilters.matchContains,
     LibraryFilterOperator.isNot => t.libraries.advancedFilters.matchNotContains,

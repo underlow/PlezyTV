@@ -123,6 +123,7 @@ class TvLibraryController extends ChangeNotifier {
       if (_current(epoch)) {
         loading = false;
         _emit();
+        _drainRefresh();
       }
     }
   }
@@ -173,7 +174,8 @@ class TvLibraryController extends ChangeNotifier {
       if (folders.isEmpty) folders.add(TvFolderLevel());
       await loadFolder(folders.last);
     } else {
-      await Future.wait([source.requestIndex(0), _loadCharacters(epoch)]);
+      unawaited(_loadCharacters(epoch));
+      await source.requestIndex(0);
     }
     if (!_current(epoch)) return;
     if (library.backend.usesMediaBrowserApi) unawaited(_loadFilters(epoch));
@@ -198,6 +200,17 @@ class TvLibraryController extends ChangeNotifier {
   }
 
   Future<void> _loadCharacters(int epoch) async {
+    // Check sort/grouping eligibility without waiting for counts or buckets.
+    if (!strategy.shouldShow(
+      totalItemCount: 80,
+      loadedCharacterCount: 6,
+      sortKey: selectedSort?.key,
+      isFolderGrouping: grouping == 'folders',
+      mediaBrowserAlphaPrefix: alphaPrefix,
+      isPhone: false,
+    )) {
+      return;
+    }
     try {
       final result = await strategy.loadCharacters(
         filters: plexFilterQueryParameters(preferences.filters),
@@ -282,13 +295,18 @@ class TvLibraryController extends ChangeNotifier {
       if (_current(epoch)) {
         loading = false;
         _emit();
+        _drainRefresh();
       }
     }
   }
 
   void setJumping(bool value) {
     _jumping = value;
-    if (!value && _refreshPending) {
+    _drainRefresh();
+  }
+
+  void _drainRefresh() {
+    if (!_disposed && !_jumping && !loading && _refreshPending) {
       _refreshPending = false;
       unawaited(refresh());
     }
@@ -300,7 +318,7 @@ class TvLibraryController extends ChangeNotifier {
 
   Future<void> refresh() async {
     if (_disposed) return;
-    if (_jumping) {
+    if (_jumping || loading) {
       _refreshPending = true;
       return;
     }
@@ -313,7 +331,7 @@ class TvLibraryController extends ChangeNotifier {
       final index = await source.refresh(anchorIndex: focusedIndex, idOf: (item) => item.globalKey);
       if (!_current(epoch)) return;
       focusedIndex = index;
-      await _loadCharacters(epoch);
+      unawaited(_loadCharacters(epoch));
     }
     if (!_current(epoch)) return;
     if (source.errors.isEmpty && (folders.isEmpty || folders.last.error == null)) _contentEpoch = contentEpoch;

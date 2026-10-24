@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:plezy/services/jellyfin_client.dart';
+import '../../../test_helpers/backend_client_fixtures.dart';
+import 'package:plezy/i18n/strings.g.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,10 +13,13 @@ import 'package:plezy/media/library_query.dart';
 import 'package:plezy/media/media_filter.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
+import 'package:plezy/media/media_backend.dart';
+import 'package:plezy/media/media_library.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_right_panel.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_settings_item.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_controller.dart';
+import 'package:plezy/plezytv/tv_ui/library/tv_library_panels.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_preferences.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_screen.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
@@ -24,10 +32,11 @@ void main() {
     WidgetTester tester,
     FakeMediaServerClient client, {
     TvLibraryPreferences? saved,
+    MediaLibrary lib = library,
     Future<void> Function(BuildContext, MediaItem)? open,
   }) async {
     final c = TvLibraryController(
-      library: library,
+      library: lib,
       client: client,
       store: TvMemoryLibraryPreferences(seed: saved),
     );
@@ -230,5 +239,106 @@ void main() {
     expect(focus, 'Library sort');
     await press(tester, LogicalKeyboardKey.arrowDown);
     expect(focus, 'TV grid 0');
+  });
+  testWidgets('3000 real Actor values stay lazy while traversing, toggling and returning', (tester) async {
+    final values = Completer<List<MediaFilterValue>>();
+    final client = FakePlexLibraryClient()
+      ..items = [movie(0)]
+      ..filters = LibraryFilterResult(
+        filters: [MediaFilter(filter: 'actor', filterType: 'tag', key: '/actors', title: 'Actor', type: 'filter')],
+        cachedValues: {},
+      )
+      ..onValues = (key) async {
+        expect(key, '/actors');
+        return values.future;
+      };
+    final c = await mount(
+      tester,
+      client,
+      lib: const MediaLibrary(
+        id: '1',
+        backend: MediaBackend.plex,
+        title: 'Movies',
+        kind: MediaKind.movie,
+        serverId: 'server',
+      ),
+    );
+    await button(tester, 'Filters');
+    await activate(tester, 'actor');
+    final loadingClear = FocusManager.instance.primaryFocus;
+    expect(loadingClear?.context?.findAncestorWidgetOfExactType<TvLibraryFilterEditor>(), isNotNull);
+    values.complete(
+      List.generate(3000, (i) => MediaFilterValue(key: '/library/sections/1/all?actor=$i', title: 'Actor $i')),
+    );
+    await settle(tester);
+    expect(FocusManager.instance.primaryFocus, same(loadingClear));
+    int mountedRows() => find
+        .descendant(of: find.byType(TvLibraryFilterEditor), matching: find.byType(TvSettingsItem))
+        .evaluate()
+        .length;
+    expect(mountedRows(), lessThan(30));
+    expect(find.text('Actor 2999'), findsNothing);
+    final clear = tester.widget<TvSettingsItem>(
+      find.descendant(of: find.byType(TvLibraryFilterEditor), matching: find.byKey(const ValueKey('clear'))),
+    );
+    clear.focusNode!.requestFocus();
+    await settle(tester);
+    await press(tester, LogicalKeyboardKey.arrowDown); // exclusion
+    await press(tester, LogicalKeyboardKey.arrowDown); // actor 0
+    for (var i = 0; i < 60; i++) {
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(mountedRows(), lessThan(30));
+    }
+    final row = find.byKey(const ValueKey('/library/sections/1/all?actor=60'));
+    final node = tester.widget<TvSettingsItem>(row).focusNode;
+    expect(node!.hasFocus, isTrue);
+    final scroll = tester.state<ScrollableState>(
+      find.descendant(of: find.byType(TvLibraryFilterEditor), matching: find.byType(Scrollable)),
+    );
+    final offset = scroll.position.pixels;
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(c.preferences.filters.single.values, ['60']);
+    expect(tester.widget<TvSettingsItem>(row).selected, isTrue);
+    expect(FocusManager.instance.primaryFocus, same(node));
+    expect(scroll.position.pixels, offset);
+    expect(mountedRows(), lessThan(30));
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(c.preferences.filters, isEmpty);
+    for (final key in [LogicalKeyboardKey.arrowLeft, LogicalKeyboardKey.arrowRight]) {
+      await press(tester, key);
+      expect(
+        FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TvLibraryFilterEditor>(),
+        isNotNull,
+      );
+    }
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(find.byKey(const ValueKey('actor')), findsOneWidget);
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(focus, 'Library filters');
+  });
+
+  testWidgets('real Jellyfin favorite schema offers Any/Yes; unwatched retains No', (tester) async {
+    final backend = JellyfinClient.forTesting(
+      connection: testJellyfinConnection(),
+      httpClient: MockClient((_) async => http.Response('{}', 200)),
+    );
+    addTearDown(backend.close);
+    final schema = await backend.fetchLibraryFiltersWithValues('1', libraryKind: MediaKind.movie);
+    final client = FakeMediaServerClient()
+      ..items = [movie(0)]
+      ..filters = schema;
+    final c = await mount(tester, client);
+    await button(tester, 'Filters');
+    await activate(tester, 'favorite');
+    expect(find.text(t.libraries.advancedFilters.no), findsNothing);
+    await activate(tester, '1');
+    expect(c.preferences.filters.single.op, LibraryFilterOperator.is_);
+    expect(c.preferences.filters.single.field, 'favorite');
+    await activate(tester, 'clear');
+    expect(c.preferences.filters, isEmpty);
+    await press(tester, LogicalKeyboardKey.escape);
+    await activate(tester, 'unwatched');
+    await activate(tester, '0');
+    expect(c.preferences.filters.single.op, LibraryFilterOperator.isNot);
   });
 }

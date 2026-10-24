@@ -275,4 +275,42 @@ void main() {
     await settle(tester);
     expect(screen(tester).controller, same(before));
   });
+  testWidgets('filtered links normalize Plex query, path and encoded value keys', (tester) async {
+    const plex = MediaLibrary(
+      id: '1',
+      backend: MediaBackend.plex,
+      title: 'Movies',
+      kind: MediaKind.movie,
+      serverId: 'server',
+    );
+    await mount(tester, rows: [plex]);
+    for (final example in [
+      ('genre', '/library/sections/1/all?genre=239', '239'),
+      ('genre', '/library/sections/1/genre/239', '239'),
+      ('contentRating', '16%2B', '16+'),
+      ('contentRating', '/library/sections/1/all?contentRating=16%2B', '16+'),
+    ]) {
+      client.filters = LibraryFilterResult(
+        filters: [MediaFilter(filter: example.$1, filterType: 'tag', key: '/values', title: 'Value', type: 'filter')],
+        cachedValues: {
+          example.$1: [MediaFilterValue(key: example.$2, title: 'Value')],
+        },
+      );
+      final uri = Uri(
+        scheme: 'plezytv',
+        host: 'screen',
+        path: '/library-filter',
+        queryParameters: {'id': '1', 'server': 'server', 'field': example.$1, 'value': example.$3},
+      );
+      ScreenLinkRouter.instance.claim('$uri');
+      await settle(tester);
+      final screens = tester.widgetList<TvLibraryScreen>(find.byType(TvLibraryScreen)).toList();
+      expect(screens.length, 1); // covered underlying route is offstage
+      final c = screens.last.controller;
+      expect(c.preferences.filters.single.values, [example.$3]);
+      expect(client.queries.last.filters.single.values, [example.$3]);
+      rootNavigatorKey.currentState!.pop();
+      await settle(tester);
+    }
+  });
 }

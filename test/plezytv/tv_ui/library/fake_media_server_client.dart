@@ -1,6 +1,8 @@
 import 'package:plezy/services/plex_client.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/library_first_character.dart';
+import 'package:plezy/media/media_filter.dart';
 import 'package:plezy/media/media_library.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_playlist.dart';
@@ -148,6 +150,21 @@ class FakeMediaServerClient implements MediaServerClient {
 
 class FakePlexLibraryClient extends FakeMediaServerClient implements PlexClient {
   FakePlexLibraryClient() : super(backend: MediaBackend.plex);
+  Future<List<MediaFilterValue>> Function(String)? onValues;
+  @override
+  Future<List<MediaFilterValue>> getFilterValues(String filterKey) async => onValues!(filterKey);
+  Future<List<LibraryFirstCharacter>> Function()? onCharacters;
+  int characterCalls = 0;
+  @override
+  Future<List<LibraryFirstCharacter>> getFirstCharacters(
+    String sectionId, {
+    int? type,
+    Map<String, dynamic>? filters,
+  }) async {
+    characterCalls++;
+    return onCharacters == null ? [] : onCharacters!();
+  }
+
   @override
   Future<void> scanLibrary(String sectionId) => libraryAction('scan', sectionId);
   @override

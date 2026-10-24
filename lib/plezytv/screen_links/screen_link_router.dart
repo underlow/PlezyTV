@@ -217,14 +217,17 @@ class ScreenLinkRouter {
                     : <MediaFilterValue>[]);
             if (!isCurrent()) return;
             if (!ownsRequest()) throw const ScreenLinkNotReady();
-            if (!values.any((v) => v.key == link.value)) throw StateError('unknown filter value ${link.value}');
+            final valueId = libraryFilterValueId(link.value!, field.filter);
+            if (!values.any((v) => libraryFilterValueId(v.key, field.filter) == valueId)) {
+              throw StateError('unknown filter value ${link.value}');
+            }
             unawaited(
               profileNavigationRegistry.navigator!.push<void>(
                 MaterialPageRoute(
                   builder: (_) => TvLibraryScreen.filtered(
                     library: library,
                     client: client,
-                    filter: LibraryFilter(field: field.filter, values: [link.value!]),
+                    filter: LibraryFilter(field: field.filter, values: [valueId]),
                   ),
                 ),
               ),
