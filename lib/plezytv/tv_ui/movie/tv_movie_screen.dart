@@ -36,6 +36,7 @@ import '../tv_tinted_background.dart';
 import '../tv_tokens.dart';
 import 'tv_movie_actions.dart';
 import 'tv_movie_controller.dart';
+import 'tv_movie_logic.dart';
 
 /// PlezyTV movie page (S8). The route pops with `true` when watch state changed.
 class TvMovieScreen extends StatefulWidget {
@@ -43,7 +44,7 @@ class TvMovieScreen extends StatefulWidget {
     super.key,
     required this.metadata,
     this.controller,
-    this.play,
+    this.launchPlayer,
     this.playVersion,
     this.markWatched,
     this.serverOnline,
@@ -53,7 +54,9 @@ class TvMovieScreen extends StatefulWidget {
 
   /// Optional borrowed controller and adapters for isolated screen tests.
   final TvMovieController? controller;
-  final Future<void> Function(BuildContext, MediaItem, int? startPositionMs)? play;
+
+  /// Test adapter replacing only Plezy's `navigateToVideoPlayer` call.
+  final Future<bool?> Function(BuildContext, MediaItem, TvMoviePlayerLaunch)? launchPlayer;
   final Future<void> Function(BuildContext, MediaItem)? playVersion;
   final Future<WatchMarkOutcome> Function(MediaItem, bool)? markWatched;
   final bool Function(MediaItem)? serverOnline;
@@ -143,6 +146,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final result = _controller?.watchStateChanged ?? false;
     if (route == null || route.isFirst) {
       setState(() => _unavailable = true);
+    } else if (!route.isActive) {
+      // Already leaving for another reason.
+      return;
     } else if (route.isCurrent) {
       Navigator.of(context).pop(result);
     } else {
@@ -155,25 +161,28 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     Navigator.of(context).pop(_controller?.watchStateChanged ?? false);
   }
 
+  bool _canUseScreen() => mounted && !(_controller?.deleted ?? false);
+
+  /// First-route "unavailable" leaves Back to the system, as Plezy does when
+  /// nothing can be popped.
+  bool get _exitable => _unavailable && ModalRoute.of(context)?.isFirst != false;
+
   Future<void> _play() async {
     final c = _controller!;
     if (_playing) return;
     _playing = true;
-    final action = c.primaryAction;
+    final launch = tvMoviePlayerLaunch(c.primaryAction);
     try {
-      if (widget.play != null) {
-        await widget.play!(context, c.movie, action.startPositionMs);
-      } else {
-        // Null lets Plezy resolve resume; 0 is an explicit restart.
-        final restart = action.startPositionMs == 0;
-        final changed = await navigateToVideoPlayer(
-          context,
-          metadata: c.movie,
-          resolveWatchState: !restart,
-          initialPosition: restart ? Duration.zero : null,
-        );
-        if (changed == true) c.watchStateChanged = true;
-      }
+      final changed = widget.launchPlayer != null
+          ? await widget.launchPlayer!(context, c.movie, launch)
+          : await navigateToVideoPlayer(
+              context,
+              metadata: c.movie,
+              resolveWatchState: launch.resolveWatchState,
+              initialPosition: launch.initialPosition,
+              isLaunchCurrent: _canUseScreen,
+            );
+      if (changed == true) c.watchStateChanged = true;
       if (mounted) await c.refresh();
     } finally {
       _playing = false;
@@ -192,7 +201,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   }
 
   Future<void> _playExtra(MediaItem item) async {
-    final changed = await navigateToVideoPlayer(context, metadata: item);
+    final changed = await navigateToVideoPlayer(context, metadata: item, isLaunchCurrent: _canUseScreen);
     if (!mounted) return;
     if (changed == true) _controller!.watchStateChanged = true;
     await _controller!.refresh();
@@ -235,11 +244,21 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final down = event is KeyDownEvent || event is KeyRepeatEvent;
     if (_actionScope.hasFocus) {
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        if (down && _rowOrder.isNotEmpty) _rowOrder.first.currentState?.requestFocus();
+        if (down) {
+          if (_rowOrder.isNotEmpty) {
+            _rowOrder.first.currentState?.requestFocus();
+          } else if (_page.hasClients) {
+            // No rows: reveal what is below the buttons (tech block).
+            _scrollTo(_page.position.maxScrollExtent);
+          }
+        }
         return KeyEventResult.handled;
       }
       // Genres and ratings are not focusable (R2); Up stays on the buttons.
-      if (event.logicalKey == LogicalKeyboardKey.arrowUp) return KeyEventResult.handled;
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        if (down) _scrollTo(0);
+        return KeyEventResult.handled;
+      }
       return KeyEventResult.ignored;
     }
     final up = event.logicalKey == LogicalKeyboardKey.arrowUp;
@@ -286,14 +305,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final c = _controller;
     final movie = c?.movie ?? widget.metadata;
     return PopScope<bool>(
-      canPop: false,
+      canPop: _exitable,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _pop();
       },
       child: Scaffold(
         body: Focus(
           canRequestFocus: false,
-          onKeyEvent: (_, event) => handleBackKeyAction(event, _pop),
+          onKeyEvent: (_, event) => _exitable ? KeyEventResult.ignored : handleBackKeyAction(event, _pop),
           child: TvTintedBackground(
             source: TvArtworkSource(item: movie, client: c?.client),
             child: _connectionError != null || _unavailable

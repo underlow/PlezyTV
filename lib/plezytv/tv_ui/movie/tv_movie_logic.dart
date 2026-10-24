@@ -32,6 +32,15 @@ TvMoviePrimaryAction tvMoviePrimaryAction(MediaItem movie) {
   return const TvMoviePrimaryAction(label: TvStrings.watch);
 }
 
+/// Arguments for Plezy's `navigateToVideoPlayer` from the primary action.
+typedef TvMoviePlayerLaunch = ({bool resolveWatchState, Duration? initialPosition});
+
+/// Restart plays from zero without Plezy's resume resolution; Watch and
+/// Continue let Plezy resolve the saved position.
+TvMoviePlayerLaunch tvMoviePlayerLaunch(TvMoviePrimaryAction action) => action.restart
+    ? (resolveWatchState: false, initialPosition: Duration.zero)
+    : (resolveWatchState: true, initialPosition: null);
+
 /// Version that playback will use: the remembered Plezy choice, else the first.
 int tvMovieVersionIndex(List<MediaVersion>? versions, MediaVersionPreference? preference) {
   if (versions == null || versions.isEmpty) return 0;

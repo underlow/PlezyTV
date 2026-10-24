@@ -153,25 +153,21 @@ class _TvMovieActionsState extends State<TvMovieActions> {
       return;
     }
     final movie = c.movie;
-    await queueDownloadWithFeedback(
-      context,
-      metadata: movie,
-      client: c.client,
-      downloadProvider: provider,
-      onDelete: !downloaded
-          ? null
-          : () async {
-              final confirmed = await showDeleteConfirmation(
-                context,
-                title: t.downloads.deleteDownload,
-                message: t.downloads.deleteConfirm(title: movie.displayTitle),
-              );
-              if (confirmed && mounted) {
-                await provider.deleteDownload(movie.globalKey);
-                if (mounted) showSuccessSnackBar(context, t.downloads.downloadDeleted);
-              }
-            },
-    );
+    if (downloaded) {
+      // Plezy action_buttons: a downloaded movie cannot download more, so the
+      // button goes straight to the delete confirmation.
+      final confirmed = await showDeleteConfirmation(
+        context,
+        title: t.downloads.deleteDownload,
+        message: t.downloads.deleteConfirm(title: movie.displayTitle),
+      );
+      if (confirmed && mounted) {
+        await provider.deleteDownload(movie.globalKey);
+        if (mounted) showSuccessSnackBar(context, t.downloads.downloadDeleted);
+      }
+      return;
+    }
+    await queueDownloadWithFeedback(context, metadata: movie, client: c.client, downloadProvider: provider);
   }
 
   @override
