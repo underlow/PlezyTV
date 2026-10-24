@@ -1,13 +1,12 @@
 {
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S16",
-  "phase": "implementation",
+  "phase": "review",
   "base_commit": "cea6256498ffe737aa56df0215e95f185a82b424",
   "profile": "full",
   "development_agent": {
     "platform": "codex",
     "model": "sol",
     "effort": "low"
-  },
-  "task": "T9"
+  }
 }
