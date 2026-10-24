@@ -26,6 +26,7 @@ import '../tv_tokens.dart';
 import 'tv_library_controller.dart';
 import 'tv_library_extra_tab.dart';
 import 'tv_library_panels.dart';
+import 'tv_library_more.dart';
 import 'tv_folder_list.dart';
 
 /// Host for one library. The switch owns the controller's lifetime. Header
@@ -539,7 +540,9 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
                     label: TvStrings.moreLibraries,
                     focusNode: _more,
                     variant: TvButtonVariant.secondary,
-                    onSelect: () => widget.onMore?.call(_more),
+                    onSelect: () => widget.onMore != null
+                        ? widget.onMore!(_more)
+                        : unawaited(showTvLibraryMore(context, _more, c.library, c.client)),
                   ),
                 ],
               ),
