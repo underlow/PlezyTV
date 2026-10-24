@@ -85,17 +85,19 @@ class VideoPlayerBufferingOverlay extends StatelessWidget {
   final ValueListenable<bool> isBuffering;
   final ValueListenable<bool> hasFirstFrame;
   final ValueListenable<bool> isExiting;
+  final bool isLive;
 
   const VideoPlayerBufferingOverlay({
     super.key,
     required this.isBuffering,
     required this.hasFirstFrame,
     required this.isExiting,
+    this.isLive = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (TvUi.playerBuffering(context, this) case final tv?) return tv;
+    if (TvUi.playerBuffering(context, this, isLive: isLive) case final tv?) return tv;
     return ValueListenableBuilder<bool>(
       valueListenable: PipService().isPipActive,
       builder: (context, isInPip, child) {
@@ -311,6 +313,7 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
   final PlayerChromeController chromeController;
   final VoidCallback onCancel;
   final VoidCallback onPlayNext;
+  final bool isLive;
 
   const VideoPlayerPlayNextOverlay({
     super.key,
@@ -322,6 +325,7 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
     required this.chromeController,
     required this.onCancel,
     required this.onPlayNext,
+    this.isLive = false,
   });
 
   @override
@@ -331,7 +335,7 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
     // Resolved only while shown: the overlay sits in the player build with
     // visible=false for the whole episode, and the lookup hashes the artwork
     // path per call.
-    final tvCard = TvUi.playerUpNextCard(context, this);
+    final tvCard = TvUi.playerUpNextCard(context, this, isLive: isLive);
     final backdrop = visible && tvCard == null ? _buildThumbnailBackdrop(context, episode) : null;
     return _VideoPlayerPromptShell(
       visible: visible,

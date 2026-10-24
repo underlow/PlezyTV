@@ -187,8 +187,8 @@ void main() {
 
     group('H4, H5 overlays', () {
       tearDown(stand.tearDown);
-      for (final tv in [true, false]) {
-        testWidgets('tv=$tv', (tester) async {
+      for (final (tv, live) in [(true, false), (false, false), (true, true)]) {
+        testWidgets('tv=$tv live=$live', (tester) async {
           await stand.setUp(tv: tv);
           TvUi.enabledForTesting = () => tv;
           TvUi.playerBuildersForTesting = _allOn(panelArgs);
@@ -209,7 +209,12 @@ void main() {
             stand.host(
               Stack(
                 children: [
-                  VideoPlayerBufferingOverlay(isBuffering: buffering, hasFirstFrame: firstFrame, isExiting: exiting),
+                  VideoPlayerBufferingOverlay(
+                    isBuffering: buffering,
+                    hasFirstFrame: firstFrame,
+                    isExiting: exiting,
+                    isLive: live,
+                  ),
                   VideoPlayerPlayNextOverlay(
                     visible: true,
                     nextEpisode: TvPlayerStand.episode(id: 'next', index: 2),
@@ -219,15 +224,17 @@ void main() {
                     chromeController: stand.chrome,
                     onCancel: () {},
                     onPlayNext: () {},
+                    isLive: live,
                   ),
                 ],
               ),
             ),
           );
           await tester.pump();
-          expect(find.text('tv buffering'), tv ? findsOneWidget : findsNothing);
-          expect(find.text('tv up next'), tv ? findsOneWidget : findsNothing);
-          expect(find.text('10'), tv ? findsNothing : findsWidgets, reason: 'Plezy countdown off TV');
+          final ours = tv && !live;
+          expect(find.text('tv buffering'), ours ? findsOneWidget : findsNothing);
+          expect(find.text('tv up next'), ours ? findsOneWidget : findsNothing);
+          expect(find.text('10'), ours ? findsNothing : findsWidgets, reason: 'Plezy countdown off TV and in Live TV');
           await stand.unmount(tester);
         });
       }
@@ -242,7 +249,7 @@ void main() {
       expect(TvPlayerSession.of(a), isNot(same(TvPlayerSession.of(b))));
     });
 
-    test('a different ratingKey drops focus memory; the same one keeps it', () {
+    test('a different ratingKey drops focus memory but not the play flag; the same one keeps both', () {
       final session = TvPlayerSession.of(TvStandPlayer());
       MediaItem item(String id) => testMediaItem(id: id);
       session.bindItem(item('1').globalKey);
@@ -259,7 +266,17 @@ void main() {
       expect(session.itemKey, item('2').globalKey);
       expect(session.lastFocusedId, isNull);
       expect(session.hiddenAt, isNull);
-      expect(session.focusPlayOnNextShow, isFalse);
+      expect(session.focusPlayOnNextShow, isTrue, reason: 'H7 may set it for the new item before the panel binds');
+    });
+
+    test('pause with the panel hidden after an in-place episode change keeps focus-play (flow 5)', () {
+      final session = TvPlayerSession.of(TvStandPlayer());
+      session.bindItem(TvPlayerStand.episode(id: 'ep1').globalKey);
+      // Play-next swaps to ep2 on the same player while the panel is hidden;
+      // the pause layer then asks for play focus before the panel rebuilds.
+      session.focusPlayOnNextShow = true;
+      session.bindItem(TvPlayerStand.episode(id: 'ep2', index: 2).globalKey);
+      expect(session.focusPlayOnNextShow, isTrue);
     });
   });
 }

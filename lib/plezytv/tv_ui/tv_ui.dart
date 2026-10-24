@@ -9,7 +9,6 @@ import 'movie/tv_movie_screen.dart';
 import 'show/tv_show_screen.dart';
 import '../../mpv/mpv.dart';
 import '../../screens/video_player/widgets/player_prompt_overlays.dart';
-import '../../screens/video_player_screen.dart';
 import '../../widgets/video_controls/player_chrome_controller.dart';
 import '../../widgets/video_controls/video_controls.dart';
 import '../../widgets/video_controls/widgets/skip_marker_button.dart';
@@ -100,12 +99,10 @@ abstract final class TvUi {
 
   static bool _playerActive({required bool isLive}) => TvUi.enabled && !isLive;
 
-  /// Live TV as seen from inside the player: the controls know it, and the
-  /// screen-level overlays sit under [VideoPlayerScreen].
+  /// Live TV as seen from inside the controls (the skip button sits under
+  /// [PlexVideoControls]); screen-level overlays pass `isLive` explicitly.
   static bool _isLiveContext(BuildContext context) =>
-      context.findAncestorWidgetOfExactType<PlexVideoControls>()?.isLive ??
-      context.findAncestorWidgetOfExactType<VideoPlayerScreen>()?.isLive ??
-      false;
+      context.findAncestorWidgetOfExactType<PlexVideoControls>()?.isLive ?? false;
 
   /// H1 — the panel in place of `DesktopVideoControls`.
   static Widget? playerPanel(BuildContext context, TvPlayerPanelArgs args, {required bool isLive}) {
@@ -131,16 +128,16 @@ abstract final class TvUi {
   }
 
   /// H4 — the content of the play-next card inside Plezy's shell.
-  static Widget? playerUpNextCard(BuildContext context, VideoPlayerPlayNextOverlay plezy) {
+  static Widget? playerUpNextCard(BuildContext context, VideoPlayerPlayNextOverlay plezy, {required bool isLive}) {
     final builder = _player.upNextCard;
-    if (builder == null || !_playerActive(isLive: _isLiveContext(context))) return null;
+    if (builder == null || !_playerActive(isLive: isLive)) return null;
     return builder(context, plezy);
   }
 
   /// H5 — the buffering indicator.
-  static Widget? playerBuffering(BuildContext context, VideoPlayerBufferingOverlay plezy) {
+  static Widget? playerBuffering(BuildContext context, VideoPlayerBufferingOverlay plezy, {required bool isLive}) {
     final builder = _player.buffering;
-    if (builder == null || !_playerActive(isLive: _isLiveContext(context))) return null;
+    if (builder == null || !_playerActive(isLive: isLive)) return null;
     return builder(context, plezy);
   }
 
