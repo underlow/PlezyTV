@@ -67,6 +67,8 @@ class _TvShowScreenState extends State<TvShowScreen> {
   final _page = ScrollController();
   final _tabScope = FocusScopeNode(debugLabel: 'Show tabs');
   final _lastEpisode = <String, String>{};
+  final _lastEpisodeIndex = <String, int>{};
+  bool _episodeWasFocusOwner = false;
   final _menus = <String, GlobalKey<MediaContextMenuState>>{};
   StreamSubscription<DeletionEvent>? _deletions;
   Timer? _skeletonTimer, _heroTimer;
@@ -86,6 +88,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_restoreEpisodeFocus && ModalRoute.of(context)?.isCurrent == true) _scheduleEpisodeRestore();
     if (_controller != null || _connectionError != null) return;
     _connect();
   }
@@ -136,7 +139,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
   void _changed() {
     if (!mounted) return;
     final c = _controller!;
-    if (c.loading && !_wasLoading) _restoreEpisodeFocus = _episodeHasFocus;
+    if (c.loading && !_wasLoading) _restoreEpisodeFocus = _episodeHasFocus || _episodeWasFocusOwner;
     final finishedRefresh = _wasLoading && !c.loading;
     _wasLoading = c.loading;
     if (_ready && _tab > 0) {
@@ -198,14 +201,9 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (_ready && _tab > 0 && !c.loading) {
       final updated = c.episodesFor(_key).where((e) => e.id == _hero?.id).firstOrNull;
       if (updated != null) _hero = updated;
-      if (finishedRefresh &&
-          !_playing &&
-          (_restoreEpisodeFocus || _episodeHasFocus) &&
-          ModalRoute.of(context)?.isCurrent == true) {
-        _restoreEpisodeFocus = false;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _tab > 0) unawaited(_enterSeason(focus: true));
-        });
+      if (finishedRefresh && !_playing && (_restoreEpisodeFocus || _episodeHasFocus)) {
+        _restoreEpisodeFocus = true;
+        _scheduleEpisodeRestore();
       }
       if (_pendingEntryFocus && !c.isLoadingEpisodes(_key)) {
         _pendingEntryFocus = false;
@@ -218,6 +216,21 @@ class _TvShowScreenState extends State<TvShowScreen> {
     setState(() {});
   }
 
+  void _scheduleEpisodeRestore() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_restoreEpisodeFocus ||
+          _playing ||
+          _tab == 0 ||
+          _controller!.loading ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+      _restoreEpisodeFocus = false;
+      unawaited(_enterSeason(focus: true));
+    });
+  }
+
   void _focusPrimaryOnce() {
     if (!mounted || _initialFocus || _tab != 0 || _controller?.primaryAction == null) return;
     _initialFocus = true;
@@ -227,6 +240,8 @@ class _TvShowScreenState extends State<TvShowScreen> {
   void _select(int index, {bool focus = false}) {
     ++_selection;
     _pendingEntryFocus = false;
+    _restoreEpisodeFocus = false;
+    _episodeWasFocusOwner = false;
     _heroTimer?.cancel();
     setState(() {
       _tab = index;
@@ -252,7 +267,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
     while (current()) {
       final items = c.episodesFor(key);
       final found = wanted == null ? items.any((e) => !e.isWatched) : items.any((e) => e.id == wanted);
-      if (found || c.isComplete(key) || c.pageErrors.containsKey(key)) break;
+      if (found || _lastEpisodeIndex.containsKey(key) || c.isComplete(key) || c.pageErrors.containsKey(key)) break;
       if (c.loading || c.isLoadingEpisodes(key)) {
         _pendingEntryFocus = _pendingEntryFocus || focus;
         return;
@@ -260,16 +275,25 @@ class _TvShowScreenState extends State<TvShowScreen> {
       await c.loadMoreEpisodes(key);
     }
     if (!current()) return;
-    final episode = tvShowFocusEpisode(c.episodesFor(key), initialEpisodeId: wanted);
+    final items = c.episodesFor(key);
+    final oldIndex = _lastEpisodeIndex[key];
+    final missing = wanted != null && !items.any((e) => e.id == wanted);
+    final episode = missing && oldIndex != null && items.isNotEmpty
+        ? items[oldIndex.clamp(0, items.length - 1)]
+        : tvShowFocusEpisode(items, initialEpisodeId: wanted);
     setState(() {
       _hero = episode;
       _backdropEpisode = episode;
     });
     if (episode == null) return;
     _lastEpisode[key] = episode.id;
+    _lastEpisodeIndex[key] = items.indexOf(episode);
     if (focus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (current()) _episodes.currentState?.requestFocus(itemKey: episode.id);
+        if (current()) {
+          _episodes.currentState?.requestFocus(itemKey: episode.id);
+          _focusedEpisode(items.indexOf(episode));
+        }
       });
     }
   }
@@ -280,6 +304,8 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (index >= items.length) return;
     final episode = items[index];
     _lastEpisode[key] = episode.id;
+    _lastEpisodeIndex[key] = index;
+    _episodeWasFocusOwner = true;
     _heroTimer?.cancel();
     if (_hero?.id != episode.id) {
       _heroTimer = Timer(const Duration(milliseconds: 300), () {
@@ -470,7 +496,10 @@ class _TvShowScreenState extends State<TvShowScreen> {
                             child: FocusScope(
                               node: _tabScope,
                               onFocusChange: (inside) {
-                                if (inside) _revealFocusedTab();
+                                if (inside) {
+                                  _episodeWasFocusOwner = false;
+                                  _revealFocusedTab();
+                                }
                               },
                               onKeyEvent: (_, event) {
                                 if ((event is KeyDownEvent || event is KeyRepeatEvent) &&

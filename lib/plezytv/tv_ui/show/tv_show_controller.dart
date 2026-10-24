@@ -51,6 +51,7 @@ class TvShowController extends ChangeNotifier {
   int _generation = 0;
   bool _disposed = false;
   final List<WatchStateEvent> _pendingWatchEvents = [];
+  final Map<String, bool> _eventWatched = {};
   StreamSubscription<WatchStateEvent>? _watchSubscription;
   StreamSubscription<List<MediaRatingSource>>? _ratingsSubscription;
 
@@ -130,7 +131,7 @@ class TvShowController extends ChangeNotifier {
         sources?.watchlistCandidatesFor(show, client: client) ?? Future.value(<WatchlistCandidate>[]),
       ]);
       if (!_current(generation)) return;
-      seasons = (values[0] as List<MediaItem>)
+      final nextSeasons = (values[0] as List<MediaItem>)
           .where((s) => s.kind == MediaKind.season)
           .map(
             (season) => _applyPending(
@@ -144,28 +145,41 @@ class TvShowController extends ChangeNotifier {
             ),
           )
           .toList();
-      flattened = client.backend == MediaBackend.plex
+      final nextFlattened = client.backend == MediaBackend.plex
           ? shouldShowPlexEpisodesDirectly(
               show: show,
-              seasons: seasons,
+              seasons: nextSeasons,
               libraryPrefs: values[1] as Map<String, dynamic>,
             )
-          : seasons.length <= 1;
+          : nextSeasons.length <= 1;
       extras = values[2] as List<MediaItem>;
       relatedHubs = values[3] as List<MediaHub>;
       watchlistCandidates = values[4] as List<WatchlistCandidate>;
       final replacement = <String, List<MediaItem>>{};
       final totals = <String, int?>{};
       final complete = <String>{};
-      final keys = flattened ? [flattenedKey] : seasons.map((s) => s.id).toList();
-      final defaultKey = flattened ? flattenedKey : defaultPlaybackSeason(seasons)?.id;
+      final keys = nextFlattened ? [flattenedKey] : nextSeasons.map((s) => s.id).toList();
+      final defaultKey = nextFlattened ? flattenedKey : defaultPlaybackSeason(nextSeasons)?.id;
+      final regular = nextSeasons.where((s) => !isSpecialSeasonNumber(s.index)).toList();
+      final playbackIndex = firstUnwatchedSeasonIndex(regular);
+      final playbackKey = playbackIndex == null ? defaultKey : regular[playbackIndex].id;
       for (final key in keys) {
-        if (key != defaultKey && !previousLengths.containsKey(key)) continue;
+        if (key != defaultKey && key != playbackKey && !previousLengths.containsKey(key)) continue;
         do {
-          await _loadPage(key, generation, replacement: replacement, totals: totals, complete: complete);
+          await _loadPage(
+            key,
+            generation,
+            replacement: replacement,
+            totals: totals,
+            complete: complete,
+            refreshSeasons: nextSeasons,
+            refreshFlattened: nextFlattened,
+          );
           if (!_current(generation)) return;
         } while (!complete.contains(key) && (replacement[key]?.length ?? 0) < (previousLengths[key] ?? pageSize));
       }
+      seasons = nextSeasons.map(_applyPending).toList();
+      flattened = nextFlattened;
       _episodes
         ..clear()
         ..addAll({for (final entry in replacement.entries) entry.key: entry.value.map(_applyPending).toList()});
@@ -210,6 +224,8 @@ class TvShowController extends ChangeNotifier {
     Map<String, List<MediaItem>>? replacement,
     Map<String, int?>? totals,
     Set<String>? complete,
+    List<MediaItem>? refreshSeasons,
+    bool? refreshFlattened,
   }) async {
     final episodes = replacement ?? _episodes;
     final pageTotals = totals ?? _totals;
@@ -220,8 +236,9 @@ class TvShowController extends ChangeNotifier {
     if (replacement == null) notifyListeners();
     try {
       final start = episodes[key]?.length ?? 0;
-      final season = seasons.where((s) => s.id == key).firstOrNull;
-      final page = flattened
+      final season = (refreshSeasons ?? seasons).where((s) => s.id == key).firstOrNull;
+      final pageFlattened = refreshFlattened ?? flattened;
+      final page = pageFlattened
           ? await client.fetchPlayableDescendantsPage(show.id, start: start, size: pageSize)
           : await fetchSeasonEpisodePage(client, show: show, season: season!, start: start, size: pageSize);
       if (!_current(generation)) return;
@@ -229,7 +246,7 @@ class TvShowController extends ChangeNotifier {
         ...?episodes[key],
         ...page.items.map(
           (episode) => _applyPending(
-            flattened
+            pageFlattened
                 ? episode.copyWith(
                     serverId: show.serverId,
                     serverName: show.serverName,
@@ -265,8 +282,26 @@ class TvShowController extends ChangeNotifier {
     _pendingWatchEvents.add(event);
     MediaItem patch(MediaItem item) => _patch(item, event);
 
-    show = patch(show);
-    seasons = seasons.map(patch).toList();
+    final known = [
+      for (final items in _episodes.values) ...items,
+      ?onDeckEpisode,
+      ...seasons,
+    ].where((item) => item.id == event.itemId).firstOrNull;
+    final previous = _eventWatched[event.itemId] ?? known?.isWatched;
+    final watched = event.isNowWatched;
+    if (watched != null) _eventWatched[event.itemId] = watched;
+    final delta = watched == null || previous == watched
+        ? 0
+        : known?.kind == MediaKind.season && known?.leafCount != null
+        ? (watched ? known!.leafCount! : 0) - (known!.viewedLeafCount ?? 0)
+        : (watched ? 1 : -1);
+    MediaItem ancestor(MediaItem item) {
+      if (delta == 0 || !event.parentChain.contains(item.id) || item.viewedLeafCount == null) return item;
+      return item.copyWith(viewedLeafCount: (item.viewedLeafCount! + delta).clamp(0, item.leafCount ?? 1 << 30));
+    }
+
+    show = ancestor(patch(show));
+    seasons = seasons.map((s) => ancestor(patch(s))).toList();
     for (final key in _episodes.keys.toList()) {
       _episodes[key] = _episodes[key]!.map(patch).toList();
     }

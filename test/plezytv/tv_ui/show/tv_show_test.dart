@@ -93,6 +93,45 @@ void main() {
       's1': [item('e1', MediaKind.episode, season: 1, watched: 1), item('e2', MediaKind.episode, season: 1)],
       's2': [],
     };
+  test('fallback loads the first regular season with unwatched episodes', () async {
+    final client = fixture();
+    client.seasons = [
+      item('s1', MediaKind.season, number: 1).copyWith(leafCount: 1, viewedLeafCount: 1),
+      item('s2', MediaKind.season, number: 2).copyWith(leafCount: 2, viewedLeafCount: 0),
+    ];
+    client.episodes['s1'] = [item('watched', MediaKind.episode, season: 1, watched: 1)];
+    client.episodes['s2'] = [item('next', MediaKind.episode, season: 2)];
+    final c = TvShowController(client: client, metadata: client.show);
+    addTearDown(c.dispose);
+    await c.load();
+    expect(c.primaryAction!.episode.id, 'next');
+    expect(client.calls, contains('page:s2:0'));
+  });
+
+  test('unloaded episode events adjust ancestor counts once per state transition', () async {
+    final client = fixture();
+    client.show = client.show.copyWith(leafCount: 4, viewedLeafCount: 4);
+    client.seasons = [
+      item('s1', MediaKind.season, number: 1).copyWith(leafCount: 2, viewedLeafCount: 2),
+      item('s2', MediaKind.season, number: 2).copyWith(leafCount: 2, viewedLeafCount: 2),
+    ];
+    final c = TvShowController(client: client, metadata: client.show, pageSize: 1);
+    addTearDown(c.dispose);
+    await c.load();
+    final event = WatchStateEvent(
+      itemId: 'unloaded',
+      serverId: ServerId('server'),
+      changeType: WatchStateChangeType.unwatched,
+      parentChain: ['s2', 'show'],
+      isNowWatched: false,
+    );
+    c.applyWatchEvent(event);
+    c.applyWatchEvent(event);
+    expect(c.seasons.last.viewedLeafCount, 1);
+    expect(c.show.viewedLeafCount, 3);
+    expect(c.primaryAction!.restart, false);
+  });
+
   test('metadata precedes rows; fallback uses loaded pages without scanning; refresh reloads cache', () async {
     final client = fixture();
     final controller = TvShowController(client: client, metadata: client.show, pageSize: 1);
