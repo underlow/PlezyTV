@@ -16,6 +16,7 @@ class TvSettingsItem extends StatelessWidget {
     this.disabledReason,
     this.focusNode,
     this.onSelect,
+    this.onLongPress,
     this.autofocus = false,
     this.kind = TvSettingsItemKind.standard,
     this.selected = false,
@@ -29,7 +30,7 @@ class TvSettingsItem extends StatelessWidget {
   /// A reason disables activation while leaving the item focusable.
   final String? disabledReason;
   final FocusNode? focusNode;
-  final VoidCallback? onSelect;
+  final VoidCallback? onSelect, onLongPress;
   final bool autofocus;
   final TvSettingsItemKind kind;
   final bool selected;
@@ -55,6 +56,7 @@ class TvSettingsItem extends StatelessWidget {
         focusNode: focusNode,
         autofocus: autofocus,
         onSelect: onSelect,
+        onLongPress: onLongPress,
         checked: checked ? selected : null,
         autoScroll: panel,
         onNavigateLeft: kind == TvSettingsItemKind.reorder ? () => onMoveUp?.call() : null,

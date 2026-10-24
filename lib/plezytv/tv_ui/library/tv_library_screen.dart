@@ -24,6 +24,8 @@ import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_library_controller.dart';
+import 'tv_library_panels.dart';
+import 'tv_folder_list.dart';
 
 /// Host for one library. The switch owns the controller's lifetime. Header
 /// callbacks receive stable anchors for the panels supplied by T5/T7.
@@ -39,6 +41,7 @@ class TvLibraryScreen extends StatefulWidget {
 
 class TvLibraryScreenState extends State<TvLibraryScreen>
     with Refreshable, ManualRefreshable, FullRefreshable, TabVisibilityAware, FocusableTab {
+  final _folders = GlobalKey<TvFolderListState>();
   final _grid = GlobalKey<TvPagedGridState<MediaItem>>();
   final _alpha = GlobalKey<TvAlphaColumnState>();
   final _tabBar = GlobalKey<TvTabsState>();
@@ -105,6 +108,9 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       _selection = c.generation;
       _position.value = 0;
     }
+    if (completed && c.grouping == 'folders' && _tabs.hasFocus) {
+      _after(() => _folders.currentState?.requestFocus());
+    }
     final terminal = tab != LibraryTabType.browse
         ? 'tab'
         : _failed
@@ -142,7 +148,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   Future<void> _refresh() async {
     if (c.loading) return;
     final restore = _inGrid;
-    if (c.totalCount == 0) {
+    if (c.totalCount == 0 && c.grouping != 'folders') {
       c.source.reset();
       await c.initialize();
     } else {
@@ -173,7 +179,9 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   @override
   void focusActiveTabIfReady() {
     if (!_current) return;
-    if (tab == LibraryTabType.browse && _ready) {
+    if (tab == LibraryTabType.browse && c.grouping == 'folders') {
+      _folders.currentState?.requestFocus();
+    } else if (tab == LibraryTabType.browse && _ready) {
       _grid.currentState?.jumpTo(c.focusedIndex, waitForLoad: false);
     } else if (_terminalState == 'empty' || _terminalState == 'error') {
       _action.requestFocus();
@@ -184,6 +192,10 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
 
   void _sidebar() => MainScreenFocusScope.focusSidebarOf(context);
   void _down() {
+    if (c.grouping == 'folders' && tab == LibraryTabType.browse) {
+      _folders.currentState?.requestFocus();
+      return;
+    }
     if (tab == LibraryTabType.browse && _ready) {
       _grid.currentState?.jumpTo(c.focusedIndex, waitForLoad: false);
     } else if (_terminalState == 'empty' || _terminalState == 'error') {
@@ -423,6 +435,21 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
           _ => TvStrings.homeEmpty,
         }, style: theme.body),
       );
+    } else if (c.grouping == 'folders') {
+      content = TvFolderList(
+        key: _folders,
+        controller: c,
+        onUp: _focusTabs,
+        onLeft: _sidebar,
+        openItem: (item) async {
+          if (widget.openItem case final open?) {
+            await open(context, item);
+          } else {
+            final result = await navigateToMediaItem(context, item, onRefresh: (_) => refresh());
+            if (mounted && result == MediaNavigationResult.listRefreshNeeded) await _refresh();
+          }
+        },
+      );
     } else if (_ready) {
       content = _gridContent();
     } else if (_failed || _retrying || (!c.loading && c.totalCount == 0)) {
@@ -466,7 +493,13 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
                     focusNode: _sort,
                     icon: Icons.swap_vert,
                     variant: TvButtonVariant.secondary,
-                    onSelect: () => widget.onSort?.call(_sort),
+                    onSelect: () {
+                      if (widget.onSort case final callback?) {
+                        callback(_sort);
+                      } else {
+                        unawaited(showTvLibrarySort(context, _sort, c));
+                      }
+                    },
                   ),
                   SizedBox(width: px(16)),
                   TvButton(
@@ -475,7 +508,13 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
                     icon: Icons.filter_alt,
                     variant: TvButtonVariant.secondary,
                     disabled: c.filtersLoading,
-                    onSelect: () => widget.onFilters?.call(_filters),
+                    onSelect: () {
+                      if (widget.onFilters case final callback?) {
+                        callback(_filters);
+                      } else {
+                        unawaited(showTvLibraryFilters(context, _filters, c));
+                      }
+                    },
                   ),
                   SizedBox(width: px(16)),
                   TvButton(
