@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_hub.dart';
@@ -11,10 +12,38 @@ import 'package:plezy/media/media_version.dart';
 import 'package:plezy/media/media_version_preference.dart';
 import 'package:plezy/plezytv/tv_ui/movie/tv_movie_controller.dart';
 import 'package:plezy/plezytv/tv_ui/movie/tv_movie_logic.dart';
+import 'package:plezy/media/media_rating.dart';
+import 'package:plezy/media/media_server_client.dart';
+import 'package:plezy/models/catalog/catalog_item.dart';
+import 'package:plezy/providers/catalog_sources_provider.dart';
+import 'package:plezy/services/catalog/library_watchlist_candidates.dart';
+import 'package:plezy/services/jellyfin_mappers.dart';
 import 'package:plezy/utils/deletion_notifier.dart';
 import 'package:plezy/utils/formatters.dart';
 import 'package:plezy/utils/watch_state_notifier.dart';
 import '../show/fake_media_server_client.dart';
+import '../show/tv_show_actions_test.dart' show Source;
+
+class FakeSources extends ChangeNotifier implements CatalogSourcesProvider {
+  final ratings = StreamController<List<MediaRatingSource>>.broadcast();
+  final candidates = Completer<List<WatchlistCandidate>>();
+  @override
+  Stream<List<MediaRatingSource>> communityRatingsForLibraryItem(
+    MediaItem item, {
+    required MediaServerClient? client,
+  }) => ratings.stream;
+  @override
+  Future<List<WatchlistCandidate>> watchlistCandidatesFor(MediaItem item, {required MediaServerClient? client}) =>
+      candidates.future;
+  @override
+  void dispose() {
+    unawaited(ratings.close());
+    super.dispose();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 MediaItem movie({MediaBackend backend = MediaBackend.jellyfin, int? viewCount, int? offset}) => MediaItem(
   id: 'm',
@@ -42,6 +71,17 @@ void main() {
       expect(rewatch.label, 'Rewatch');
       expect(rewatch.startPositionMs, 0);
       expect(tvMoviePrimaryAction(movie(viewCount: 1, offset: 600000)).label, startsWith('Continue · '));
+    });
+    test('player launch: Watch and Continue let Plezy resolve; Rewatch restarts from zero', () {
+      expect(tvMoviePlayerLaunch(tvMoviePrimaryAction(movie())), (resolveWatchState: true, initialPosition: null));
+      expect(tvMoviePlayerLaunch(tvMoviePrimaryAction(movie(offset: 600000))), (
+        resolveWatchState: true,
+        initialPosition: null,
+      ));
+      expect(tvMoviePlayerLaunch(tvMoviePrimaryAction(movie(viewCount: 1))), (
+        resolveWatchState: false,
+        initialPosition: Duration.zero,
+      ));
     });
   });
 
@@ -90,7 +130,46 @@ void main() {
       expect(lines[3].value, '4K · HEVC · ${ByteFormatter.formatBytes(3 * 1024 * 1024 * 1024)}');
       expect(tvMovieTechInfo(item).map((l) => l.label), ['Studio', 'File']);
     });
-    test('Jellyfin-like streams use language code fallback; empty fields are hidden', () {
+    test('A16 Jellyfin JSON through the mapper fills the block', () {
+      final item = JellyfinMappers.mediaItem(
+        {
+          'Id': 'm',
+          'Name': 'Movie',
+          'Type': 'Movie',
+          'Studios': [
+            {'Name': 'Legendary'},
+          ],
+          'MediaSources': [
+            {
+              'Id': 'src',
+              'Size': 3 * 1024 * 1024 * 1024,
+              'MediaStreams': [
+                {'Index': 0, 'Type': 'Video', 'Codec': 'hevc', 'Width': 3840, 'Height': 2160},
+                {'Index': 1, 'Type': 'Audio', 'Codec': 'aac', 'Language': 'rus', 'DisplayTitle': 'Russian AAC'},
+                {'Index': 2, 'Type': 'Audio', 'Codec': 'ac3', 'Language': 'eng', 'DisplayTitle': 'English AC3'},
+              ],
+            },
+          ],
+        },
+        serverId: ServerId('server'),
+        absolutizer: null,
+      )!;
+      final lines = {for (final l in tvMovieTechInfo(item)) l.label: l.value};
+      expect(lines.keys, ['Studio', 'Audio', 'File']);
+      expect(lines['Studio'], 'Legendary');
+      expect(
+        lines['Audio'],
+        allOf(contains(RegExp('rus', caseSensitive: false)), contains(RegExp('eng', caseSensitive: false))),
+      );
+      expect(lines['File'], '4K · HEVC · ${ByteFormatter.formatBytes(3 * 1024 * 1024 * 1024)}');
+      final bare = JellyfinMappers.mediaItem(
+        {'Id': 'm', 'Name': 'Movie', 'Type': 'Movie'},
+        serverId: ServerId('server'),
+        absolutizer: null,
+      )!;
+      expect(tvMovieTechInfo(bare), isEmpty);
+    });
+    test('stream without language falls back to its display title; empty fields are hidden', () {
       final item = movie().copyWith(
         mediaVersions: [
           MediaVersion(
@@ -233,6 +312,32 @@ void main() {
         ),
       );
       expect(c.movie.isWatched, true);
+    });
+
+    test('watchlist candidates and community ratings load from catalog sources', () async {
+      final sources = FakeSources();
+      addTearDown(sources.dispose);
+      final c = TvMovieController(
+        client: client,
+        metadata: movie(),
+        catalogSources: sources,
+        versionPreference: (_) async => null,
+        watchEvents: watch.stream,
+        deletionEvents: deletion.stream,
+      );
+      addTearDown(c.dispose);
+      await c.load();
+      expect(c.watchlistLoading, true);
+      expect(c.watchlistCandidates, isEmpty);
+      final source = Source();
+      addTearDown(source.watchlistChanges.dispose);
+      sources.candidates.complete([(source: source, ids: const CatalogItemIds(imdb: 'tt1'))]);
+      await pumpEventQueue();
+      expect(c.watchlistLoading, false);
+      expect(c.watchlistCandidates.single.source, same(source));
+      sources.ratings.add(const [MediaRatingSource(source: 'imdb', value: 7.9)]);
+      await pumpEventQueue();
+      expect(c.ratings.map((r) => (r.source, r.value)), contains(('imdb', 7.9)));
     });
 
     test('a newer refresh wins over an older slow response', () async {

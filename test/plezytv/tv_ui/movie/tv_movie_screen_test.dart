@@ -3,9 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/focus/input_mode_tracker.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_backend.dart';
+import 'package:plezy/media/media_server_client.dart';
+import 'package:plezy/models/download_models.dart';
+import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
+import 'package:plezy/providers/download_provider.dart';
+import 'package:plezy/providers/multi_server_provider.dart';
+import 'package:plezy/providers/offline_mode_provider.dart';
+import 'package:plezy/profiles/active_profile_provider.dart';
+import 'package:plezy/services/multi_server_manager.dart';
+import 'package:provider/provider.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
@@ -20,6 +30,7 @@ import 'package:plezy/plezytv/tv_ui/components/tv_chip.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_ratings.dart';
 import 'package:plezy/plezytv/tv_ui/movie/tv_movie_controller.dart';
+import 'package:plezy/plezytv/tv_ui/movie/tv_movie_logic.dart';
 import 'package:plezy/plezytv/tv_ui/movie/tv_movie_screen.dart';
 import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
@@ -30,7 +41,9 @@ import 'package:plezy/utils/media_quality_labels.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/widgets/media_context_menu.dart';
 import '../show/fake_media_server_client.dart';
-import '../show/tv_show_actions_test.dart' show Source;
+import '../show/tv_show_actions_test.dart' show Downloads, Source;
+import '../../../test_helpers/multi_server_fixtures.dart';
+import '../../../test_helpers/profile_stack.dart';
 import '../tv_theme_test_helper.dart';
 
 MediaItem movieItem({String id = 'm', int? viewCount, int? offset, String? edition}) =>
@@ -71,13 +84,67 @@ final _v2160 = MediaVersion(
   ],
 );
 
+class MovieDownloads extends Downloads {
+  final deleted = <String>[];
+  @override
+  Future<void> deleteDownload(String globalKey) async => deleted.add(globalKey);
+}
+
+/// Serves several movies by id and records server-side watch marks.
+class RouteClient extends FakeShowClient {
+  final items = <String, MediaItem>{};
+  final fetches = <String, int>{};
+  @override
+  ServerId get serverId => ServerId('server');
+  @override
+  Future<({MediaItem? item, MediaItem? onDeckEpisode})> fetchItemWithOnDeck(
+    String id, {
+    void Function(MediaItem)? onItemReady,
+  }) async {
+    fetches.update(id, (n) => n + 1, ifAbsent: () => 1);
+    return (item: items[id], onDeckEpisode: null);
+  }
+
+  @override
+  Future<List<MediaHub>> fetchRelatedHubs(String id, {int count = 10}) async => id == 'm'
+      ? [
+          MediaHub(id: 'similar', title: 'Similar', type: 'movie', items: [items['second']!]),
+        ]
+      : [];
+
+  @override
+  Future<void> markWatched(MediaItem item) async => items[item.id] = items[item.id]!.withWatchedFlag(true);
+}
+
+class FakeManager implements MultiServerManager {
+  bool online = true;
+  @override
+  bool isClientOnline(ServerId serverId, {String? clientScopeId}) => online;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class Servers extends ChangeNotifier implements MultiServerProvider {
+  Servers(this.client);
+  final MediaServerClient client;
+  final manager = FakeManager();
+  @override
+  MultiServerManager get serverManager => manager;
+  @override
+  List<String> get onlineServerIds => ['server'];
+  @override
+  MediaServerClient? getClientForServer(ServerId serverId) => client;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 FakeShowClient fixture({MediaItem? movie}) => FakeShowClient()..show = movie ?? movieItem();
 
 class Mounted {
   Mounted(this.controller, this.client);
   final TvMovieController controller;
   final FakeShowClient client;
-  final played = <int?>[];
+  final played = <TvMoviePlayerLaunch>[];
   var versionPlays = 0;
   final marked = <bool>[];
 }
@@ -90,6 +157,9 @@ Future<Mounted> mount(
   bool online = true,
   bool hideSpoilers = false,
   Future<void> Function()? onPlay,
+  bool? playerResult,
+  Size size = const Size(1920, 1080),
+  Widget Function(Widget)? wrap,
 }) async {
   final c = TvMovieController(
     client: client,
@@ -99,26 +169,24 @@ Future<Mounted> mount(
   );
   addTearDown(c.dispose);
   final m = Mounted(c, client);
-  await pumpTvWidget(
-    tester,
-    reduced: reduced,
-    TvMovieScreen(
-      metadata: client.show,
-      controller: c,
-      hideSpoilers: hideSpoilers,
-      serverOnline: (_) => online,
-      play: (_, movie, start) async {
-        m.played.add(start);
-        await onPlay?.call();
-      },
-      playVersion: (_, _) async => m.versionPlays++,
-      markWatched: (movie, watched) async {
-        m.marked.add(watched);
-        client.show = client.show.withWatchedFlag(watched).copyWith(viewOffsetMs: 0);
-        return WatchMarkOutcome.marked;
-      },
-    ),
+  final screen = TvMovieScreen(
+    metadata: client.show,
+    controller: c,
+    hideSpoilers: hideSpoilers,
+    serverOnline: wrap == null ? (_) => online : null,
+    launchPlayer: (_, movie, launch) async {
+      m.played.add(launch);
+      await onPlay?.call();
+      return playerResult;
+    },
+    playVersion: (_, _) async => m.versionPlays++,
+    markWatched: (movie, watched) async {
+      m.marked.add(watched);
+      client.show = client.show.withWatchedFlag(watched).copyWith(viewOffsetMs: 0);
+      return WatchMarkOutcome.marked;
+    },
   );
+  await pumpTvWidget(tester, reduced: reduced, size: size, wrap?.call(screen) ?? screen);
   await tester.pumpAndSettle();
   return m;
 }
@@ -130,13 +198,21 @@ IconData? focusedIcon() =>
     FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TvIconButton>()?.icon;
 
 void main() {
-  testWidgets('A1/A4 opens with focus on Watch; watched movie shows Rewatch from start', (tester) async {
+  testWidgets('A1 opens with focus on Watch; OK lets Plezy resolve the start', (tester) async {
     final m = await mount(tester, fixture());
     expect(primary(tester).label, 'Watch');
     expect(primary(tester).focusNode!.hasFocus, true);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(m.played, [null]);
+    expect(m.played, [(resolveWatchState: true, initialPosition: null)]);
+    expect(m.controller.watchStateChanged, false);
+  });
+
+  testWidgets('A13 player reporting a watch change sets the route result', (tester) async {
+    final m = await mount(tester, fixture(), playerResult: true);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(m.controller.watchStateChanged, true);
   });
 
   testWidgets('A4 watched movie without progress shows Rewatch', (tester) async {
@@ -144,15 +220,15 @@ void main() {
     expect(primary(tester).label, 'Rewatch');
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(m.played, [0]);
+    expect(m.played, [(resolveWatchState: false, initialPosition: Duration.zero)]);
   });
 
-  testWidgets('A3 progress shows Continue with time left and resumes from the offset', (tester) async {
+  testWidgets('A3 progress shows Continue with time left; Plezy resolves the resume point', (tester) async {
     final m = await mount(tester, fixture(movie: movieItem(offset: 9960000 - 4800000)));
     expect(primary(tester).label, 'Continue · ${formatDurationTextual(4800000)} left');
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(m.played, [9960000 - 4800000]);
+    expect(m.played, [(resolveWatchState: true, initialPosition: null)]);
   });
 
   testWidgets('A13 return from player refreshes primary button and watched state', (tester) async {
@@ -269,13 +345,122 @@ void main() {
     expect(hasIcon(tester, Icons.download), false);
   });
 
-  testWidgets('A7 More wraps Plezy MediaContextMenu for the movie', (tester) async {
-    final m = await mount(tester, fixture());
+  testWidgets('A7 More opens Plezy MediaContextMenu for the movie', (tester) async {
+    final client = fixture();
+    final manager = MultiServerManager();
+    final servers = testMultiServerProvider(manager);
+    final offline = OfflineModeProvider(manager);
+    final stack = await ProfileStack.create(withStorage: false);
+    final downloads = MovieDownloads();
+    addTearDown(() async {
+      downloads.dispose();
+      await stack.dispose();
+      offline.dispose();
+      servers.dispose();
+      manager.dispose();
+    });
+    final m = await mount(
+      tester,
+      client,
+      wrap: (child) => MultiProvider(
+        providers: [
+          ChangeNotifierProvider<MultiServerProvider>.value(value: servers),
+          ChangeNotifierProvider<ActiveProfileProvider>.value(value: stack.active),
+          ChangeNotifierProvider<OfflineModeProvider>.value(value: offline),
+          ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
+        ],
+        child: child,
+      ),
+    );
     final more = find.ancestor(
       of: find.byWidgetPredicate((w) => w is TvIconButton && w.caption == TvStrings.moreActions),
       matching: find.byType(MediaContextMenu),
     );
     expect((tester.widget<MediaContextMenu>(more).item as MediaItem).id, m.controller.movie.id);
+    while (focusedIcon() != Icons.more_horiz) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text(t.tooltips.markAsWatched), findsWidgets, reason: 'Plezy movie menu is open');
+  });
+
+  testWidgets('A5 version segment follows the MultiServerProvider reachability check', (tester) async {
+    final client = fixture(movie: movieItem().copyWith(mediaVersions: [_v1080, _v2160]));
+    final servers = Servers(client);
+    addTearDown(servers.dispose);
+    await mount(
+      tester,
+      client,
+      wrap: (child) => ChangeNotifierProvider<MultiServerProvider>.value(value: servers, child: child),
+    );
+    expect(hasIcon(tester, Icons.video_library), true);
+    servers.manager.online = false;
+    await mount(
+      tester,
+      fixture(movie: movieItem().copyWith(mediaVersions: [_v1080, _v2160])),
+      wrap: (child) => ChangeNotifierProvider<MultiServerProvider>.value(value: servers, child: child),
+    );
+    expect(hasIcon(tester, Icons.video_library), false);
+  });
+
+  testWidgets('F1 Download on a downloaded movie asks to delete, not to re-queue', (tester) async {
+    final client = fixture();
+    final downloads = MovieDownloads()
+      ..progress = DownloadProgress(globalKey: client.show.globalKey, status: DownloadStatus.completed);
+    addTearDown(downloads.dispose);
+    await mount(
+      tester,
+      client,
+      wrap: (child) => ChangeNotifierProvider<DownloadProvider>.value(value: downloads, child: child),
+    );
+    iconButtons(tester).firstWhere((b) => b.icon == Icons.download_done).onSelect!();
+    await tester.pumpAndSettle();
+    expect(find.text(t.downloads.deleteDownload), findsOneWidget);
+    expect(find.text(t.downloads.deleteConfirm(title: client.show.displayTitle)), findsOneWidget);
+    await tester.tap(find.text(t.common.delete));
+    await tester.pumpAndSettle();
+    expect(downloads.deleted, [client.show.globalKey]);
+  });
+
+  testWidgets('R8 without rows Down scrolls to the tech block and Up returns', (tester) async {
+    final movie = movieItem(edition: 'Part Two').copyWith(
+      year: 2024,
+      studio: 'Legendary',
+      summary: List.filled(80, 'Long plot').join(' '),
+      genres: ['Drama'],
+      directors: ['Denis'],
+      rating: 8.5,
+      mediaVersions: [
+        MediaVersion(
+          id: 'many',
+          videoResolution: '2160',
+          parts: [
+            MediaPart(
+              id: 'p',
+              streams: [
+                for (var i = 0; i < 60; i++)
+                  MediaStream(id: 'a$i', kind: MediaStreamKind.audio, language: 'Language number $i'),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    await mount(tester, fixture(movie: movie));
+    final scrollable = tester.state<ScrollableState>(
+      find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down).first,
+    );
+    expect(scrollable.position.maxScrollExtent, greaterThan(0));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(scrollable.position.pixels, scrollable.position.maxScrollExtent);
+    expect(tester.getRect(find.byKey(const ValueKey('movie-tech-info'))).bottom, lessThanOrEqualTo(1080));
+    expect(primary(tester).focusNode!.hasFocus, true);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(scrollable.position.pixels, 0);
   });
 
   testWidgets('A9 movie without cast, extras and related has no lower rows', (tester) async {
@@ -423,36 +608,57 @@ void main() {
     expect(await result(), true);
   });
 
-  testWidgets('A18 stacked movie screens pop one at a time with their own results', (tester) async {
-    final first = fixture();
-    final second = fixture(movie: movieItem(id: 'second'));
-    final c1 = controllerFor(first), c2 = controllerFor(second);
-    await pushed(
-      tester,
-      () => TvMovieScreen(
-        metadata: first.show,
-        controller: c1,
-        play: (context, _, _) async {
-          final changed = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (_) => TvMovieScreen(metadata: second.show, controller: c2),
+  testWidgets('A18 related movie opens through the real route; its watch change refreshes the first', (tester) async {
+    TvUi.enabledForTesting = () => true;
+    addTearDown(TvUi.resetForTesting);
+    final client = RouteClient()
+      ..items['m'] = movieItem()
+      ..items['second'] = movieItem(id: 'second');
+    final servers = Servers(client);
+    addTearDown(servers.dispose);
+    final pushedRoutes = <Route<dynamic>>[];
+    await pumpTvWidget(tester, const SizedBox.shrink());
+    // Provider above the navigator so every pushed route resolves the client.
+    await tester.pumpWidget(
+      InputModeTracker(
+        child: ChangeNotifierProvider<MultiServerProvider>.value(
+          value: servers,
+          child: MaterialApp(
+            navigatorObservers: [_Observer(pushedRoutes)],
+            home: Builder(
+              builder: (context) => TextButton(
+                child: const Text('Open'),
+                onPressed: () => Navigator.of(context).push(TvUi.showDetailRoute(metadata: client.items['m']!)!),
+              ),
             ),
-          );
-          if (changed == true) c1.watchStateChanged = true;
-        },
+          ),
+        ),
       ),
     );
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(client.fetches['m'], 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(find.text('Movie second'), findsOneWidget);
-    c2.watchStateChanged = true;
+    final secondRoute = pushedRoutes.last;
+    expect(tester.widget<TvMovieScreen>(find.byType(TvMovieScreen)).metadata.id, 'second');
+    while (focusedIcon() != Icons.check) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(client.items['second']!.isWatched, true);
+    expect(hasIcon(tester, Icons.remove_done), true);
+    final secondResult = secondRoute.popped;
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.text('Movie m'), findsOneWidget);
-    expect(c1.watchStateChanged, true);
+    expect(await secondResult, true);
+    expect(client.fetches['m'], 2, reason: 'first screen refreshed on a true result');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byType(TvMovieScreen), findsNothing);
@@ -494,11 +700,17 @@ void main() {
     expect(find.byType(TvMovieScreen), findsNothing);
   });
 
-  testWidgets('A17 missing movie as the first route shows unavailable state', (tester) async {
+  testWidgets('A17 missing movie as the first route shows unavailable state; Back goes to the system', (tester) async {
     final client = fixture()..onFetch = () async => (item: null, onDeckEpisode: null);
     await mount(tester, client);
     expect(find.text(TvStrings.movieUnavailable), findsOneWidget);
     expect(find.byType(TvButton), findsNothing);
+    final route = ModalRoute.of(tester.element(find.text(TvStrings.movieUnavailable)))!;
+    expect(route.popDisposition, RoutePopDisposition.bubble);
+    final handled = await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(handled, false);
+    expect(find.text(TvStrings.movieUnavailable), findsOneWidget);
   });
 
   testWidgets('R9/R10 skeleton until metadata; failure keeps passed data', (tester) async {
@@ -520,6 +732,12 @@ void main() {
     expect(find.byKey(const ValueKey('movie-rows-skeleton')), findsNothing);
     expect(find.text('Movie m'), findsOneWidget);
     expect(primary(tester).label, 'Watch');
-    expect(t.discover.cast, isNotEmpty);
   });
+}
+
+class _Observer extends NavigatorObserver {
+  _Observer(this.pushed);
+  final List<Route<dynamic>> pushed;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => pushed.add(route);
 }
