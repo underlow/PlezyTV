@@ -336,6 +336,7 @@ class TvLibraryController extends ChangeNotifier {
 
   Future<void> loadFolder(TvFolderLevel level) async {
     final epoch = _generation, request = ++level._request;
+    final anchor = level.items.elementAtOrNull(level.focusedIndex)?.globalKey;
     level.loading = true;
     level.error = null;
     _emit();
@@ -343,7 +344,13 @@ class TvLibraryController extends ChangeNotifier {
       final items = level.folder == null
           ? await client.fetchLibraryFolders(library.id)
           : await client.fetchFolderChildren(level.folder!, libraryId: library.id, libraryTitle: library.title);
-      if (_current(epoch) && request == level._request && folders.contains(level)) level.items = items;
+      if (_current(epoch) && request == level._request && folders.contains(level)) {
+        final index = anchor == null ? -1 : items.indexWhere((item) => item.globalKey == anchor);
+        level.items = items;
+        if (anchor != null) {
+          level.focusedIndex = index >= 0 ? index : level.focusedIndex.clamp(0, items.isEmpty ? 0 : items.length - 1);
+        }
+      }
     } catch (e) {
       if (_current(epoch) && request == level._request && folders.contains(level)) level.error = e;
     } finally {

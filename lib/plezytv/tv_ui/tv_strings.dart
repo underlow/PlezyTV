@@ -7,6 +7,9 @@ abstract final class TvStrings {
   static const retry = 'Retry';
   static const homeEmpty = 'Nothing here yet';
   static const refresh = 'Refresh';
+  static const descending = 'Descending';
+  static const exclude = 'Exclude';
+  static const folderEmpty = 'Folder is empty';
   static const defaultSort = 'Default';
   static const refreshLibrary = 'Refresh library';
   static const libraryNoMatches = 'Nothing matches the filters';
