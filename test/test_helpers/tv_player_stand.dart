@@ -144,7 +144,9 @@ class TvPlayerStand {
   late ValueNotifier<bool> hasFirstFrame;
   late FocusNode screenFocusNode;
 
-  /// Focus node standing in for the play-next prompt's button.
+  /// Focus node standing in for a prompt's button (play next, Continue). Like
+  /// Plezy's `_VideoPlayerPromptInteractionHold`, focus on it holds the chrome
+  /// up (`PlayerChromeHold.promptInteraction`) and losing it releases.
   late FocusNode playNextFocusNode;
 
   int nextCalls = 0;
@@ -178,6 +180,13 @@ class TvPlayerStand {
     hasFirstFrame = ValueNotifier<bool>(true);
     screenFocusNode = FocusNode(debugLabel: 'VideoPlayerScreen');
     playNextFocusNode = FocusNode(debugLabel: 'PlayNext');
+    playNextFocusNode.addListener(() {
+      if (playNextFocusNode.hasFocus) {
+        chrome.hold(PlayerChromeHold.promptInteraction);
+      } else {
+        chrome.release(PlayerChromeHold.promptInteraction);
+      }
+    });
     nextCalls = 0;
     previousCalls = 0;
     exitCalls = 0;

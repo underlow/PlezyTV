@@ -132,11 +132,17 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
       _resetSeekState();
     }
     final wasPromptOpen = oldWidget.args.playNextFocusNode != null || oldWidget.args.playbackPromptOpen;
-    if (_promptOpen && !wasPromptOpen) {
-      // Not during build: hiding notifies Plezy, which rebuilds.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _promptOpen) _yieldToPrompt();
-      });
+    if (_promptOpen != wasPromptOpen) {
+      // Not during build: closing the strip notifies Plezy, which rebuilds.
+      // On close the panel follows controlsVisible again.
+      if (_promptOpen) {
+        _focused = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _promptOpen) _yieldToPrompt();
+        });
+      } else if (_chrome?.controlsVisible ?? true) {
+        _schedulePlaceFocus();
+      }
     }
   }
 
@@ -177,48 +183,24 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     }
   }
 
-  /// R11a: a prompt (play next, still watching) took over — close and hide the
-  /// panel even while something holds it, and leave the remote to the prompt.
+  /// R11a: while a prompt (play next, still watching) is open the panel closes
+  /// the side panel and the strip, drops the pause flag and stays invisible and
+  /// inert (see [build]). It neither hides the chrome nor moves focus: the
+  /// prompt's focused button holds the chrome up and Plezy places focus there,
+  /// so hiding or refocusing would loop.
   void _yieldToPrompt() {
     // A pause flag must not send a later showing to play (R7).
     _session.focusPlayOnNextShow = false;
     final chrome = _chrome;
-    if (chrome == null) return;
-    if (chrome.contentStripVisible) chrome.setContentStripVisible(false);
-    if (!chrome.controlsVisible) return;
-    // The prompt focuses its own button (still watching: Continue) in a
-    // post-frame callback ahead of this one; that request lands in a
-    // microtask, so look after it. Hiding makes Plezy park focus on its
-    // surface: remember the holder to give it back. Play next is the fallback.
-    scheduleMicrotask(() {
-      if (mounted && _promptOpen && chrome.controlsVisible) _hideForPrompt(chrome);
-    });
+    if (chrome != null && chrome.contentStripVisible) chrome.setContentStripVisible(false);
   }
-
-  void _hideForPrompt(PlayerChromeController chrome) {
-    final primary = FocusManager.instance.primaryFocus;
-    final prompt = primary != null && !_ownsFocusNode(primary) ? primary : widget.args.playNextFocusNode;
-    chrome.hide(ignoreHolds: true);
-    if (prompt == null) return;
-    // Plezy's surface claim retries a frame later; give focus back after that.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (prompt.context != null && prompt.canRequestFocus && !prompt.hasPrimaryFocus) prompt.requestFocus();
-      });
-      WidgetsBinding.instance.scheduleFrame();
-    });
-  }
-
-  /// Whether [node] is a panel element or Plezy's surface chain above it.
-  bool _ownsFocusNode(FocusNode node) =>
-      _nodes.values.contains(node) || _node(TvPlayerPanelElement.bar).ancestors.contains(node);
 
   /// Plezy parks the remote on its player surface (an ancestor of the panel)
   /// and, with the chrome up, hands it on through `_desktopControlsKey`, which
   /// the panel does not answer (D7). Take it from there whenever the panel is
   /// up; focus elsewhere (a prompt, a sheet) is left alone.
   void _onPrimaryFocusChanged() {
-    if (!mounted || !(_chrome?.controlsVisible ?? true) || _placeFocusScheduled) return;
+    if (!mounted || _promptOpen || !(_chrome?.controlsVisible ?? true) || _placeFocusScheduled) return;
     final primary = FocusManager.instance.primaryFocus;
     if (primary == null || !_node(TvPlayerPanelElement.bar).ancestors.contains(primary)) return;
     _schedulePlaceFocus();
@@ -306,6 +288,9 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     if (navigationKey == PlayerNavigationKey.none || navigationKey == PlayerNavigationKey.home) return null;
     if (event is KeyDownEvent) {
       _iconsOwnBackPress = _icons.any((element) => _node(element).hasPrimaryFocus);
+      // Restart auto-hide so the release still lands here, not on Plezy's
+      // Back chain (which would exit with the chrome hidden).
+      if (_iconsOwnBackPress) _activity();
     }
     if (!_iconsOwnBackPress) return null;
     if (event is KeyUpEvent) _iconsOwnBackPress = false;
@@ -418,6 +403,19 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // R11a: invisible and inert while a prompt is open, whatever controlsVisible.
+    final promptOpen = _promptOpen;
+    return ExcludeFocus(
+      excluding: promptOpen,
+      child: Visibility(
+        visible: !promptOpen,
+        maintainState: true,
+        child: _panel(),
+      ),
+    );
+  }
+
+  Widget _panel() {
     return TvTheme(
       child: Builder(
         builder: (context) => Focus(
