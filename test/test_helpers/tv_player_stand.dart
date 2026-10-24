@@ -150,6 +150,12 @@ class TvPlayerStand {
   int nextCalls = 0;
   int previousCalls = 0;
 
+  /// Times the screen's Back chain left the player.
+  int exitCalls = 0;
+
+  /// The screen's Back chain (strip → hide chrome → exit), as on the route.
+  late PlayerNavigationCoordinator navigation;
+
   Future<void> setUp({bool tv = true, TvStandPlayer? player}) async {
     LocaleSettings.setLocaleSync(AppLocale.en);
     await initializeDateFormatting('en');
@@ -174,6 +180,16 @@ class TvPlayerStand {
     playNextFocusNode = FocusNode(debugLabel: 'PlayNext');
     nextCalls = 0;
     previousCalls = 0;
+    exitCalls = 0;
+    navigation = PlayerNavigationCoordinator(
+      chromeController: chrome,
+      isPromptOpen: () => false,
+      dismissPrompt: () {},
+      isChromePresented: () => chrome.controlsPresented,
+      exitFullscreenIfActive: () async => false,
+      exitPlayer: () => exitCalls++,
+      navigateHome: () {},
+    );
   }
 
   Future<void> tearDown() async {
@@ -200,7 +216,9 @@ class TvPlayerStand {
       playbackState.setPlaybackFromLocalQueue(LocalPlayQueue(items: items, currentIndex: current));
 
   /// Wraps [child] in the providers, input-mode tracker and app the
-  /// controls expect, on a 1920 × 1080 surface.
+  /// controls expect, on a 1920 × 1080 surface. The screen node walks the
+  /// Back chain like `VideoPlayerScreen`; [playNextFocusNode] sits on a
+  /// stand-in prompt button.
   Widget host(Widget child) => InputModeTracker(
     child: MultiProvider(
       providers: [
@@ -214,7 +232,27 @@ class TvPlayerStand {
           body: SizedBox(
             width: 1920,
             height: 1080,
-            child: Focus(focusNode: screenFocusNode, autofocus: true, child: child),
+            child: Focus(
+              focusNode: screenFocusNode,
+              autofocus: true,
+              onKeyEvent: (node, event) {
+                final key = classifyPlayerNavigationKey(event, isAppleTV: false);
+                if (key == PlayerNavigationKey.none) return KeyEventResult.ignored;
+                return handlePlayerNavigationKeyAction(event, key, () => navigation.handle(key));
+              },
+              child: Stack(
+                children: [
+                  Positioned.fill(child: child),
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    width: 1,
+                    height: 1,
+                    child: Focus(focusNode: playNextFocusNode, child: const SizedBox.expand()),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
