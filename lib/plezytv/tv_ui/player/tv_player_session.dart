@@ -9,7 +9,9 @@ import '../../../mpv/mpv.dart';
 /// Owned fields (S9 design §4): focus memory (an element id, never a focus
 /// node) and when the panel was hidden, the "focus play on next show" flag,
 /// whether the right panel is open, and the icons-row focus node the skip
-/// button moves down to. Focus memory resets when the playing item changes.
+/// button moves down to. Focus memory (id and hide time) resets when the
+/// playing item changes; the play flag does not, since H7 may set it for the
+/// new item before the panel next binds.
 class TvPlayerSession {
   TvPlayerSession._();
 
@@ -55,6 +57,5 @@ class TvPlayerSession {
   void resetFocusMemory() {
     lastFocusedId = null;
     hiddenAt = null;
-    focusPlayOnNextShow = false;
   }
 }

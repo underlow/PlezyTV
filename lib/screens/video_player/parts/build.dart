@@ -356,6 +356,7 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                 chromeController: _chromeController,
                 onCancel: _cancelAutoPlay,
                 onPlayNext: _playNext,
+                isLive: widget.isLive,
               ),
               // "Still watching?" overlay (hidden in PiP mode)
               VideoPlayerStillWatchingOverlay(
@@ -374,6 +375,7 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                 isBuffering: _isBuffering,
                 hasFirstFrame: _firstFrame.uiReady,
                 isExiting: _isExiting,
+                isLive: widget.isLive,
               ),
               // Watch Together overlays (isolated from video surface repaints)
               const VideoPlayerWatchTogetherOverlays(),

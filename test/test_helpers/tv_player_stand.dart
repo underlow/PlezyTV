@@ -31,7 +31,8 @@ import 'prefs.dart';
 import 'theme.dart';
 
 /// A [Player] for TV player tests: drives `playing`, `buffering` and
-/// `position`, and records every [seek].
+/// `position`, and records every [seek]. [play], [pause] and [playOrPause]
+/// update the playing state and stream.
 class TvStandPlayer implements Player {
   TvStandPlayer({Duration position = const Duration(minutes: 5), this.duration = const Duration(minutes: 45)})
     // ignore: prefer_initializing_formals
@@ -91,6 +92,15 @@ class TvStandPlayer implements Player {
   }
 
   @override
+  Future<void> play() async => setPlaying(true);
+
+  @override
+  Future<void> pause() async => setPlaying(false);
+
+  @override
+  Future<void> playOrPause() async => setPlaying(!_playing);
+
+  @override
   Future<void> setVolume(double volume) async {}
 
   @override
@@ -137,8 +147,6 @@ class TvPlayerStand {
   /// Focus node standing in for the play-next prompt's button.
   late FocusNode playNextFocusNode;
 
-  /// Queue items selected through the controls.
-  final List<MediaItem> selectedQueueItems = [];
   int nextCalls = 0;
   int previousCalls = 0;
 
@@ -164,7 +172,6 @@ class TvPlayerStand {
     hasFirstFrame = ValueNotifier<bool>(true);
     screenFocusNode = FocusNode(debugLabel: 'VideoPlayerScreen');
     playNextFocusNode = FocusNode(debugLabel: 'PlayNext');
-    selectedQueueItems.clear();
     nextCalls = 0;
     previousCalls = 0;
   }
