@@ -22,6 +22,7 @@ abstract final class TvStrings {
   static const all = 'All';
   static const continueWatching = 'Continue Watching';
   static const moreLibraries = 'More';
+  static const moreActions = 'More';
   static const showDownloads = 'Show downloads';
   static const onServer = 'On server';
   static String seasons(int count) => '$count ${count == 1 ? 'season' : 'seasons'}';

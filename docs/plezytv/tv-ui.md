@@ -195,3 +195,35 @@ saved grouping/sort and one incoming filter. Push it above the current route, wi
 the shell selector. Dispose that controller when the route closes. Normal section controllers
 belong to the switch. Keep copied query glue and actions aligned with the seven upstream
 paths listed in the S16 warning in `plezytv-upstream.yml` (design D1).
+
+## Detail route hook and show screen (S7)
+
+`navigateToMediaItemDetails` in `lib/utils/media_navigation_helper.dart` resolves
+season/episode parents first, then calls `TvUi.showDetailRoute` with the resolved
+metadata and initial season/episode arguments, falling back to `mediaDetailRoute`.
+The synchronous lookup returns an opaque TV fade route only for online shows
+when TV UI is enabled. Movie support belongs beside this branch in S8. Phone,
+offline details, movies and seasons without a known show retain Plezy's route.
+The accepted gap is “go to series” in `media_context_menu.dart`, plus navigation
+inside upstream details: those direct `mediaDetailRoute` calls remain upstream.
+Do not add hooks to those large files.
+
+`show/TvShowController` owns server data and paged episodes; `TvShowScreen` owns
+tabs, focus memory, delayed episode headers, Back and player return. The Show tab
+uses `TvShowActions` for Plezy's trailer, shuffle, per-source watchlist, watched,
+download and context-menu actions. Empty cast, extras and related rows are omitted.
+Cast opens filmography; extras play directly; related posters use the shared media
+navigation and menu. Vertical reveal animates for 150 ms and jumps on reduced
+performance devices. Up returns to the selected tab.
+
+Watch events patch cached episodes and mark the route result changed; playback
+and actions reload metadata, seasons and previously loaded episode pages. Server
+deletions close a deleted show or reload its children; download-only deletion
+leaves online content visible. Downloads use the public Plezy options/deletion
+flow for new/completed downloads. Partial, queued, paused, failed downloads and
+sync rules open Downloads for management (S7 D3). Watchlist membership listens
+to each candidate source's snapshot changes.
+
+The upstream workflow warns on the seven S7 D2 dependency paths. Recheck the
+show's copied orchestration and action visibility against those upstream files
+when merging; private detail-screen handlers are not shared with this screen.

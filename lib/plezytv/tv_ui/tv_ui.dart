@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../utils/platform_detector.dart';
 import 'tv_shell.dart';
+import '../../media/media_item.dart';
+import '../../media/media_kind.dart';
+import '../../utils/layout_constants.dart';
+import 'show/tv_show_screen.dart';
 
 /// Typed replacement lookups for upstream screen factories.
 abstract final class TvUi {
@@ -22,6 +26,32 @@ abstract final class TvUi {
   /// so navigator tests can avoid mounting the full upstream home.
   @visibleForTesting
   static Widget? Function(Widget? replacement)? profileHomeBuilderForTesting;
+
+  static PageRoute<bool>? showDetailRoute({
+    required MediaItem metadata,
+    bool isOffline = false,
+    bool? enabled,
+    int? initialSeasonIndex,
+    String? initialSeasonId,
+    String? initialEpisodeId,
+  }) {
+    if (!(enabled ?? TvUi.enabled) || isOffline || metadata.kind != MediaKind.show) return null;
+    return PageRouteBuilder<bool>(
+      opaque: true,
+      pageBuilder: (_, _, _) => TvShowScreen(
+        metadata: metadata,
+        initialSeasonIndex: initialSeasonIndex,
+        initialSeasonId: initialSeasonId,
+        initialEpisodeId: initialEpisodeId,
+      ),
+      transitionsBuilder: (_, animation, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
+        child: child,
+      ),
+      transitionDuration: AppDurations.animMedium,
+      reverseTransitionDuration: AppDurations.animMedium,
+    );
+  }
 
   /// Pass a captured [enabled] value when the choice belongs to a session.
   static Widget? profileHome(
