@@ -1,3 +1,4 @@
+import 'package:plezy/services/plex_client.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_hub.dart';
@@ -75,6 +76,15 @@ class FakeMediaServerClient implements MediaServerClient {
     );
   }
 
+  Object? actionError;
+  Future<void> libraryAction(String action, String id) async {
+    calls.add('$action:$id');
+    if (actionError != null) throw actionError!;
+  }
+
+  @override
+  Future<void> refreshLibraryMetadata(String libraryId) => libraryAction('refresh', libraryId);
+
   final calls = <String>[];
   final queries = <LibraryQuery>[];
   List<MediaItem> items = [];
@@ -129,4 +139,14 @@ class FakeMediaServerClient implements MediaServerClient {
       onItem == null ? items.where((i) => i.id == id).firstOrNull : onItem!(id);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class FakePlexLibraryClient extends FakeMediaServerClient implements PlexClient {
+  FakePlexLibraryClient() : super(backend: MediaBackend.plex);
+  @override
+  Future<void> scanLibrary(String sectionId) => libraryAction('scan', sectionId);
+  @override
+  Future<void> analyzeLibrary(String sectionId) => libraryAction('analyze', sectionId);
+  @override
+  Future<void> emptyLibraryTrash(String sectionId) => libraryAction('trash', sectionId);
 }
