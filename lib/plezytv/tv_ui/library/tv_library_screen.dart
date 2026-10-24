@@ -24,6 +24,7 @@ import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_library_controller.dart';
+import 'tv_library_extra_tab.dart';
 import 'tv_library_panels.dart';
 import 'tv_folder_list.dart';
 
@@ -41,6 +42,7 @@ class TvLibraryScreen extends StatefulWidget {
 
 class TvLibraryScreenState extends State<TvLibraryScreen>
     with Refreshable, ManualRefreshable, FullRefreshable, TabVisibilityAware, FocusableTab {
+  final _extras = <LibraryTabType, GlobalKey<TvLibraryExtraTabState>>{};
   final _folders = GlobalKey<TvFolderListState>();
   final _grid = GlobalKey<TvPagedGridState<MediaItem>>();
   final _alpha = GlobalKey<TvAlphaColumnState>();
@@ -146,6 +148,10 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   @override
   void refresh() => unawaited(_refresh());
   Future<void> _refresh() async {
+    if (tab != LibraryTabType.browse) {
+      await _extras[tab]?.currentState?.refresh();
+      return;
+    }
     if (c.loading) return;
     final restore = _inGrid;
     if (c.totalCount == 0 && c.grouping != 'folders') {
@@ -179,6 +185,10 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   @override
   void focusActiveTabIfReady() {
     if (!_current) return;
+    if (tab != LibraryTabType.browse) {
+      _extras[tab]?.currentState?.requestFocus();
+      return;
+    }
     if (tab == LibraryTabType.browse && c.grouping == 'folders') {
       _folders.currentState?.requestFocus();
     } else if (tab == LibraryTabType.browse && _ready) {
@@ -192,6 +202,10 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
 
   void _sidebar() => MainScreenFocusScope.focusSidebarOf(context);
   void _down() {
+    if (tab != LibraryTabType.browse) {
+      _extras[tab]?.currentState?.requestFocus();
+      return;
+    }
     if (c.grouping == 'folders' && tab == LibraryTabType.browse) {
       _folders.currentState?.requestFocus();
       return;
@@ -428,12 +442,16 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     final fields = c.preferences.filters.map((f) => f.field).toSet().length;
     Widget content;
     if (tab != LibraryTabType.browse) {
-      content = Center(
-        child: Text(switch (tab) {
-          LibraryTabType.collections => t.libraries.noCollections,
-          LibraryTabType.playlists => t.playlists.noPlaylists,
-          _ => TvStrings.homeEmpty,
-        }, style: theme.body),
+      content = KeyedSubtree(
+        key: ValueKey(tab),
+        child: TvLibraryExtraTab(
+          key: _extras.putIfAbsent(tab, () => GlobalKey<TvLibraryExtraTabState>()),
+          controller: c,
+          tab: tab,
+          onUp: _focusTabs,
+          onLeft: _sidebar,
+          ownsTabFocus: () => _tabs.hasFocus,
+        ),
       );
     } else if (c.grouping == 'folders') {
       content = TvFolderList(
