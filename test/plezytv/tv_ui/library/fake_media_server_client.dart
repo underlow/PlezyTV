@@ -1,5 +1,7 @@
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/media_hub.dart';
+import 'package:plezy/media/media_playlist.dart';
 import 'package:plezy/media/library_filter_result.dart';
 import 'package:plezy/media/library_query.dart';
 import 'package:plezy/media/media_backend.dart';
@@ -25,6 +27,52 @@ class FakeMediaServerClient implements MediaServerClient {
   Future<void> markWatched(MediaItem item) async {
     calls.add('watched:${item.id}');
     items = [for (final row in items) row.id == item.id ? row.copyWith(viewCount: 1) : row];
+  }
+
+  List<MediaHub> hubs = [];
+  List<MediaItem> collections = [];
+  List<MediaPlaylist> playlists = [];
+
+  @override
+  Future<List<MediaHub>> fetchLibraryHubs(
+    String libraryId, {
+    required String libraryName,
+    int limit = defaultHubPreviewLimit,
+    bool includePlaybackHubs = true,
+    MediaKind? libraryKind,
+    HubFetchDiagnostics? diagnostics,
+  }) async {
+    calls.add('hubs:$libraryId');
+    return hubs;
+  }
+
+  @override
+  Future<LibraryPage<MediaItem>> fetchCollectionsPage(
+    String libraryId, {
+    int? start,
+    int? size,
+    AbortController? abort,
+  }) async {
+    calls.add('collections:$libraryId:$start:$size');
+    return LibraryPage(
+      items: collections.skip(start ?? 0).take(size ?? collections.length).toList(),
+      totalCount: collections.length,
+    );
+  }
+
+  @override
+  Future<LibraryPage<MediaPlaylist>> fetchPlaylistsPage({
+    String playlistType = 'video',
+    bool? smart,
+    int? start,
+    int? size,
+    AbortController? abort,
+  }) async {
+    calls.add('playlists:$playlistType:$start:$size');
+    return LibraryPage(
+      items: playlists.skip(start ?? 0).take(size ?? playlists.length).toList(),
+      totalCount: playlists.length,
+    );
   }
 
   final calls = <String>[];
