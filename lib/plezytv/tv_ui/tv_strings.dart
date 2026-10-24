@@ -29,6 +29,15 @@ abstract final class TvStrings {
   static String episodes(int count) => '$count ${count == 1 ? 'episode' : 'episodes'}';
   static String spoilerEpisode({required int season, required int episode, required String title}) =>
       'S$season, E$episode: $title';
+  static const watch = 'Watch';
+  static const rewatch = 'Rewatch';
+  static String continueLeft(int remainingMs) => remainingMs > 0 ? 'Continue · ${left(remainingMs)}' : 'Continue';
+  static String director(String names) => 'Director: $names';
+  static const studio = 'Studio';
+  static const audio = 'Audio';
+  static const subtitles = 'Subtitles';
+  static const file = 'File';
+  static const movieUnavailable = 'This movie is no longer available';
   static String left(int milliseconds) => '${formatDurationTextual(milliseconds)} left';
   static String unwatched(int count) => '$count unwatched';
   static String episode({required int season, required int episode, required String title}) =>
