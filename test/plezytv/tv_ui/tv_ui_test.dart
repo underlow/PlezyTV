@@ -22,6 +22,10 @@ import '../../test_helpers/prefs.dart';
 
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:plezy/plezytv/tv_ui/tv_shell.dart';
+import 'package:plezy/plezytv/tv_ui/movie/tv_movie_screen.dart';
+import 'package:plezy/media/media_backend.dart';
+import 'package:plezy/media/media_item.dart';
+import 'package:plezy/media/media_kind.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -131,6 +135,23 @@ void main() {
     expect(tester.state(find.byType(TvSectionShell)), same(state));
     home = tester.widget<TvSectionShell>(find.byType(TvSectionShell));
     expect(home.initialPromptHandled, isTrue);
+  });
+
+  testWidgets('A1/A2 online movie gets the TV movie route; offline, phone and episodes fall back', (tester) async {
+    MediaItem item(MediaKind kind) =>
+        MediaItem(id: 'm', backend: MediaBackend.jellyfin, kind: kind, title: 'Movie', serverId: 'server');
+    final movie = item(MediaKind.movie);
+    final route = TvUi.showDetailRoute(metadata: movie, enabled: true)!;
+    expect(route.opaque, true);
+    await tester.pumpWidget(const MaterialApp(home: SizedBox(key: ValueKey('host'))));
+    final context = tester.element(find.byKey(const ValueKey('host')));
+    final page = route.buildPage(context, kAlwaysCompleteAnimation, kAlwaysDismissedAnimation);
+    expect(page, isA<TvMovieScreen>());
+    expect((page as TvMovieScreen).metadata.id, 'm');
+    expect(TvUi.showDetailRoute(metadata: movie, enabled: true, isOffline: true), isNull);
+    expect(TvUi.showDetailRoute(metadata: movie, enabled: false), isNull);
+    expect(TvUi.showDetailRoute(metadata: item(MediaKind.episode), enabled: true), isNull);
+    expect(TvUi.showDetailRoute(metadata: item(MediaKind.show), enabled: true), isNotNull);
   });
 
   testWidgets('lookup reads injectable detection once unless passed a snapshot', (tester) async {

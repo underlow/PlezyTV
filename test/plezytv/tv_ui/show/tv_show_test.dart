@@ -58,7 +58,7 @@ void main() {
     expect(route.opaque, true);
     expect(TvUi.showDetailRoute(metadata: show, isOffline: true), null);
     expect(TvUi.showDetailRoute(metadata: show, enabled: false), null);
-    expect(TvUi.showDetailRoute(metadata: item('movie', MediaKind.movie)), null);
+    expect(TvUi.showDetailRoute(metadata: item('movie', MediaKind.movie)), isNotNull);
     final episode = item('e4', MediaKind.episode, season: 2).copyWith(parentId: 's2', grandparentId: 'show');
     final target = mediaDetailNavigationTargetFor(episode);
     await tester.pumpWidget(
