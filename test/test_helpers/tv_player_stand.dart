@@ -15,6 +15,9 @@ import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/media_source_info.dart';
 import 'package:plezy/media/play_queue.dart';
 import 'package:plezy/mpv/mpv.dart';
+import 'package:plezy/plezytv/tv_ui/player/tv_player_hooks.dart';
+import 'package:plezy/plezytv/tv_ui/player/tv_player_panel.dart';
+import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:plezy/providers/playback_state_provider.dart';
 import 'package:plezy/services/scrub_preview_source.dart';
 import 'package:plezy/services/settings_service.dart';
@@ -152,6 +155,19 @@ class TvPlayerStand {
   int nextCalls = 0;
   int previousCalls = 0;
 
+  /// Queue items the panel handed to Plezy's `onQueueItemSelected`, recorded
+  /// once [observeQueueSelections] is on (Plezy's handler itself needs the
+  /// player screen, which the stand does not mount).
+  final List<MediaItem> queueSelections = [];
+
+  /// Builds the TV panel with an observer of queue selections. Call after
+  /// `TvUi.enabledForTesting`; `TvUi.resetForTesting` undoes it.
+  void observeQueueSelections() {
+    TvUi.playerBuildersForTesting = TvPlayerBuilders(
+      panel: (context, args) => TvPlayerPanel(args: args, onQueueItemSelectedForTesting: queueSelections.add),
+    );
+  }
+
   /// Times the screen's Back chain left the player.
   int exitCalls = 0;
 
@@ -190,6 +206,7 @@ class TvPlayerStand {
     nextCalls = 0;
     previousCalls = 0;
     exitCalls = 0;
+    queueSelections.clear();
     navigation = PlayerNavigationCoordinator(
       chromeController: chrome,
       isPromptOpen: () => false,

@@ -7,6 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../../focus/dpad_navigator.dart';
 import '../../../i18n/strings.g.dart';
+import '../../../media/media_item.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/stepped_seek.dart';
 import '../../../utils/formatters.dart';
@@ -14,7 +15,8 @@ import '../../../utils/platform_detector.dart';
 import '../../../widgets/app_icon.dart';
 import '../../../widgets/video_controls/desktop_video_controls.dart';
 import '../../../widgets/video_controls/player_chrome_controller.dart';
-import '../../../widgets/video_controls/video_controls.dart' show PlayerNavigationKey, classifyPlayerNavigationKey, handlePlayerNavigationKeyAction;
+import '../../../widgets/video_controls/video_controls.dart'
+    show PlayerNavigationKey, classifyPlayerNavigationKey, handlePlayerNavigationKeyAction;
 import '../../../widgets/video_controls/widgets/finish_time_builder.dart';
 import '../../../widgets/video_controls/widgets/play_pause_stream_builder.dart';
 import '../components/tv_button.dart';
@@ -24,6 +26,7 @@ import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_player_bar.dart';
 import 'tv_player_hooks.dart';
+import 'tv_player_queue_row.dart';
 import 'tv_player_session.dart';
 
 /// Focusable elements of the panel; [name] is the id kept in
@@ -37,9 +40,14 @@ enum TvPlayerPanelElement { bar, previous, play, next, subtitles, audio, setting
 /// the panel, moves focus inside it and seeks from the bar (R4–R8, D8). Keys it
 /// does not use (Play/Pause, ⏪/⏩, Back) go on to Plezy.
 class TvPlayerPanel extends StatefulWidget {
-  const TvPlayerPanel({super.key, required this.args});
+  const TvPlayerPanel({super.key, required this.args, this.onQueueItemSelectedForTesting});
 
   final TvPlayerPanelArgs args;
+
+  /// Sees each queue selection after it went to Plezy, whose handler needs the
+  /// player screen around it.
+  @visibleForTesting
+  final ValueChanged<MediaItem>? onQueueItemSelectedForTesting;
 
   @override
   State<TvPlayerPanel> createState() => TvPlayerPanelState();
@@ -77,8 +85,14 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   bool get _previousEnabled => _canControl && _plezy.onPrevious != null;
   bool get _nextEnabled => _canControl && _plezy.onNext != null;
 
-  /// Whether the queue hint shows and ↓ will open the queue (T3).
+  /// Whether the queue hint shows and ↓ opens the queue: Plezy's own rule,
+  /// which already leaves out guests without control and offline (R2, R3, R9).
   bool get _hasQueue => _plezy.showQueueTab && _plezy.onQueueItemSelected != null;
+
+  /// The queue row is up (R10); mirrors `contentStripVisible` so Plezy's Back
+  /// chain and hiding know about it (design §4).
+  bool _queueOpen = false;
+  final _queueRow = GlobalKey<TvPlayerQueueRowState>();
 
   List<TvPlayerPanelElement> get _row => [
     if (_isEpisode) TvPlayerPanelElement.previous,
@@ -131,6 +145,12 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
       _timelineSeek.cancel();
       _resetSeekState();
     }
+    if (_queueOpen && !_hasQueue) {
+      // Plezy stopped offering the queue (no longer active, rights revoked).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _queueOpen && !_hasQueue) _closeQueue(focusBar: _queueHasFocus);
+      });
+    }
     final wasPromptOpen = oldWidget.args.playNextFocusNode != null || oldWidget.args.playbackPromptOpen;
     if (_promptOpen != wasPromptOpen) {
       // Not during build: closing the strip notifies Plezy, which rebuilds.
@@ -170,6 +190,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   void _onChromeChanged() {
     final chrome = _chrome;
     if (!mounted || chrome == null) return;
+    if (_queueOpen && !chrome.contentStripVisible) _onQueueClosedOutside();
     final visible = chrome.controlsVisible;
     if (visible == _wasVisible) return;
     _wasVisible = visible;
@@ -191,8 +212,65 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   void _yieldToPrompt() {
     // A pause flag must not send a later showing to play (R7).
     _session.focusPlayOnNextShow = false;
+    _closeQueue(focusBar: false);
+  }
+
+  // ---- Queue (R9, R10) ----
+
+  void _openQueue() {
+    if (!_hasQueue || _promptOpen) return _activity();
+    _timelineSeek.flush();
+    _resetSeekState();
+    setState(() => _queueOpen = true);
+    _chrome?.setContentStripVisible(true);
+    _activity();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _queueOpen) _queueRow.currentState?.focusNext();
+    });
+  }
+
+  /// ↑ or Back in the row: close it, focus on the bar (R7, R10).
+  void _closeQueue({bool focusBar = true}) {
+    if (_queueOpen) setState(() => _queueOpen = false);
     final chrome = _chrome;
     if (chrome != null && chrome.contentStripVisible) chrome.setContentStripVisible(false);
+    if (focusBar) _go(TvPlayerPanelElement.bar);
+  }
+
+  /// Plezy dropped the strip (hiding, its Back chain): the row follows; a
+  /// remote left inside it goes to the bar while the panel stays up.
+  void _onQueueClosedOutside() {
+    final hadFocus = _queueHasFocus;
+    setState(() => _queueOpen = false);
+    if (hadFocus && (_chrome?.controlsVisible ?? true) && !_promptOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_queueOpen) _node(TvPlayerPanelElement.bar).requestFocus();
+      });
+    }
+  }
+
+  bool get _queueHasFocus {
+    final context = FocusManager.instance.primaryFocus?.context;
+    return context != null && context.findAncestorStateOfType<TvPlayerQueueRowState>() != null;
+  }
+
+  void _selectQueueItem(MediaItem item) {
+    // As Plezy's own handler: a burst armed here must not land on the next item.
+    _timelineSeek.cancel();
+    _plezy.onQueueItemSelected?.call(item);
+    widget.onQueueItemSelectedForTesting?.call(item);
+  }
+
+  /// ↑ closes the row; ↓ has nothing below it. ←/→ and OK stay with the row.
+  KeyEventResult _onQueueKey(FocusNode _, KeyEvent event) {
+    final key = event.logicalKey;
+    if (key != LogicalKeyboardKey.arrowUp && key != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
+    if (event is KeyDownEvent && key == LogicalKeyboardKey.arrowUp) {
+      _closeQueue();
+    } else if (event.isActionable) {
+      _activity();
+    }
+    return KeyEventResult.handled;
   }
 
   /// Plezy parks the remote on its player surface (an ancestor of the panel)
@@ -268,7 +346,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   /// Play/Pause, ⏪/⏩ and Back pass on to Plezy (R2, R6, R22).
   KeyEventResult _onPanelKey(FocusNode _, KeyEvent event) {
     final key = event.logicalKey;
-    final back = _onIconsBack(event);
+    final back = _onLocalBack(event);
     if (back != null) return back;
     if (key.isSelectKey || key.isDpadDirection) {
       if (event.isActionable) _activity();
@@ -277,24 +355,31 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     return KeyEventResult.ignored;
   }
 
-  /// Latched for the whole press: the release lands on the bar.
-  bool _iconsOwnBackPress = false;
+  /// The panel's own Back stage, latched for the whole press so its release
+  /// lands here: null when Plezy's chain takes the press.
+  VoidCallback? _backAction;
 
-  /// Back on the icons row moves to the bar (docs/design/player.md); a Back
-  /// elsewhere goes on to Plezy. Down is consumed, the move happens on release
-  /// (design §4), so the release neither hides the panel nor exits.
-  KeyEventResult? _onIconsBack(KeyEvent event) {
+  /// Back in the queue closes the row, on the icons moves to the bar (R22,
+  /// docs/design/player.md); a Back elsewhere goes on to Plezy. Down is
+  /// consumed, the action happens on release (design §4), so the release
+  /// neither hides the panel nor exits, and the press does one thing only.
+  KeyEventResult? _onLocalBack(KeyEvent event) {
     final navigationKey = classifyPlayerNavigationKey(event, isAppleTV: PlatformDetector.isAppleTV());
     if (navigationKey == PlayerNavigationKey.none || navigationKey == PlayerNavigationKey.home) return null;
     if (event is KeyDownEvent) {
-      _iconsOwnBackPress = _icons.any((element) => _node(element).hasPrimaryFocus);
+      _backAction = _queueOpen
+          ? _closeQueue
+          : _icons.any((element) => _node(element).hasPrimaryFocus)
+          ? () => _go(TvPlayerPanelElement.bar)
+          : null;
       // Restart auto-hide so the release still lands here, not on Plezy's
       // Back chain (which would exit with the chrome hidden).
-      if (_iconsOwnBackPress) _activity();
+      if (_backAction != null) _activity();
     }
-    if (!_iconsOwnBackPress) return null;
-    if (event is KeyUpEvent) _iconsOwnBackPress = false;
-    return handlePlayerNavigationKeyAction(event, navigationKey, () => _go(TvPlayerPanelElement.bar));
+    final action = _backAction;
+    if (action == null) return null;
+    if (event is KeyUpEvent) _backAction = null;
+    return handlePlayerNavigationKeyAction(event, navigationKey, action);
   }
 
   void _rowStep(TvPlayerPanelElement from, int delta) {
@@ -311,10 +396,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     _go(_icons[index]);
   }
 
-  void _onDown() {
-    // ↓ opens the queue (T3); nothing yet.
-    _activity();
-  }
+  void _onDown() => _openQueue();
 
   void _previous() {
     _timelineSeek.cancel();
@@ -407,11 +489,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     final promptOpen = _promptOpen;
     return ExcludeFocus(
       excluding: promptOpen,
-      child: Visibility(
-        visible: !promptOpen,
-        maintainState: true,
-        child: _panel(),
-      ),
+      child: Visibility(visible: !promptOpen, maintainState: true, child: _panel()),
     );
   }
 
@@ -425,10 +503,36 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
           child: FocusTraversalGroup(
             child: Stack(
               fit: StackFit.expand,
-              children: [_bottomShade(context), _header(context), ..._bottom(context)],
+              children: [
+                _bottomShade(context),
+                _header(context),
+                Transform.translate(
+                  offset: Offset(0, _queueOpen ? -TvTheme.of(context).px(_queueLift) : 0),
+                  child: Stack(fit: StackFit.expand, children: _bottom(context)),
+                ),
+                if (_queueOpen) _queue(context),
+              ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// How far the panel rises over the queue row (`10-player-queue`).
+  static const _queueLift = 400;
+  static const _queueRowY = 640;
+
+  Widget _queue(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: TvTheme.of(context).px(_queueRowY),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _onQueueKey,
+        child: TvPlayerQueueRow(key: _queueRow, player: _plezy.player, onSelected: _selectQueueItem),
       ),
     );
   }
@@ -440,7 +544,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
       left: 0,
       right: 0,
       bottom: 0,
-      height: px(shade.h),
+      height: px(shade.h + (_queueOpen ? _queueLift : 0)),
       child: IgnorePointer(
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -591,10 +695,14 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AppIcon(Symbols.keyboard_arrow_down_rounded, size: px(24), color: Colors.white.withValues(alpha: 0.7)),
+              AppIcon(
+                _queueOpen ? Symbols.keyboard_arrow_up_rounded : Symbols.keyboard_arrow_down_rounded,
+                size: px(24),
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
               SizedBox(width: px(8)),
               Text(
-                TvStrings.playerUpNextInQueue,
+                _queueOpen ? TvStrings.playerPanel : TvStrings.playerUpNextInQueue,
                 style: theme.caption.copyWith(color: Colors.white.withValues(alpha: 0.7)),
               ),
             ],

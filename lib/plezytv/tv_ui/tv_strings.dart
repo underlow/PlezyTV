@@ -41,6 +41,13 @@ abstract final class TvStrings {
   static String left(int milliseconds) => '${formatDurationTextual(milliseconds)} left';
   static String unwatched(int count) => '$count unwatched';
   static const playerUpNextInQueue = 'Up next in queue';
+  static const playerPanel = 'Panel';
+  static String playerQueueNow(int remainingMs) => remainingMs > 0 ? 'Now · ${left(remainingMs)}' : 'Now';
+  static String playerQueueMore({required int? season, required int count}) {
+    final more = '$count more ${count == 1 ? 'episode' : 'episodes'}';
+    return season == null ? more : 'Season $season · $more';
+  }
+
   static String episode({required int season, required int episode, required String title}) =>
       '${formatSeasonEpisodeLabel(season, episode)} · $title';
 }
