@@ -6,6 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../focus/key_event_utils.dart';
+import '../../../focus/transport_keys.dart';
+import '../../../navigation/navigation_tabs.dart';
+import '../../../widgets/media_context_menu.dart';
+import '../shell/tv_section_shell.dart';
 import '../../../focus/dpad_navigator.dart';
 import '../../../i18n/strings.g.dart';
 import '../../../media/media_hub.dart';
@@ -34,6 +38,7 @@ import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import '../tv_tokens.dart';
 import 'tv_home_model.dart';
+import 'tv_home_playback.dart';
 
 /// Fork-owned Home. Provider updates rebuild content; focus updates only the
 /// hero/background and the vertical viewport, leaving horizontal rails intact.
@@ -54,6 +59,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
   final _button = FocusNode(debugLabel: 'Home retry/refresh');
   final _rows = <String, GlobalKey<TvHorizontalRowState>>{};
   late DiscoverProvider _provider;
+  late TvHomePlayback _playback;
   late TvHomeModel _model;
   ModalRoute<dynamic>? _route;
   bool _routeWasCurrent = false;
@@ -83,6 +89,17 @@ class TvHomeScreenState extends State<TvHomeScreen>
     }
     _routeWasCurrent = routeCurrent;
     _initialized = true;
+    final shell = context.findAncestorStateOfType<TvSectionShellState>();
+    _playback = TvHomePlayback.forContext(
+      context,
+      // Route coverage invokes onTabHidden too. Only section selection may
+      // cancel the player after it commits its own route above Home.
+      isCurrent: () => shell == null
+          ? mounted
+          : shell.mounted &&
+                !shell.currentSection.isNoConnection &&
+                shell.currentSection.tab == NavigationTabId.discover,
+    );
     _provider = context.read<DiscoverProvider>();
     _model = _builder.build(_provider);
     _syncHero();
@@ -436,9 +453,36 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 playDirectly: wide || (row.hub?.usesContinueWatchingAction ?? false),
               ),
             );
-            return wide
-                ? TvEpisode(item: item, client: client, focusNode: node, onSelect: select)
-                : TvPoster(item: item, client: client, focusNode: node, onSelect: select);
+            return MediaContextMenu(
+              item: item,
+              onRefresh: _provider.updateItem,
+              onRemoveFromContinueWatching: _provider.refreshContinueWatching,
+              isInContinueWatching: wide || (row.hub?.isContinueWatchingHub ?? false),
+              child: Builder(
+                builder: (menuContext) {
+                  void menu() =>
+                      menuContext.findAncestorStateOfType<MediaContextMenuState>()?.showContextMenu(menuContext);
+                  return Focus(
+                    canRequestFocus: false,
+                    onKeyEvent: (_, event) {
+                      final transport = classifyTransportKey(event.logicalKey);
+                      if (transport == TransportCommand.play || transport == TransportCommand.toggle) {
+                        if (event is KeyDownEvent) unawaited(_playback.activate(item));
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey.isContextMenuKey) {
+                        if (event is KeyDownEvent) menu();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: wide
+                        ? TvEpisode(item: item, client: client, focusNode: node, onSelect: select, onLongPress: menu)
+                        : TvPoster(item: item, client: client, focusNode: node, onSelect: select, onLongPress: menu),
+                  );
+                },
+              ),
+            );
           },
         );
       },
