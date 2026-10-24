@@ -1,0 +1,15 @@
+{
+  "project": "docs/projects/plezy-tv/project.md",
+  "stage": "S7",
+  "phase": "implementation",
+  "base_commit": "70357aff49ed5c1ee1fa9eaa7fe838709b12b67d",
+  "profile": "full",
+  "codex": [
+    "develop"
+  ],
+  "development_agent": {
+    "platform": "codex",
+    "model": "sol",
+    "effort": "low"
+  }
+}
