@@ -110,6 +110,16 @@ jobs:
           if ! git diff --quiet origin/main HEAD -- lib/screens/main_screen.dart lib/navigation/navigation_tabs.dart lib/navigation/main_screen_scope.dart; then
             printf '\nWarning: upstream changes TV shell dependencies. Review the repeated MainScreen duties in docs/plezytv/tv-ui.md against lib/plezytv/tv_ui/shell/.\n' >> "$RUNNER_TEMP/upstream-pr.md"
           fi
+          if ! git diff --quiet origin/main HEAD -- \
+            lib/screens/libraries/tabs/library_browse_tab.dart \
+            lib/screens/libraries/tabs/base_library_tab.dart \
+            lib/screens/libraries/libraries_screen.dart \
+            lib/screens/libraries/library_browse_grouping.dart \
+            lib/screens/libraries/library_alpha_bar_strategy.dart \
+            lib/services/library_query_translator.dart \
+            lib/widgets/library_management_sheet.dart; then
+            printf '\nWarning: upstream changes S16 library dependencies. Review the copied query glue and library actions in lib/plezytv/tv_ui/library/ against design D1 and docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
+          fi
           number=$(gh pr list --head upstream-sync --base main --state open --json number --jq '.[0].number // empty')
           title='Sync upstream Plezy'
           if [[ "$CHECK_RESULT" != success ]]; then title='Sync upstream Plezy (checks failing)'; fi

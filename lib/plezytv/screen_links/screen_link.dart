@@ -1,4 +1,4 @@
-enum ScreenTarget { home, libraries, library, item, search, downloads, settings, update }
+enum ScreenTarget { home, libraries, library, libraryFilter, item, search, downloads, settings, update }
 
 class ScreenLink {
   final String source;
@@ -6,8 +6,9 @@ class ScreenLink {
   final String? id;
   final String? server;
   final String? query;
+  final String? field, value;
 
-  const ScreenLink(this.source, this.target, {this.id, this.server, this.query});
+  const ScreenLink(this.source, this.target, {this.id, this.server, this.query, this.field, this.value});
 
   static bool claims(String source) {
     final uri = Uri.tryParse(source);
@@ -22,25 +23,47 @@ class ScreenLink {
       throw const FormatException('invalid screen path');
     }
     final name = uri.pathSegments.single;
-    final target = ScreenTarget.values.where((value) => value.name == name).firstOrNull;
+    final target = name == 'library-filter'
+        ? ScreenTarget.libraryFilter
+        : ScreenTarget.values.where((value) => value != ScreenTarget.libraryFilter && value.name == name).firstOrNull;
     if (target == null) throw FormatException('unknown target $name');
     for (final entry in uri.queryParametersAll.entries) {
-      if (!const ['id', 'server', 'q'].contains(entry.key) || entry.value.length != 1) {
+      if (!(target == ScreenTarget.libraryFilter
+                  ? const ['id', 'server', 'field', 'value']
+                  : const ['id', 'server', 'q'])
+              .contains(entry.key) ||
+          entry.value.length != 1) {
         throw FormatException('invalid parameter ${entry.key}');
       }
     }
     final id = uri.queryParameters['id'];
     final server = uri.queryParameters['server'];
-    if ((target == ScreenTarget.library || target == ScreenTarget.item) && (id == null || id.trim().isEmpty)) {
+    if ((target == ScreenTarget.library || target == ScreenTarget.item || target == ScreenTarget.libraryFilter) &&
+        (id == null || id.trim().isEmpty)) {
       throw const FormatException('missing required parameter id');
     }
     if (id != null && (id.isEmpty || RegExp(r'[^0-9]').hasMatch(id))) {
       throw const FormatException('invalid id');
     }
+    if (target == ScreenTarget.libraryFilter) {
+      for (final key in ['field', 'value']) {
+        if (uri.queryParameters[key]?.trim().isNotEmpty != true) {
+          throw FormatException('missing required parameter $key');
+        }
+      }
+    }
     // Plex machine identifiers and UUIDs use ASCII letters, digits and hyphens.
     if (server != null && (server.isEmpty || RegExp(r'[^A-Za-z0-9-]').hasMatch(server))) {
       throw const FormatException('invalid server');
     }
-    return ScreenLink(source, target, id: id, server: server, query: uri.queryParameters['q']);
+    return ScreenLink(
+      source,
+      target,
+      id: id,
+      server: server,
+      query: uri.queryParameters['q'],
+      field: uri.queryParameters['field'],
+      value: uri.queryParameters['value'],
+    );
   }
 }

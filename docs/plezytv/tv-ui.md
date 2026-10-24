@@ -177,3 +177,21 @@ existence. Remote Libraries opens the general Libraries section; Home selects
 Home online or No connection offline. Section replacement stages must preserve
 these scopes, callbacks, readiness and Back behavior. Initial profile prompting
 continues to respect the profile session’s `initialPromptHandled` flag.
+
+### S16 library section hookup
+
+The shell's libraries section mounts `TvLibrariesSwitch` under its stable section key.
+It alone resolves explicit keys (including hidden libraries), then Plezy's saved visible
+selection, then the first visible library. Unknown keys use the same default resolution.
+It saves selection through `StorageService` and reports it to the shell for the menu mark.
+`isTvVideoLibrary` is shared by the switch and filtered links: movies, shows, and shared
+video-only libraries use `TvLibraryScreen`; other kinds use `LibrariesScreen`.
+The active child key and controller are replaced when the library or screen kind changes.
+Refresh, full refresh, visibility and focus capabilities are forwarded to the active child.
+Hiding the current library keeps it open; the all-hidden state opens T7's management panel.
+
+`TvLibraryScreen.filtered` owns a separate controller with memory preferences, seeded from
+saved grouping/sort and one incoming filter. Push it above the current route, without calling
+the shell selector. Dispose that controller when the route closes. Normal section controllers
+belong to the switch. Keep copied query glue and actions aligned with the seven upstream
+paths listed in the S16 warning in `plezytv-upstream.yml` (design D1).

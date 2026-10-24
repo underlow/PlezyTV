@@ -791,7 +791,7 @@ void main() {
     expect(probe(NavigationTabId.search).first.hasFocus, isTrue);
   });
 
-  testWidgets('M2 hiding keeps current library; removal returns Home', (tester) async {
+  testWidgets('M2 hiding keeps current library; S16 removal resolves library default', (tester) async {
     await pump(tester);
     shell.currentState!.selectLibrary(movies.globalKey);
     await tester.pumpAndSettle();
@@ -803,7 +803,8 @@ void main() {
     libraries.libraries = [series];
     libraries.emit();
     await tester.pumpAndSettle();
-    expect(shell.currentState!.currentSection, home);
+    // L3 now delegates a removed selection to the library switch's default.
+    expect(shell.currentState!.currentSection, const TvShellSection.tab(NavigationTabId.libraries));
   });
 
   testWidgets('S1 deferred startup Live TV selects on arrival unless user selected', (tester) async {
