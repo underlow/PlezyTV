@@ -5,6 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
+import 'package:plezy/media/media_hub.dart';
+import 'package:plezy/media/media_role.dart';
+import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/library_query.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
@@ -252,5 +256,30 @@ void main() {
     expect(tabs(tester).selectedIndex, 15);
     final box = FocusManager.instance.primaryFocus!.context!.findRenderObject()! as RenderBox;
     expect(box.localToGlobal(Offset(box.size.width, 0)).dx, lessThanOrEqualTo(1920));
+  });
+  testWidgets('H6 empty lower rows hidden; flattened Down reveals cast and Up returns to tabs', (tester) async {
+    final client = fixture()..seasons = [media('Season 1', MediaKind.season, number: 1)];
+    final c = await mount(tester, client);
+    expect(find.byType(TvHorizontalRow), findsNothing);
+    client.show = client.show.copyWith(
+      roles: [const MediaRole(id: 'actor', tag: 'Actor', role: 'Character')],
+    );
+    client.extras = [media('Extra', MediaKind.clip)];
+    client.relatedHubs = [
+      MediaHub(id: 'similar', title: 'Similar shows', type: 'show', items: [client.show]),
+    ];
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byType(TvHorizontalRow), findsNWidgets(3));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    final cast = tester.widgetList<TvFocusable>(find.byType(TvFocusable)).firstWhere((w) => w.semanticLabel == 'Actor');
+    expect(cast.focusNode!.hasFocus, true);
+    final box = cast.focusNode!.context!.findRenderObject()! as RenderBox;
+    expect(box.localToGlobal(Offset(0, box.size.height)).dy, lessThanOrEqualTo(1080));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(tabs(tester).selectedIndex, 0);
+    expect(FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvTabs>(), isNotNull);
   });
 }

@@ -12,6 +12,7 @@ class FakeShowClient implements MediaServerClient {
   MediaItem? onDeck;
   List<MediaItem> seasons = [];
   List<MediaItem> extras = [];
+  List<MediaHub> relatedHubs = [];
   Map<String, List<MediaItem>> episodes = {};
   final calls = <String>[];
   Future<({MediaItem? item, MediaItem? onDeckEpisode})> Function()? onFetch;
@@ -39,7 +40,7 @@ class FakeShowClient implements MediaServerClient {
   @override
   Future<List<MediaHub>> fetchRelatedHubs(String id, {int count = 10}) async {
     calls.add('related');
-    return [];
+    return relatedHubs;
   }
 
   Future<LibraryPage<MediaItem>> Function(String, int, int)? onPage;
