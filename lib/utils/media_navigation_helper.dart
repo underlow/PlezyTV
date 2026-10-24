@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../plezytv/tv_ui/tv_ui.dart';
 import '../i18n/strings.g.dart';
 import '../media/catalog_item_ref.dart';
 import '../media/ids.dart';
@@ -282,9 +283,10 @@ Future<MediaNavigationResult> navigateToMediaItemDetails(
   }
 
   final target = mediaDetailNavigationTargetFor(mi, metadataOverride: metadataOverride);
+  // dart format off
   final result = await Navigator.push<bool>(
     context,
-    mediaDetailRoute(
+    TvUi.showDetailRoute(metadata: target.metadata, isOffline: isOffline, initialSeasonIndex: target.initialSeasonIndex, initialSeasonId: target.initialSeasonId, initialEpisodeId: target.initialEpisodeId) ?? mediaDetailRoute(
       metadata: target.metadata,
       isOffline: isOffline,
       initialSeasonIndex: target.initialSeasonIndex,
@@ -292,6 +294,7 @@ Future<MediaNavigationResult> navigateToMediaItemDetails(
       initialEpisodeId: target.initialEpisodeId,
     ),
   );
+  // dart format on
   if (result == true && context.mounted) {
     onRefresh?.call(mi);
   }
