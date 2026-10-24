@@ -5,10 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../focus/key_event_utils.dart';
+import '../../../i18n/strings.g.dart';
 import '../../../media/media_item.dart';
 import '../../../providers/catalog_sources_provider.dart';
 import '../../../services/device_performance.dart';
+import '../../../utils/deletion_notifier.dart';
 import '../../../utils/formatters.dart';
+import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/provider_extensions.dart';
 import '../../../utils/video_player_navigation.dart';
 import '../../../widgets/media_context_menu.dart';
@@ -20,10 +23,12 @@ import '../components/tv_hero.dart';
 import '../components/tv_horizontal_row.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_tabs.dart';
+import '../tv_focusable.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
+import 'tv_show_actions.dart';
 import 'tv_show_controller.dart';
 import 'tv_show_logic.dart';
 
@@ -55,12 +60,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
   final _tabs = GlobalKey<TvTabsState>();
   final _episodes = GlobalKey<TvHorizontalRowState>();
   final _seasons = GlobalKey<TvHorizontalRowState>();
+  final _actionScope = FocusScopeNode(debugLabel: 'Show actions');
+  final _lowerKeys = <String, GlobalKey<TvHorizontalRowState>>{};
   final _primary = FocusNode(debugLabel: 'Show primary');
   final _retry = FocusNode(debugLabel: 'Show retry');
   final _page = ScrollController();
   final _tabScope = FocusScopeNode(debugLabel: 'Show tabs');
   final _lastEpisode = <String, String>{};
   final _menus = <String, GlobalKey<MediaContextMenuState>>{};
+  StreamSubscription<DeletionEvent>? _deletions;
   Timer? _skeletonTimer, _heroTimer;
   bool _skeleton = false, _ready = false, _initialFocus = false;
   bool _playing = false, _pendingEntryFocus = false;
@@ -90,6 +98,16 @@ class _TvShowScreenState extends State<TvShowScreen> {
         );
       }
       _controller!.addListener(_changed);
+      _deletions = DeletionNotifier().stream.listen((event) {
+        if (!mounted) return;
+        final c = _controller!;
+        if (event.isDownloadOnly || event.serverId.toString() != c.show.serverId) return;
+        if (event.itemId == c.show.id) {
+          Navigator.of(context).pop(c.watchStateChanged);
+        } else if (event.parentChain.contains(c.show.id)) {
+          unawaited(c.refresh());
+        }
+      });
       _startLoad();
     } catch (error) {
       _connectionError = error;
@@ -274,6 +292,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
   }
 
   KeyEventResult _contentKeys(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent || event is KeyRepeatEvent) _revealContent();
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       if (event is KeyDownEvent || event is KeyRepeatEvent) {
         _tabs.currentState?.requestFocus();
@@ -281,8 +300,20 @@ class _TvShowScreenState extends State<TvShowScreen> {
       }
       return KeyEventResult.handled;
     }
-    if (_primary.hasFocus && event.logicalKey == LogicalKeyboardKey.arrowDown && _controller!.seasons.isNotEmpty) {
-      if (event is KeyDownEvent || event is KeyRepeatEvent) _seasons.currentState?.requestFocus();
+    if (_actionScope.hasFocus && event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      if (event is KeyDownEvent || event is KeyRepeatEvent) {
+        final c = _controller!;
+        if (!c.flattened && c.seasons.isNotEmpty) {
+          _seasons.currentState?.requestFocus();
+        } else {
+          for (final key in _lowerKeys.values) {
+            if (key.currentState != null) {
+              key.currentState!.requestFocus();
+              break;
+            }
+          }
+        }
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -318,8 +349,10 @@ class _TvShowScreenState extends State<TvShowScreen> {
     ++_selection;
     _skeletonTimer?.cancel();
     _heroTimer?.cancel();
+    unawaited(_deletions?.cancel());
     _controller?.removeListener(_changed);
     if (widget.controller == null) _controller?.dispose();
+    _actionScope.dispose();
     _primary.dispose();
     _retry.dispose();
     _tabScope.dispose();
@@ -496,20 +529,21 @@ class _TvShowScreenState extends State<TvShowScreen> {
                 child: Text(c.show.summary ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
               ),
               SizedBox(height: px(28)),
-              // T3 extends this action slot with the remaining Plezy actions.
-              Row(
-                key: const ValueKey('show-actions'),
-                children: [
-                  TvButton(
+              FocusScope(
+                node: _actionScope,
+                child: TvShowActions(
+                  controller: c,
+                  playExtra: _playExtra,
+                  primary: TvButton(
                     label: action?.label ?? 'Watch',
                     icon: Icons.play_arrow,
                     focusNode: _primary,
                     disabled: action == null,
                     onSelect: action == null ? null : () => unawaited(_play(action.episode, restart: action.restart)),
                   ),
-                ],
+                ),
               ),
-              SizedBox(height: px(60)),
+              SizedBox(height: px(26)),
             ],
           ),
         ),
@@ -517,6 +551,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
           TvHorizontalRow(
             key: _seasons,
             title: 'Seasons',
+            onItemFocused: (_) => _revealContent(),
             counter: '${c.seasons.length}',
             itemCount: c.seasons.length,
             cardWidth: 160,
@@ -531,11 +566,135 @@ class _TvShowScreenState extends State<TvShowScreen> {
               onSelect: () => _select(i + 1, focus: true),
             ),
           ),
-        // T3 appends cast, extras and related rails in this scrollable slot.
-        const SizedBox(key: ValueKey('show-lower-rows')),
+        ..._lowerRows(context),
         SizedBox(height: px(54)),
       ],
     );
+  }
+
+  Future<void> _playExtra(MediaItem item) async {
+    final changed = await navigateToVideoPlayer(context, metadata: item);
+    if (!mounted) return;
+    if (changed == true) _controller!.watchStateChanged = true;
+    await _controller!.refresh();
+  }
+
+  void _revealContent() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final anchor = FocusManager.instance.primaryFocus?.context;
+      if (anchor == null || _tabScope.hasFocus) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          anchor,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : 150),
+        ),
+      );
+    });
+  }
+
+  List<Widget> _lowerRows(BuildContext context) {
+    final c = _controller!, px = TvTheme.of(context).px;
+    final roles = c.show.roles ?? [];
+    return [
+      if (roles.isNotEmpty)
+        TvHorizontalRow(
+          key: _lowerKeys.putIfAbsent('cast', () => GlobalKey<TvHorizontalRowState>()),
+          title: t.discover.cast,
+          itemCount: roles.length,
+          cardWidth: 200,
+          cardHeight: 290,
+          itemKey: (i) => '${roles[i].id}/${roles[i].tag}',
+          onItemFocused: (_) => _revealContent(),
+          cardBuilder: (context, i, node) {
+            final role = roles[i];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TvFocusable(
+                  focusNode: node,
+                  semanticLabel: role.tag,
+                  onSelect: role.id == null || c.show.serverId == null
+                      ? null
+                      : () => unawaited(
+                          navigateToPersonMedia(
+                            context,
+                            personId: role.id!,
+                            name: role.tag,
+                            thumbPath: role.thumbPath,
+                            characterName: role.role,
+                            serverId: c.show.serverId!,
+                            serverName: c.show.serverName,
+                            backend: c.show.backend,
+                          ),
+                        ),
+                  builder: (_, _) => ClipOval(
+                    child: OptimizedMediaImage(
+                      client: c.client,
+                      imagePath: role.thumbPath,
+                      width: px(200),
+                      height: px(200),
+                      fallbackIcon: Icons.person,
+                    ),
+                  ),
+                ),
+                SizedBox(height: px(20)),
+                Text(role.tag, maxLines: 1, overflow: TextOverflow.ellipsis, style: TvTheme.of(context).body),
+                Text(role.role ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TvTheme.of(context).caption),
+              ],
+            );
+          },
+        ),
+      if (c.extras.isNotEmpty)
+        TvHorizontalRow(
+          key: _lowerKeys.putIfAbsent('extras', () => GlobalKey<TvHorizontalRowState>()),
+          title: t.discover.extras,
+          itemCount: c.extras.length,
+          cardWidth: 400,
+          cardHeight: 315,
+          itemKey: (i) => c.extras[i].globalKey,
+          onItemFocused: (_) => _revealContent(),
+          cardBuilder: (context, i, node) => TvEpisode(
+            item: c.extras[i],
+            client: c.client,
+            focusNode: node,
+            onSelect: () => unawaited(_playExtra(c.extras[i])),
+          ),
+        ),
+      for (final hub in c.relatedHubs.where((h) => h.items.isNotEmpty))
+        TvHorizontalRow(
+          key: _lowerKeys.putIfAbsent('related/${hub.id}', () => GlobalKey<TvHorizontalRowState>()),
+          title: hub.title.isEmpty ? t.discover.moreLikeThis : hub.title,
+          itemCount: hub.items.length,
+          cardWidth: 216,
+          cardHeight: 414,
+          itemKey: (i) => hub.items[i].globalKey,
+          onItemFocused: (_) => _revealContent(),
+          cardBuilder: (context, i, node) {
+            final item = hub.items[i];
+            final menu = _menus.putIfAbsent(
+              'related/${hub.id}/${item.globalKey}',
+              () => GlobalKey<MediaContextMenuState>(),
+            );
+            return MediaContextMenu(
+              key: menu,
+              item: item,
+              onRefresh: (_) => unawaited(c.refresh()),
+              child: TvPoster(
+                item: item,
+                client: c.client,
+                focusNode: node,
+                onSelect: () => unawaited(navigateToMediaItem(context, item, onRefresh: (_) => unawaited(c.refresh()))),
+                onLongPress: () {
+                  final state = menu.currentState;
+                  if (state != null) state.showContextMenu(state.context);
+                },
+              ),
+            );
+          },
+        ),
+    ];
   }
 
   Widget _season(BuildContext context) {
