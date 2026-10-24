@@ -9,7 +9,6 @@ import 'package:plezy/plezytv/tv_ui/player/tv_player_session.dart';
 import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:plezy/widgets/video_controls/desktop_video_controls.dart';
-import 'package:plezy/widgets/video_controls/player_chrome_controller.dart';
 
 import '../../../test_helpers/tv_player_stand.dart';
 
@@ -132,63 +131,105 @@ void main() {
       await stand.unmount(tester);
     });
 
-    testWidgets('R11a: a prompt appearing hides the panel even while held; the prompt keeps focus', (tester) async {
+    // The stand's prompt button holds the chrome up while focused, as Plezy's
+    // _VideoPlayerPromptInteractionHold does, so a panel that hides or moves
+    // focus would loop with it.
+    bool panelShown(WidgetTester tester) => tester
+        .widget<Visibility>(find.descendant(of: find.byType(TvPlayerPanel), matching: find.byType(Visibility)).first)
+        .visible;
+
+    /// Counts chrome show/hide transitions from now on.
+    ({int Function() shows, int Function() hides}) countChrome() {
+      var shows = 0, hides = 0;
+      var visible = stand.chrome.controlsVisible;
+      stand.chrome.addListener(() {
+        if (stand.chrome.controlsVisible == visible) return;
+        visible = stand.chrome.controlsVisible;
+        visible ? shows++ : hides++;
+      });
+      return (shows: () => shows, hides: () => hides);
+    }
+
+    /// Over 120 frames: the panel stays invisible, the chrome does not flip,
+    /// focus stays on the prompt.
+    Future<void> expectYieldsSteadily(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      final counts = countChrome();
+      for (var i = 0; i < 120; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(panelShown(tester), isFalse, reason: 'frame $i: panel invisible');
+        expect(focused(), stand.playNextFocusNode.debugLabel, reason: 'frame $i: focus on the prompt');
+      }
+      expect(counts.shows(), 0);
+      expect(counts.hides(), 0);
+      expect(stand.chrome.contentStripVisible, isFalse);
+    }
+
+    Future<void> closePromptAndExpectNormal(WidgetTester tester, Widget closed) async {
+      stand.playNextFocusNode.unfocus();
+      await tester.pumpWidget(stand.host(closed));
+      await tester.pumpAndSettle();
+      if (!stand.chrome.controlsVisible) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await tester.pumpAndSettle();
+      }
+      expect(stand.chrome.controlsVisible, isTrue);
+      expect(panelShown(tester), isTrue);
+      expect(focused(), startsWith('TvPlayer.'), reason: 'the panel takes focus again');
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(focused(), label(TvPlayerPanelElement.subtitles));
+    }
+
+    testWidgets('R11a: play next opening while the panel is up: panel invisible, prompt keeps focus', (tester) async {
       await stand.pumpControls(tester, stand.controls(metadata: TvPlayerStand.episode()));
       expect(focused(), label(TvPlayerPanelElement.bar));
-      stand.chrome.hold(PlayerChromeHold.promptInteraction);
-
+      stand.chrome.setContentStripVisible(true);
+      WidgetsBinding.instance.addPostFrameCallback((_) => stand.playNextFocusNode.requestFocus());
       await tester.pumpWidget(stand.host(stand.controls(metadata: TvPlayerStand.episode(), playNextPromptOpen: true)));
-      stand.playNextFocusNode.requestFocus();
-      await tester.pumpAndSettle();
+      await expectYieldsSteadily(tester);
+      expect(stand.chrome.controlsVisible, isTrue, reason: 'the prompt holds the chrome; the panel does not hide it');
 
-      expect(stand.chrome.controlsVisible, isFalse);
-      expect(stand.chrome.contentStripVisible, isFalse);
-      expect(stand.playNextFocusNode.hasPrimaryFocus, isTrue);
-      stand.chrome.release(PlayerChromeHold.promptInteraction);
+      await closePromptAndExpectNormal(tester, stand.controls(metadata: TvPlayerStand.episode()));
       await stand.unmount(tester);
     });
 
-    testWidgets('R11a: "still watching" (playbackPromptOpen) hides the panel and keeps focus on Continue', (tester) async {
+    testWidgets('R11a: "still watching" (playbackPromptOpen) while up: panel invisible, Continue keeps focus', (
+      tester,
+    ) async {
       await stand.pumpControls(tester, stand.controls());
-      expect(focused(), label(TvPlayerPanelElement.bar));
-      // As _showStillWatchingDialog: Continue is focused in a post-frame
-      // callback registered before the rebuild; no node goes in the args.
       final continueNode = stand.playNextFocusNode;
       WidgetsBinding.instance.addPostFrameCallback((_) => continueNode.requestFocus());
       await tester.pumpWidget(stand.host(stand.controls(playbackPromptOpen: true)));
-      await tester.pumpAndSettle();
-      expect(stand.chrome.controlsVisible, isFalse);
-      expect(continueNode.hasPrimaryFocus, isTrue, reason: 'focus stays on the prompt');
+      await expectYieldsSteadily(tester);
+
+      // Keys go to the prompt, not the panel.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(focused(), continueNode.debugLabel);
+
+      await closePromptAndExpectNormal(tester, stand.controls());
       await stand.unmount(tester);
     });
 
-    testWidgets('R11a: play next focused post-frame keeps focus after the yield', (tester) async {
+    testWidgets('R11a: shown while a prompt is open (EOF show + cancelAutoHide) the panel stays out', (tester) async {
       await stand.pumpControls(tester, stand.controls(metadata: TvPlayerStand.episode()));
+      await hide(tester);
       WidgetsBinding.instance.addPostFrameCallback((_) => stand.playNextFocusNode.requestFocus());
       await tester.pumpWidget(stand.host(stand.controls(metadata: TvPlayerStand.episode(), playNextPromptOpen: true)));
-      await tester.pumpAndSettle();
-      expect(stand.chrome.controlsVisible, isFalse);
-      expect(stand.playNextFocusNode.hasPrimaryFocus, isTrue);
-      await stand.unmount(tester);
-    });
-
-    testWidgets('R11a: the panel shown while a prompt is open yields to it', (tester) async {
-      await stand.pumpControls(tester, stand.controls(metadata: TvPlayerStand.episode()));
-      WidgetsBinding.instance.addPostFrameCallback((_) => stand.playNextFocusNode.requestFocus());
-      await tester.pumpWidget(stand.host(stand.controls(metadata: TvPlayerStand.episode(), playNextPromptOpen: true)));
-      await tester.pumpAndSettle();
-      expect(stand.chrome.controlsVisible, isFalse);
+      await tester.pump();
+      await tester.pump();
 
       // As _listenToCompleted at EOF: show and cancel auto-hide.
       stand.chrome.show();
       stand.chrome.cancelAutoHide();
-      await tester.pumpAndSettle();
-      expect(stand.chrome.controlsVisible, isFalse);
-      expect(stand.playNextFocusNode.hasPrimaryFocus, isTrue);
+      await expectYieldsSteadily(tester);
+
+      await closePromptAndExpectNormal(tester, stand.controls(metadata: TvPlayerStand.episode()));
       await stand.unmount(tester);
     });
 
-    testWidgets('R11a: show and a prompt in the same frame yield and drop the pause flag', (tester) async {
+    testWidgets('R11a: show and a prompt in the same frame drop the pause flag and stay out', (tester) async {
       await stand.pumpControls(tester, stand.controls());
       await hide(tester);
       session().focusPlayOnNextShow = true;
@@ -196,10 +237,10 @@ void main() {
       WidgetsBinding.instance.addPostFrameCallback((_) => continueNode.requestFocus());
       stand.chrome.show();
       await tester.pumpWidget(stand.host(stand.controls(playbackPromptOpen: true)));
-      await tester.pumpAndSettle();
-      expect(stand.chrome.controlsVisible, isFalse);
+      await expectYieldsSteadily(tester);
       expect(session().focusPlayOnNextShow, isFalse);
-      expect(continueNode.hasPrimaryFocus, isTrue);
+
+      await closePromptAndExpectNormal(tester, stand.controls());
       await stand.unmount(tester);
     });
   });
@@ -487,6 +528,25 @@ void main() {
 
       await press(tester, LogicalKeyboardKey.gameButtonB);
       expect(stand.chrome.controlsVisible, isFalse);
+      expect(stand.exitCalls, 0);
+      await stand.unmount(tester);
+    });
+
+    testWidgets('Back held on the icons near auto-hide never leaves the player', (tester) async {
+      await stand.pumpControls(tester, stand.controls());
+      stand.player.setPlaying(true);
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      stand.chrome.restartAutoHideForCurrentPlaybackState();
+      await tester.pump(const Duration(milliseconds: 4900));
+      expect(stand.chrome.controlsVisible, isTrue);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.gameButtonB);
+      // Past the original 5 s deadline while Back is down.
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(stand.chrome.controlsVisible, isTrue, reason: 'Back down restarts auto-hide');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.gameButtonB);
+      await tester.pumpAndSettle();
+      expect(focused(), label(TvPlayerPanelElement.bar));
       expect(stand.exitCalls, 0);
       await stand.unmount(tester);
     });
