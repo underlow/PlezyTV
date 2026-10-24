@@ -9,8 +9,7 @@ extension _PlexVideoControlsNavigationMethods on _PlexVideoControlsState {
     );
     final useDpad = playerDirectionalNavigationEnabled();
 
-    return _holdChromeWhilePressed(
-      child: DesktopVideoControls(
+    final plezy = DesktopVideoControls(
         key: _desktopControlsKey,
         player: widget.player,
         volumeController: widget.volumeController,
@@ -57,8 +56,9 @@ extension _PlexVideoControlsNavigationMethods on _PlexVideoControlsState {
           widget.chromeController.setContentStripVisible(visible);
         },
         chromeController: widget.chromeController,
-      ),
-    );
+      );
+    final tv = TvUi.playerPanel(context, TvPlayerPanelArgs(plezy: plezy, canControl: widget.canControl, canNavigateMediaItems: widget.canNavigateMediaItems, playbackPromptOpen: widget.playbackPromptOpen, playNextFocusNode: widget.playNextFocusNode, isOfflinePlayback: widget.isOfflinePlayback, skipMarkerFocusNode: _skipMarkerFocusNode), isLive: widget.isLive);
+    return _holdChromeWhilePressed(child: tv ?? plezy);
   }
 
   void _onQueueItemSelected(MediaItem item) {

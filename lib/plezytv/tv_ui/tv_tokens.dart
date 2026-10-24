@@ -122,4 +122,42 @@ abstract final class TvTokens {
     sidebarExpand: 180,
     curve: "easeOutCubic",
   );
+
+  /// Player panel (S9). `postplay` belongs to S14 and is not mirrored yet.
+  ///
+  /// Mirrored but unused — Plezy owns this behaviour: `seekSteps`,
+  /// `seekAccelEvery`, `seekCommitDelay` (stepped seek), `skipButtonHide`
+  /// (skip-marker timers), `upNextCountdown` / `upNextBeforeEnd` (play-next).
+  static const player = (
+    autoHide: 5000,
+    panelFade: 200,
+    pausedIndicatorHide: 300000,
+    focusResetAfter: 30000,
+    seekSteps: [10, 30, 60, 120],
+    seekAccelEvery: 1500,
+    seekCommitDelay: 1500,
+    skipButtonHide: 8000,
+    upNextCountdown: 15,
+    upNextBeforeEnd: 30,
+    shadeTop: (h: 260, from: Color(0xB3000000), to: Color(0x00000000)),
+    shadeBottom: (h: 420, stops: [Color(0xD9000000), Color(0xA6000000), Color(0x00000000)]),
+    bar: (
+      x: 300,
+      w: 1380,
+      y: 963,
+      h: 6,
+      focusedH: 10,
+      track: Color(0x33FFFFFF),
+      buffered: Color(0x59FFFFFF),
+      seekRange: Color(0x66E5A00D),
+      thumb: 28,
+      chapterTick: 3,
+    ),
+    controls: (playX: 96, rowY: 932, iconsY: 840, iconsX: [1600, 1680, 1760], elapsedX: 184, hintY: 1000),
+    seekPreview: (w: 320, h: 180, bubbleH: 44),
+    rightPanel: (w: 600, bg: Color(0xF21A1C21), padTop: 54, padLeft: 48, padRight: 96, itemMinH: 80),
+    miniPause: (h: 56, bg: Color(0xA6000000)),
+    upNextCard: (w: 720, thumbW: 288, thumbH: 162, bg: Color(0xF21A1C21), radius: 16),
+    subtitles: (size: 40, lineHeight: 52, bottom: 120, outline: Color(0xFF000000)),
+  );
 }

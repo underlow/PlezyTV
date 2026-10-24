@@ -14,7 +14,8 @@ void main() {
   test('A1 every mirrored token equals the design source read at test time', () {
     final source = jsonDecode(File('docs/design/tokens.json').readAsStringSync()) as Map<String, dynamic>;
     source.remove(r'$comment');
-    source.remove('player');
+    (source['player'] as Map<String, dynamic>).remove('postplay');
+    const pl = TvTokens.player;
     final actual = {
       "color": {
         "bg": {
@@ -248,6 +249,63 @@ void main() {
         "heroDebounce": TvTokens.motion.heroDebounce,
         "sidebarExpand": TvTokens.motion.sidebarExpand,
         "curve": TvTokens.motion.curve,
+      },
+      "player": {
+        "autoHide": pl.autoHide,
+        "panelFade": pl.panelFade,
+        "pausedIndicatorHide": pl.pausedIndicatorHide,
+        "focusResetAfter": pl.focusResetAfter,
+        "seekSteps": pl.seekSteps,
+        "seekAccelEvery": pl.seekAccelEvery,
+        "seekCommitDelay": pl.seekCommitDelay,
+        "skipButtonHide": pl.skipButtonHide,
+        "upNextCountdown": pl.upNextCountdown,
+        "upNextBeforeEnd": pl.upNextBeforeEnd,
+        "shadeTop": {"h": pl.shadeTop.h, "from": rgba(pl.shadeTop.from), "to": rgba(pl.shadeTop.to)},
+        "shadeBottom": {"h": pl.shadeBottom.h, "stops": pl.shadeBottom.stops.map(rgba).toList()},
+        "bar": {
+          "x": pl.bar.x,
+          "w": pl.bar.w,
+          "y": pl.bar.y,
+          "h": pl.bar.h,
+          "focusedH": pl.bar.focusedH,
+          "track": rgba(pl.bar.track),
+          "buffered": rgba(pl.bar.buffered),
+          "seekRange": rgba(pl.bar.seekRange),
+          "thumb": pl.bar.thumb,
+          "chapterTick": pl.bar.chapterTick,
+        },
+        "controls": {
+          "playX": pl.controls.playX,
+          "rowY": pl.controls.rowY,
+          "iconsY": pl.controls.iconsY,
+          "iconsX": pl.controls.iconsX,
+          "elapsedX": pl.controls.elapsedX,
+          "hintY": pl.controls.hintY,
+        },
+        "seekPreview": {"w": pl.seekPreview.w, "h": pl.seekPreview.h, "bubbleH": pl.seekPreview.bubbleH},
+        "rightPanel": {
+          "w": pl.rightPanel.w,
+          "bg": rgba(pl.rightPanel.bg),
+          "padTop": pl.rightPanel.padTop,
+          "padLeft": pl.rightPanel.padLeft,
+          "padRight": pl.rightPanel.padRight,
+          "itemMinH": pl.rightPanel.itemMinH,
+        },
+        "miniPause": {"h": pl.miniPause.h, "bg": rgba(pl.miniPause.bg)},
+        "upNextCard": {
+          "w": pl.upNextCard.w,
+          "thumbW": pl.upNextCard.thumbW,
+          "thumbH": pl.upNextCard.thumbH,
+          "bg": rgba(pl.upNextCard.bg),
+          "radius": pl.upNextCard.radius,
+        },
+        "subtitles": {
+          "size": pl.subtitles.size,
+          "lineHeight": pl.subtitles.lineHeight,
+          "bottom": pl.subtitles.bottom,
+          "outline": rgba(pl.subtitles.outline),
+        },
       },
     };
     expect(actual, source);
