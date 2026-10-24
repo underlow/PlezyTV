@@ -17,6 +17,9 @@ import 'package:plezy/media/media_library.dart';
 import 'package:plezy/navigation/main_screen_scope.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_alpha_column.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_tabs.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_paged_grid.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
@@ -144,6 +147,40 @@ void main() {
       ),
     );
     return key;
+  }
+
+  for (final shellInset in [0.0, TvTokens.size.sidebar.collapsedW.toDouble()]) {
+    testWidgets('library edges align at x=200 with shell inset $shellInset', (tester) async {
+      final client = FakeMediaServerClient()..items = [movie(0)];
+      client.hubs = [
+        MediaHub(id: 'a', title: 'First row', type: 'movie', items: [movie(0)]),
+        MediaHub(id: 'b', title: 'Second row', type: 'movie', items: [movie(1)]),
+      ];
+      final c = make(client);
+      await pumpTvWidget(
+        tester,
+        MainScreenFocusScope(
+          focusSidebar: () {},
+          sideNavigationWidth: shellInset,
+          foregroundLeft: shellInset,
+          child: Padding(
+            padding: EdgeInsets.only(left: shellInset),
+            child: TvLibraryScreen(controller: c),
+          ),
+        ),
+      );
+      await settle(tester);
+      expect(tester.getTopLeft(find.text('Movies')).dx, 200);
+      expect(tester.getTopLeft(find.byType(TvTabs)).dx, 200);
+      expect(tester.getTopLeft(find.byType(TvPoster).first).dx, 200);
+      await c.select(tab: 'recommended');
+      await settle(tester);
+      expect(tester.getTopLeft(find.text('First row')).dx, 200);
+      expect(tester.getTopLeft(find.text('Second row')).dx, 200);
+      expect(tester.getTopLeft(find.byType(TvPoster).first).dx, 200);
+      final rows = find.byType(TvHorizontalRow);
+      expect(tester.getTopLeft(rows.at(1)).dy - tester.getBottomLeft(rows.at(0)).dy, TvTokens.space.rowGap);
+    });
   }
 
   testWidgets('A21: real header immediately; skeleton only after 300ms; data focuses first card', (tester) async {
@@ -306,7 +343,7 @@ void main() {
     final c = make(client);
     await mount(tester, c);
     await settle(tester);
-    expect(find.text('Default · 300'), findsOneWidget);
+    expect(find.text('Title · 300'), findsOneWidget);
     client.onPage = (_) async => LibraryPage(items: [movie(2)], totalCount: 1);
     await c.select(
       filters: const [
@@ -315,7 +352,7 @@ void main() {
     );
     await settle(tester);
     expect(find.text('Filters · 1'), findsOneWidget);
-    expect(find.text('Default · 1'), findsOneWidget);
+    expect(find.text('Title · 1'), findsOneWidget);
   });
 
   testWidgets('A10/A11: held down traverses 300+ slots; Back goes to start then bubbles', (tester) async {
@@ -586,7 +623,7 @@ void main() {
       client.onPage = (_) async => LibraryPage(items: [movie(40)], totalCount: 1);
       await press(tester, LogicalKeyboardKey.select);
       expect(c.alphaPrefix, 'A');
-      expect(find.text('Default · 1'), findsOneWidget);
+      expect(find.text('Title · 1'), findsOneWidget);
       expect(focus, 'TV grid 0');
       expect(client.queries.last.nameStartsWith, 'A');
     });

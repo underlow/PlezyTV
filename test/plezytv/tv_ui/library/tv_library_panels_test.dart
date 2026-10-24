@@ -62,7 +62,8 @@ void main() {
   testWidgets('A16: sort default direction, panel refresh, Back anchor and Down first item', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0), movie(1)];
     final c = await mount(tester, client);
-    await button(tester, TvStrings.defaultSort);
+    expect(find.text('Title · 2'), findsOneWidget);
+    await button(tester, 'Title');
     expect(
       find.descendant(of: find.byKey(const ValueKey('ascending')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
@@ -81,6 +82,7 @@ void main() {
       find.descendant(of: find.byKey(const ValueKey('direction')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
     );
+    expect(find.text('Added · 2'), findsOneWidget);
     expect(c.preferences.descending, isTrue);
     expect(client.queries.last.sort?.field, 'addedAt');
     expect(find.byType(TvRightPanel), findsOneWidget);
@@ -157,7 +159,7 @@ void main() {
     await settle(tester);
     expect(c.folders.length, 2);
     expect(focus, 'Folder row 0');
-    await button(tester, TvStrings.defaultSort);
+    await button(tester, 'Title');
     final level = c.folders.last;
     await c.refresh();
     await settle(tester);
@@ -243,7 +245,7 @@ void main() {
   testWidgets('grouping page switches grid to folders and reset restores defaults', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0)];
     final c = await mount(tester, client);
-    await button(tester, TvStrings.defaultSort);
+    await button(tester, 'Title');
     await activate(tester, 'grouping');
     await activate(tester, 'group:folders');
     expect(c.grouping, 'folders');

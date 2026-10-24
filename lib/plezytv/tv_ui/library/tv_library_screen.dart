@@ -513,7 +513,11 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
         color: TvTokens.color.bg.base,
         child: Padding(
           padding: EdgeInsets.only(
-            left: px(TvTokens.space.contentLeft),
+            // The shell already reserves its sidebar; routes have no shell offset.
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
             top: px(54),
             right: px(c.grouping == 'episodes' ? 24 : 96),
           ),
@@ -527,7 +531,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
                   ),
                   TvButton(
                     label:
-                        '${c.selectedSort?.title ?? TvStrings.defaultSort}${c.totalCount == null ? '' : ' · ${c.totalCount}'}',
+                        '${c.effectiveSort?.title ?? TvStrings.defaultSort}${c.totalCount == null ? '' : ' · ${c.totalCount}'}',
                     focusNode: _sort,
                     icon: Icons.swap_vert,
                     variant: TvButtonVariant.secondary,
