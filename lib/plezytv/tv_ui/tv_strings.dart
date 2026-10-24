@@ -43,7 +43,8 @@ abstract final class TvStrings {
   static const playerUpNextInQueue = 'Up next in queue';
   static const playerPanel = 'Panel';
   static String playerQueueNow(int remainingMs) => remainingMs > 0 ? 'Now · ${left(remainingMs)}' : 'Now';
-  static String playerQueueMore({required int? season, required int count}) {
+  static String playerQueueMore({required int count}) => '$count more';
+  static String playerQueueMoreEpisodes({required int? season, required int count}) {
     final more = '$count more ${count == 1 ? 'episode' : 'episodes'}';
     return season == null ? more : 'Season $season · $more';
   }

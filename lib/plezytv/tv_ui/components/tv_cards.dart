@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../../../focus/input_mode_tracker.dart';
@@ -87,6 +89,8 @@ class TvEpisode extends StatelessWidget {
     this.onFocusChange,
     this.externalFocus,
     this.caption,
+    this.progress,
+    this.blurThumbnail = false,
   });
 
   /// Visual-only mode for containers that already own focus (paged grids).
@@ -97,6 +101,12 @@ class TvEpisode extends StatelessWidget {
 
   /// Replaces the progress or duration line (the player queue's current item).
   final String? caption;
+
+  /// Replaces the stored progress on the bar (0–1; the playing item).
+  final double? progress;
+
+  /// Blurs the thumbnail (Plezy's hide spoilers).
+  final bool blurThumbnail;
   final bool onServer, disabled, autofocus;
   final FocusNode? focusNode;
   final VoidCallback? onSelect, onLongPress;
@@ -119,6 +129,8 @@ class TvEpisode extends StatelessWidget {
               ? ''
               : formatDurationTextual(item.durationMs!)),
       episode: true,
+      progress: progress,
+      blurThumbnail: blurThumbnail,
       client: client,
       localFilePath: localFilePath,
       onServer: onServer,
@@ -140,6 +152,8 @@ class _MediaCard extends StatefulWidget {
     required this.title,
     required this.caption,
     this.episode = false,
+    this.progress,
+    this.blurThumbnail = false,
     this.client,
     this.localFilePath,
     required this.onServer,
@@ -157,7 +171,8 @@ class _MediaCard extends StatefulWidget {
   final MediaItem item;
   final Size dimensions;
   final String title, caption;
-  final bool episode, onServer, disabled, autofocus;
+  final bool episode, onServer, disabled, autofocus, blurThumbnail;
+  final double? progress;
   final MediaServerClient? client;
   final String? localFilePath;
   final FocusNode? focusNode;
@@ -209,10 +224,18 @@ class _MediaCardState extends State<_MediaCard> {
             fit: StackFit.expand,
             children: [
               ColoredBox(color: TvTokens.color.surface.level2),
-              image,
+              if (widget.blurThumbnail)
+                ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), child: image)
+              else
+                image,
               TvMediaBadges(item: widget.item, onServer: widget.onServer),
-              if (widget.item.hasActiveProgress)
-                Positioned(left: 0, right: 0, bottom: 0, child: TvMediaProgress(item: widget.item)),
+              if (widget.progress != null || widget.item.hasActiveProgress)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: TvMediaProgress(item: widget.item, fraction: widget.progress),
+                ),
             ],
           ),
         ),
@@ -334,10 +357,13 @@ class TvMediaBadges extends StatelessWidget {
 }
 
 class TvMediaProgress extends StatelessWidget {
-  const TvMediaProgress({super.key, required this.item});
+  const TvMediaProgress({super.key, required this.item, this.fraction});
   final MediaItem item;
+
+  /// Overrides the stored offset (0–1).
+  final double? fraction;
   @override
-  Widget build(BuildContext context) => !item.hasActiveProgress
+  Widget build(BuildContext context) => fraction == null && !item.hasActiveProgress
       ? const SizedBox.shrink()
       : SizedBox(
           height: TvTheme.of(context).px(TvTokens.size.progressBar.h),
@@ -346,7 +372,7 @@ class TvMediaProgress extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: FractionallySizedBox(
-                widthFactor: item.viewOffsetMs! / item.durationMs!,
+                widthFactor: fraction ?? item.viewOffsetMs! / item.durationMs!,
                 heightFactor: 1,
                 child: ColoredBox(color: TvTokens.color.status.progressFill),
               ),
