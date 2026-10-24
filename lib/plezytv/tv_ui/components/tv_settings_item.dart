@@ -9,7 +9,7 @@ enum TvSettingsItemKind { standard, singleChoice, multipleChoice, toggle, page, 
 class TvSettingsItem extends StatelessWidget {
   const TvSettingsItem({
     super.key,
-    required this.icon,
+    this.icon,
     required this.title,
     required this.description,
     required this.value,
@@ -26,7 +26,7 @@ class TvSettingsItem extends StatelessWidget {
     this.onMoveDown,
   });
 
-  final IconData icon;
+  final IconData? icon;
   final String title, description, value;
 
   /// A reason disables activation while leaving the item focusable.
@@ -48,7 +48,8 @@ class TvSettingsItem extends StatelessWidget {
     final px = theme.px;
     final panel = kind != TvSettingsItemKind.standard;
     final choice = kind == TvSettingsItemKind.singleChoice || kind == TvSettingsItemKind.multipleChoice;
-    final checked = choice || kind == TvSettingsItemKind.toggle;
+    final checked =
+        choice || kind == TvSettingsItemKind.toggle || (kind == TvSettingsItemKind.reorder && onSelect != null);
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: px(TvTokens.size.settingsItem.maxW)),
       child: TvFocusable(
@@ -74,10 +75,17 @@ class TvSettingsItem extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: px(24)),
             child: Row(
               children: [
-                Icon(
-                  choice && selected ? Icons.check : icon,
-                  size: px(panel ? TvTokens.size.rightPanel.iconSize : TvTokens.size.settingsItem.iconSize),
-                  color: choice && selected ? TvTokens.color.accent.normal : TvTokens.color.text.primary,
+                SizedBox(
+                  width: px(panel ? TvTokens.size.rightPanel.iconSize : TvTokens.size.settingsItem.iconSize),
+                  child: choice
+                      ? (selected ? Icon(Icons.check, size: px(28), color: TvTokens.color.accent.normal) : null)
+                      : (icon == null
+                            ? null
+                            : Icon(
+                                icon,
+                                size: px(panel ? 28 : TvTokens.size.settingsItem.iconSize),
+                                color: TvTokens.color.text.primary,
+                              )),
                 ),
                 SizedBox(width: px(24)),
                 Expanded(
@@ -91,33 +99,37 @@ class TvSettingsItem extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: selected && checked ? theme.body.copyWith(fontWeight: FontWeight.w600) : theme.body,
                       ),
-                      Text(
-                        disabledReason ?? description,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.caption.copyWith(
-                          color: panel ? TvTokens.color.text.tertiary : TvTokens.color.text.secondary,
+                      if ((disabledReason ?? description).isNotEmpty)
+                        Text(
+                          disabledReason ?? description,
+                          maxLines: panel ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.caption.copyWith(
+                            color: panel ? TvTokens.color.text.tertiary : TvTokens.color.text.secondary,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
                 SizedBox(width: px(24)),
-                Flexible(
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.body.copyWith(color: TvTokens.color.text.secondary),
+                if (value.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: px(panel ? 180 : 360)),
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.body.copyWith(color: TvTokens.color.text.secondary),
+                      textAlign: TextAlign.right,
+                    ),
                   ),
-                ),
                 SizedBox(width: px(16)),
                 if (kind == TvSettingsItemKind.standard || kind == TvSettingsItemKind.page)
                   Icon(Icons.chevron_right, size: px(24), color: TvTokens.color.text.secondary),
-                if (kind == TvSettingsItemKind.toggle)
+                if (kind == TvSettingsItemKind.toggle || (kind == TvSettingsItemKind.reorder && onSelect != null))
                   Icon(
                     selected ? Icons.toggle_on : Icons.toggle_off,
-                    size: px(28),
+                    size: px(48),
                     color: selected ? TvTokens.color.accent.normal : TvTokens.color.text.secondary,
                   ),
                 if (kind == TvSettingsItemKind.reorder) ...[

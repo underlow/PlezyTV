@@ -7,6 +7,29 @@ import 'package:plezy/plezytv/tv_ui/components/tv_paged_grid.dart';
 import '../tv_theme_test_helper.dart';
 
 void main() {
+  testWidgets('focus overflow is visible on all grid edges, scrolling remains bounded', (tester) async {
+    final source = TvPagedSource<int>(loadPage: (o, n) async => const TvPage([0, 1, 2, 3, 4, 5], 6));
+    addTearDown(source.dispose);
+    await source.requestIndex(0);
+    await pumpTvWidget(
+      tester,
+      TvPagedGrid<int>(
+        source: source,
+        columns: 6,
+        cellWidth: 228,
+        cellHeight: 390,
+        itemBuilder: (_, i, item, focused) => Text('$i'),
+      ),
+    );
+    final grid = find.byType(GridView);
+    expect(tester.widget<GridView>(grid).clipBehavior, Clip.none);
+    final clip = tester.widget<ClipRect>(find.ancestor(of: grid, matching: find.byType(ClipRect)).first);
+    final bounds = clip.clipper!.getClip(const Size(1488, 800));
+    expect(bounds.contains(const Offset(-20, -20)), isTrue);
+    expect(bounds.contains(const Offset(1508, 820)), isTrue);
+    expect(bounds.contains(const Offset(0, -30)), isFalse);
+  });
+
   testWidgets('3000 slots: held down retains focus; sparse jump waits for load', (tester) async {
     final calls = <int>[];
     final destination = Completer<TvPage<int>>();

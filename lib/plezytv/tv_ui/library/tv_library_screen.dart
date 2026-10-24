@@ -74,6 +74,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   bool? _episodeGrid;
   bool _skeleton = false, _visible = true, _retrying = false, _opening = false;
   bool _wasLoading = true;
+  bool _entryFocusPending = true;
   bool _inGrid = false;
   String? _terminalState;
   int _selection = 0;
@@ -124,8 +125,9 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       _selection = c.generation;
       _position.value = 0;
     }
-    if (completed && c.grouping == 'folders' && _tabs.hasFocus) {
-      _after(() => _folders.currentState?.requestFocus());
+    if (completed && _entryFocusPending && c.grouping == 'folders') {
+      _entryFocusPending = false;
+      if (_tabs.hasFocus) _after(() => _folders.currentState?.requestFocus());
     }
     final terminal = tab != LibraryTabType.browse
         ? 'tab'
@@ -146,7 +148,8 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
         _grid.currentState?.focusedIndex != c.focusedIndex) {
       _after(() => _grid.currentState?.jumpTo(c.focusedIndex));
     }
-    if (completed && _ready && tab == LibraryTabType.browse) {
+    if (completed && _ready && _entryFocusPending && tab == LibraryTabType.browse) {
+      _entryFocusPending = false;
       final owner = FocusManager.instance.primaryFocus;
       final owned = _tabs.hasFocus || _action.hasFocus;
       _after(() {
@@ -260,6 +263,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
 
   Future<void> _selectTab(int index) async {
     if (tabs[index] == tab) return;
+    _entryFocusPending = false;
     await c.select(tab: tabs[index].name);
     if (mounted) _changed();
   }
@@ -465,6 +469,8 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
           onUp: _focusTabs,
           onLeft: _sidebar,
           ownsTabFocus: () => _tabs.hasFocus,
+          autoFocusOnLoad: _entryFocusPending,
+          onLoaded: () => _entryFocusPending = false,
         ),
       );
     } else if (c.grouping == 'folders') {

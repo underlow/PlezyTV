@@ -159,7 +159,7 @@ void main() {
     tester.widget<TvButton>(button).onSelect!();
     await settle(tester);
     await activate(tester, 'manage');
-    await activate(tester, 'hidden:${library.globalKey}');
+    await activate(tester, 'order:${library.globalKey}');
     await press(tester, LogicalKeyboardKey.escape);
     await press(tester, LogicalKeyboardKey.escape);
     expect(tester.widget<TvLibraryScreen>(find.byType(TvLibraryScreen)).controller, same(controller));
@@ -182,7 +182,7 @@ void main() {
     addTearDown(hidden.dispose);
     final anchor = await mount(tester, FakeMediaServerClient(), libraries: libraries, hidden: hidden);
     await activate(tester, 'manage');
-    await activate(tester, 'hidden:${library.globalKey}');
+    await activate(tester, 'order:${library.globalKey}');
     expect(hidden.hiddenLibraryKeys, contains(library.globalKey));
     expect(find.text('menu:2'), findsOneWidget);
     expect(find.byType(TvRightPanel), findsOneWidget);
@@ -190,7 +190,7 @@ void main() {
     row.onMoveDown!();
     await settle(tester);
     expect(libraries.libraries.map((l) => l.id), ['2', '1']);
-    await activate(tester, 'hidden:${library.globalKey}');
+    await activate(tester, 'order:${library.globalKey}');
     expect(find.text('menu:2,1'), findsOneWidget);
     await press(tester, LogicalKeyboardKey.escape);
     await press(tester, LogicalKeyboardKey.escape);

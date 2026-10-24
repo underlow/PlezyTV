@@ -10,6 +10,8 @@ import 'package:plezy/utils/library_content_notifier.dart';
 import 'package:plezy/media/library_query.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
+import 'package:plezy/media/media_hub.dart';
+import 'package:plezy/media/media_playlist.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/media_library.dart';
 import 'package:plezy/navigation/main_screen_scope.dart';
@@ -161,6 +163,85 @@ void main() {
     expect(focus, 'TV grid 0');
   });
 
+  for (final moveToHeader in [false, true]) {
+    testWidgets('V5 saved Recommended first entry, header=$moveToHeader', (tester) async {
+      final gate = Completer<List<MediaHub>>();
+      final client = FakeMediaServerClient()..hubsPending = gate.future;
+      final c = TvLibraryController(
+        library: library,
+        client: client,
+        store: TvMemoryLibraryPreferences(seed: TvLibraryPreferences(tab: 'recommended')),
+      );
+      addTearDown(c.dispose);
+      await mount(tester, c);
+      await settle(tester);
+      expect(find.byType(TvPosterSkeleton), findsNWidgets(12));
+      if (moveToHeader) await press(tester, LogicalKeyboardKey.arrowUp);
+      final owner = FocusManager.instance.primaryFocus;
+      gate.complete([
+        MediaHub(id: 'h', title: 'Hub', type: 'movie', items: [movie(0)]),
+      ]);
+      await settle(tester);
+      if (moveToHeader) {
+        expect(FocusManager.instance.primaryFocus, same(owner));
+        expect(focus, 'Library sort');
+      } else {
+        expect(FocusManager.instance.primaryFocus, isNot(same(owner)));
+        expect(find.byType(TvPoster), findsOneWidget);
+      }
+    });
+  }
+
+  testWidgets('V5 slow Recommended tab load keeps selected tab focus', (tester) async {
+    final gate = Completer<List<MediaHub>>();
+    final client = FakeMediaServerClient()
+      ..items = [movie(0)]
+      ..hubsPending = gate.future;
+    final c = make(client);
+    await mount(tester, c);
+    await settle(tester);
+    await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
+    expect(c.preferences.tab, 'recommended');
+    await tester.pump(const Duration(milliseconds: 301));
+    final owner = FocusManager.instance.primaryFocus;
+    expect(find.byType(TvPosterSkeleton), findsNWidgets(12));
+    gate.complete([
+      MediaHub(id: 'h', title: 'Hub', type: 'movie', items: [movie(1)]),
+    ]);
+    await settle(tester);
+    expect(FocusManager.instance.primaryFocus, same(owner));
+  });
+
+  testWidgets('V5 loaded tab switches retain tab focus in both directions', (tester) async {
+    final client = FakeMediaServerClient()
+      ..items = [movie(0)]
+      ..collections = [movie(1)]
+      ..hubs = [
+        MediaHub(id: 'h', title: 'Hub', type: 'movie', items: [movie(2)]),
+      ]
+      ..playlists = [
+        const MediaPlaylist(id: 'p', backend: MediaBackend.jellyfin, title: 'Playlist', playlistType: 'video'),
+      ];
+    final c = make(client);
+    await mount(tester, c);
+    await settle(tester);
+    expect(focus, 'TV grid 0');
+    await press(tester, LogicalKeyboardKey.arrowUp);
+    for (final key in [
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowLeft,
+    ]) {
+      await press(tester, key);
+      await settle(tester);
+      expect(focus, isNot(startsWith('TV grid')));
+      expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library tabs'), isTrue);
+    }
+  });
+
   testWidgets('fast data skips skeleton; moving to header during loading retains header focus', (tester) async {
     final page = Completer<LibraryPage<MediaItem>>();
     final c = make(FakeMediaServerClient()..onPage = (_) => page.future);
@@ -214,7 +295,6 @@ void main() {
     await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(c.preferences.tab, 'browse');
     expect(sidebar, 0);
-    await press(tester, LogicalKeyboardKey.arrowUp);
     await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(c.preferences.tab, 'recommended');
     await press(tester, LogicalKeyboardKey.arrowLeft);

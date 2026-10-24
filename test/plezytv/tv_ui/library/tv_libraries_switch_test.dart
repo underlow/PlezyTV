@@ -192,7 +192,7 @@ void main() {
     await settle(tester);
     expect(find.byType(TvRightPanel), findsOneWidget);
     expect(find.text(t.libraries.manageLibraries), findsWidgets);
-    expect(find.byKey(ValueKey('hidden:${video.globalKey}')), findsOneWidget);
+    expect(find.byKey(ValueKey('order:${video.globalKey}')), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await settle(tester);
     expect(find.byType(TvRightPanel), findsNothing);

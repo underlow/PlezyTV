@@ -8,6 +8,7 @@ abstract final class TvStrings {
   static const homeEmpty = 'Nothing here yet';
   static const refresh = 'Refresh';
   static const libraryReorderHint = 'Left: move up · Right: move down';
+  static const ascending = 'Ascending';
   static const descending = 'Descending';
   static const exclude = 'Exclude';
   static const folderEmpty = 'Folder is empty';

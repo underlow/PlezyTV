@@ -32,7 +32,7 @@ void main() {
                         icon: Icons.settings,
                         title: 'Child',
                         description: '',
-                        value: '',
+                        value: 'Current',
                         kind: TvSettingsItemKind.page,
                         onSelect: () => TvRightPanel.of(context).push(
                           TvRightPanelPage(
@@ -71,10 +71,17 @@ void main() {
     expect(tester.getSize(find.byType(TvRightPanel)).width, 1920);
     expect(tester.getSize(find.byType(IndexedStack)).width, 600);
     expect(anchor.hasFocus, isFalse);
+    expect(tester.getTopLeft(find.text('Root')), const Offset(1368, 60));
+    final rowRect = tester.getRect(find.byKey(const ValueKey('child')));
+    expect(rowRect.left, 1368);
+    expect(rowRect.right, 1872);
+    expect(tester.getRect(find.text('Current')).right, 1808);
+    expect(tester.getCenter(find.text('Child')).dy, closeTo(rowRect.center.dy, 0.01));
     final parentFocus = FocusManager.instance.primaryFocus;
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(find.text('‹ Child'), findsOneWidget);
+    expect(find.byIcon(Icons.circle_outlined), findsNothing);
     final choiceFocus = FocusManager.instance.primaryFocus;
     expect(choiceFocus, isNot(same(parentFocus)));
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
