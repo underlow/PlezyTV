@@ -381,9 +381,11 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
     }
+    // Menu-only entry: the screen itself never shows Plezy's "Rate" action.
+    expect(find.text(t.mediaMenu.rate), findsNothing, reason: 'menu is closed before OK');
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.text(t.tooltips.markAsWatched), findsWidgets, reason: 'Plezy movie menu is open');
+    expect(find.text(t.mediaMenu.rate), findsOneWidget, reason: 'Plezy movie menu is open');
   });
 
   testWidgets('A5 version segment follows the MultiServerProvider reachability check', (tester) async {
