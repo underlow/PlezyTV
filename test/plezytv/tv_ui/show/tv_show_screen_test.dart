@@ -80,6 +80,100 @@ String focusedEpisode(WidgetTester tester) =>
     tester.widgetList<TvEpisode>(find.byType(TvEpisode)).firstWhere((e) => e.focusNode!.hasFocus).item.id;
 
 void main() {
+  testWidgets('season refresh remains coherent through hero timer and rebuild', (tester) async {
+    final client = fixture();
+    client.episodes['Season 2']!.add(media('third', MediaKind.episode, number: 2));
+    final c = await mount(tester, client, seasonId: 'Season 2');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    client.seasons = [client.seasons.last, client.seasons.first];
+    final pending = Completer<LibraryPage<MediaItem>>();
+    client.onPage = (key, start, size) => pending.future;
+    final refresh = c.refresh();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(c.seasons.first.id, 'Season 1');
+    expect(focusedEpisode(tester), 'third');
+    expect(tester.takeException(), null);
+    pending.complete(LibraryPage(items: client.episodes['Season 2']!, totalCount: 2));
+    await refresh;
+    await tester.pumpAndSettle();
+    expect(tabs(tester).selectedIndex, 1);
+    expect(focusedEpisode(tester), 'third');
+  });
+
+  testWidgets('flattening change retains old row until refreshed cache is ready', (tester) async {
+    final client = fixture();
+    final c = await mount(tester, client, seasonId: 'Season 2');
+    client.seasons = [client.seasons.first];
+    final pending = Completer<LibraryPage<MediaItem>>();
+    client.onPage = (_, _, _) => pending.future;
+    final refresh = c.refresh();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(c.flattened, false);
+    expect(focusedEpisode(tester), 'second');
+    expect(tester.takeException(), null);
+    pending.complete(LibraryPage(items: client.episodes['Season 1']!, totalCount: 4));
+    await refresh;
+    await tester.pumpAndSettle();
+    expect(c.flattened, true);
+    expect(tabs(tester).selectedIndex, 0);
+    expect(tester.takeException(), null);
+  });
+
+  testWidgets('refresh under dialog restores deleted episode by its old index', (tester) async {
+    final client = fixture();
+    final c = await mount(tester, client, seasonId: 'Season 1', episodeId: 'e3');
+    final context = tester.element(find.byType(TvShowScreen));
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (_) => const AlertDialog(content: Text('Confirm')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    client.episodes['Season 1']!.removeWhere((e) => e.id == 'e3');
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm'), findsOneWidget);
+    Navigator.of(context).pop();
+    await tester.pumpAndSettle();
+    expect(focusedEpisode(tester), 'e4');
+    expect(tester.takeException(), null);
+  });
+
+  testWidgets('deleted remembered episode uses adjacent loaded item without scanning season', (tester) async {
+    final client = fixture();
+    client.episodes['Season 1'] = [for (var i = 0; i < 100; i++) media('ep$i', MediaKind.episode, number: i + 1)];
+    final c = await mount(tester, client, seasonId: 'Season 1', episodeId: 'ep2', pageSize: 10);
+    client.episodes['Season 1']!.removeAt(2);
+    client.calls.clear();
+    await c.refresh();
+    await tester.pumpAndSettle();
+    expect(focusedEpisode(tester), 'ep3');
+    expect(client.calls.where((call) => call.startsWith('page:')), ['page:Season 1:0']);
+  });
+
+  testWidgets('focus near row end during refresh retries paging after replacement', (tester) async {
+    final client = fixture();
+    client.episodes['Season 1'] = [for (var i = 0; i < 30; i++) media('ep$i', MediaKind.episode, number: i + 1)];
+    final c = await mount(tester, client, seasonId: 'Season 1', episodeId: 'ep3', pageSize: 10);
+    final pending = Completer<LibraryPage<MediaItem>>();
+    client.onPage = (key, start, size) => pending.future;
+    final refresh = c.refresh();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(focusedEpisode(tester), 'ep5');
+    client.onPage = null;
+    pending.complete(LibraryPage(items: client.episodes['Season 1']!.take(10).toList(), totalCount: 30));
+    await refresh;
+    await tester.pumpAndSettle();
+    expect(c.episodesFor('Season 1'), hasLength(20));
+    expect(focusedEpisode(tester), 'ep5');
+  });
+
   testWidgets('menu and deletion refresh preserve focused episode while replacement is pending', (tester) async {
     final client = fixture();
     final c = await mount(tester, client, seasonId: 'Season 1', episodeId: 'e3');
