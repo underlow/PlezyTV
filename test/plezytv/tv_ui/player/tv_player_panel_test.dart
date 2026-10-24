@@ -148,11 +148,58 @@ void main() {
       await stand.unmount(tester);
     });
 
-    testWidgets('R11a: "still watching" (playbackPromptOpen) hides the panel too', (tester) async {
+    testWidgets('R11a: "still watching" (playbackPromptOpen) hides the panel and keeps focus on Continue', (tester) async {
       await stand.pumpControls(tester, stand.controls());
+      expect(focused(), label(TvPlayerPanelElement.bar));
+      // As _showStillWatchingDialog: Continue is focused in a post-frame
+      // callback registered before the rebuild; no node goes in the args.
+      final continueNode = stand.playNextFocusNode;
+      WidgetsBinding.instance.addPostFrameCallback((_) => continueNode.requestFocus());
       await tester.pumpWidget(stand.host(stand.controls(playbackPromptOpen: true)));
       await tester.pumpAndSettle();
       expect(stand.chrome.controlsVisible, isFalse);
+      expect(continueNode.hasPrimaryFocus, isTrue, reason: 'focus stays on the prompt');
+      await stand.unmount(tester);
+    });
+
+    testWidgets('R11a: play next focused post-frame keeps focus after the yield', (tester) async {
+      await stand.pumpControls(tester, stand.controls(metadata: TvPlayerStand.episode()));
+      WidgetsBinding.instance.addPostFrameCallback((_) => stand.playNextFocusNode.requestFocus());
+      await tester.pumpWidget(stand.host(stand.controls(metadata: TvPlayerStand.episode(), playNextPromptOpen: true)));
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse);
+      expect(stand.playNextFocusNode.hasPrimaryFocus, isTrue);
+      await stand.unmount(tester);
+    });
+
+    testWidgets('R11a: the panel shown while a prompt is open yields to it', (tester) async {
+      await stand.pumpControls(tester, stand.controls(metadata: TvPlayerStand.episode()));
+      WidgetsBinding.instance.addPostFrameCallback((_) => stand.playNextFocusNode.requestFocus());
+      await tester.pumpWidget(stand.host(stand.controls(metadata: TvPlayerStand.episode(), playNextPromptOpen: true)));
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse);
+
+      // As _listenToCompleted at EOF: show and cancel auto-hide.
+      stand.chrome.show();
+      stand.chrome.cancelAutoHide();
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse);
+      expect(stand.playNextFocusNode.hasPrimaryFocus, isTrue);
+      await stand.unmount(tester);
+    });
+
+    testWidgets('R11a: show and a prompt in the same frame yield and drop the pause flag', (tester) async {
+      await stand.pumpControls(tester, stand.controls());
+      await hide(tester);
+      session().focusPlayOnNextShow = true;
+      final continueNode = stand.playNextFocusNode;
+      WidgetsBinding.instance.addPostFrameCallback((_) => continueNode.requestFocus());
+      stand.chrome.show();
+      await tester.pumpWidget(stand.host(stand.controls(playbackPromptOpen: true)));
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse);
+      expect(session().focusPlayOnNextShow, isFalse);
+      expect(continueNode.hasPrimaryFocus, isTrue);
       await stand.unmount(tester);
     });
   });
@@ -419,6 +466,26 @@ void main() {
       expect(stand.chrome.controlsVisible, isTrue, reason: 'acts on release');
       await tester.sendKeyUpEvent(LogicalKeyboardKey.gameButtonB);
       await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse);
+      expect(stand.exitCalls, 0);
+      await stand.unmount(tester);
+    });
+
+    testWidgets('Back on the icons moves to the bar; Back again hides the panel', (tester) async {
+      await stand.pumpControls(tester, stand.controls());
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(focused(), label(TvPlayerPanelElement.audio));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.gameButtonB);
+      await tester.pump();
+      expect(focused(), label(TvPlayerPanelElement.audio), reason: 'acts on release');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.gameButtonB);
+      await tester.pumpAndSettle();
+      expect(focused(), label(TvPlayerPanelElement.bar));
+      expect(stand.chrome.controlsVisible, isTrue);
+      expect(stand.exitCalls, 0);
+
+      await press(tester, LogicalKeyboardKey.gameButtonB);
       expect(stand.chrome.controlsVisible, isFalse);
       expect(stand.exitCalls, 0);
       await stand.unmount(tester);

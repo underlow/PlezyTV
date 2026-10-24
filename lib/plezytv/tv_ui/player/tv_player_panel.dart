@@ -10,9 +10,11 @@ import '../../../i18n/strings.g.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/stepped_seek.dart';
 import '../../../utils/formatters.dart';
+import '../../../utils/platform_detector.dart';
 import '../../../widgets/app_icon.dart';
 import '../../../widgets/video_controls/desktop_video_controls.dart';
 import '../../../widgets/video_controls/player_chrome_controller.dart';
+import '../../../widgets/video_controls/video_controls.dart' show PlayerNavigationKey, classifyPlayerNavigationKey, handlePlayerNavigationKeyAction;
 import '../../../widgets/video_controls/widgets/finish_time_builder.dart';
 import '../../../widgets/video_controls/widgets/play_pause_stream_builder.dart';
 import '../components/tv_button.dart';
@@ -104,6 +106,8 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
     _session.iconsFocusNode = _node(TvPlayerPanelElement.subtitles);
     _wasVisible = _chrome?.controlsVisible ?? true;
+    // A prompt already open is a state, not only a transition (R11a): the
+    // post-frame step yields to it instead of placing focus.
     if (_wasVisible) _schedulePlaceFocus();
   }
 
@@ -176,22 +180,38 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   /// R11a: a prompt (play next, still watching) took over — close and hide the
   /// panel even while something holds it, and leave the remote to the prompt.
   void _yieldToPrompt() {
+    // A pause flag must not send a later showing to play (R7).
+    _session.focusPlayOnNextShow = false;
     final chrome = _chrome;
     if (chrome == null) return;
     if (chrome.contentStripVisible) chrome.setContentStripVisible(false);
     if (!chrome.controlsVisible) return;
+    // The prompt focuses its own button (still watching: Continue) in a
+    // post-frame callback ahead of this one; that request lands in a
+    // microtask, so look after it. Hiding makes Plezy park focus on its
+    // surface: remember the holder to give it back. Play next is the fallback.
+    scheduleMicrotask(() {
+      if (mounted && _promptOpen && chrome.controlsVisible) _hideForPrompt(chrome);
+    });
+  }
+
+  void _hideForPrompt(PlayerChromeController chrome) {
+    final primary = FocusManager.instance.primaryFocus;
+    final prompt = primary != null && !_ownsFocusNode(primary) ? primary : widget.args.playNextFocusNode;
     chrome.hide(ignoreHolds: true);
-    final prompt = widget.args.playNextFocusNode;
     if (prompt == null) return;
-    // Hiding parks focus on Plezy's surface (and retries a frame later);
-    // give it back to the prompt after that.
+    // Plezy's surface claim retries a frame later; give focus back after that.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (prompt.context != null && !prompt.hasFocus) prompt.requestFocus();
+        if (prompt.context != null && prompt.canRequestFocus && !prompt.hasPrimaryFocus) prompt.requestFocus();
       });
       WidgetsBinding.instance.scheduleFrame();
     });
   }
+
+  /// Whether [node] is a panel element or Plezy's surface chain above it.
+  bool _ownsFocusNode(FocusNode node) =>
+      _nodes.values.contains(node) || _node(TvPlayerPanelElement.bar).ancestors.contains(node);
 
   /// Plezy parks the remote on its player surface (an ancestor of the panel)
   /// and, with the chrome up, hands it on through `_desktopControlsKey`, which
@@ -211,6 +231,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _placeFocusScheduled = false;
       if (!mounted || !(_chrome?.controlsVisible ?? true)) return;
+      if (_promptOpen) return _yieldToPrompt();
       // Within one showing, a reclaimed remote returns to where it was.
       _node(_focused ?? _initialFocus()).requestFocus();
     });
@@ -265,11 +286,30 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
   /// Play/Pause, ⏪/⏩ and Back pass on to Plezy (R2, R6, R22).
   KeyEventResult _onPanelKey(FocusNode _, KeyEvent event) {
     final key = event.logicalKey;
+    final back = _onIconsBack(event);
+    if (back != null) return back;
     if (key.isSelectKey || key.isDpadDirection) {
       if (event.isActionable) _activity();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  /// Latched for the whole press: the release lands on the bar.
+  bool _iconsOwnBackPress = false;
+
+  /// Back on the icons row moves to the bar (docs/design/player.md); a Back
+  /// elsewhere goes on to Plezy. Down is consumed, the move happens on release
+  /// (design §4), so the release neither hides the panel nor exits.
+  KeyEventResult? _onIconsBack(KeyEvent event) {
+    final navigationKey = classifyPlayerNavigationKey(event, isAppleTV: PlatformDetector.isAppleTV());
+    if (navigationKey == PlayerNavigationKey.none || navigationKey == PlayerNavigationKey.home) return null;
+    if (event is KeyDownEvent) {
+      _iconsOwnBackPress = _icons.any((element) => _node(element).hasPrimaryFocus);
+    }
+    if (!_iconsOwnBackPress) return null;
+    if (event is KeyUpEvent) _iconsOwnBackPress = false;
+    return handlePlayerNavigationKeyAction(event, navigationKey, () => _go(TvPlayerPanelElement.bar));
   }
 
   void _rowStep(TvPlayerPanelElement from, int delta) {
