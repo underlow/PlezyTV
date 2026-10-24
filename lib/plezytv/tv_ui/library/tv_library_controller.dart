@@ -74,6 +74,9 @@ class TvLibraryController extends ChangeNotifier {
   TvLibraryPreferences preferences = TvLibraryPreferences();
   List<MediaSort> sorts = const [];
   MediaSort? selectedSort;
+
+  /// Plezy marks the first server sort when no explicit sort is saved.
+  MediaSort? get effectiveSort => selectedSort ?? sorts.firstOrNull;
   LibraryFilterResult filterResult = LibraryFilterResult.empty;
   List<LibraryFirstCharacter> characters = const [];
   AlphaJumpHelper alphaHelper = AlphaJumpHelper(const []);

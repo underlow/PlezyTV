@@ -73,7 +73,7 @@ Future<void> showTvLibrarySort(BuildContext context, FocusNode anchor, TvLibrary
           'sort:${sort.key}',
           sort.title,
           () => unawaited(c.select(sort: sort)),
-          selected: c.selectedSort?.key == sort.key || (c.selectedSort == null && sort == c.sorts.first),
+          selected: c.effectiveSort?.key == sort.key,
         ),
       _row(
         'ascending',

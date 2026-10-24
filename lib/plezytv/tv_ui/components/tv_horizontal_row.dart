@@ -19,6 +19,7 @@ class TvHorizontalRow extends StatefulWidget {
     required this.cardWidth,
     required this.cardHeight,
     this.counter,
+    this.contentLeft,
     this.onFocusInsideChanged,
     this.itemKey,
     this.onItemFocused,
@@ -26,6 +27,8 @@ class TvHorizontalRow extends StatefulWidget {
        assert(cardWidth > 0),
        assert(cardHeight > 0);
 
+  /// Design-pixel inset; use zero inside an already padded content area.
+  final num? contentLeft;
   final String title;
   final String? counter;
   final int itemCount;
@@ -205,7 +208,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
   @override
   Widget build(BuildContext context) {
     final theme = TvTheme.of(context), px = TvTheme.of(context).px;
-    final left = px(TvTokens.space.contentLeft);
+    final left = px(widget.contentLeft ?? TvTokens.space.contentLeft);
     _extent = px(widget.cardWidth + TvTokens.space.cardGap);
     return FocusScope(
       node: _scope,

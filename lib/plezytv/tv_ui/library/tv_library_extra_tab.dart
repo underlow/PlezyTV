@@ -328,6 +328,7 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
       child: TvHorizontalRow(
         key: _rows[index],
         title: hub.title,
+        contentLeft: 0,
         counter: hub.size.toString(),
         itemCount: hub.items.length + (hub.more || hub.size > hub.items.length ? 1 : 0),
         itemKey: (i) => i == hub.items.length ? 'all' : hub.items[i].globalKey,
@@ -434,7 +435,14 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
     if (_recommended) {
       return SingleChildScrollView(
         controller: _scroll,
-        child: Column(children: [for (var i = 0; i < _hubs.length; i++) _rail(i)]),
+        child: Column(
+          children: [
+            for (var i = 0; i < _hubs.length; i++) ...[
+              _rail(i),
+              SizedBox(height: TvTheme.of(context).px(TvTokens.space.rowGap)),
+            ],
+          ],
+        ),
       );
     }
     final size = TvPosterSize.grid.dimensions;
