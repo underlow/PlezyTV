@@ -130,7 +130,7 @@ class TvRightPanelState extends State<TvRightPanel> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Padding(
-                            padding: EdgeInsets.all(px(TvTokens.space.lg)),
+                            padding: EdgeInsets.fromLTRB(px(48), px(60), px(48), px(24)),
                             child: Text('${i > 0 ? '‹ ' : ''}${_pages[i].title}', style: theme.title),
                           ),
                           Expanded(
@@ -140,11 +140,11 @@ class TvRightPanelState extends State<TvRightPanel> {
                                   (_pages[i].bodyBuilder == null
                                       ? null
                                       : Padding(
-                                          padding: EdgeInsets.all(px(TvTokens.space.lg)),
+                                          padding: EdgeInsets.symmetric(horizontal: px(48), vertical: px(8)),
                                           child: _pages[i].bodyBuilder!(context),
                                         )) ??
                                   SingleChildScrollView(
-                                    padding: EdgeInsets.all(px(TvTokens.space.lg)),
+                                    padding: EdgeInsets.symmetric(horizontal: px(48), vertical: px(8)),
                                     child: Column(children: _pages[i].itemsBuilder!(context)),
                                   ),
                             ),

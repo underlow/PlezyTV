@@ -147,31 +147,35 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
       alignment: Alignment.topLeft,
       child: SizedBox(
         width: px(widget.columns * widget.cellWidth + (widget.columns - 1) * widget.gap),
-        child: GridView.builder(
-          controller: _scroll,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: widget.columns,
-            mainAxisExtent: px(widget.cellHeight),
-            mainAxisSpacing: px(widget.gap),
-            crossAxisSpacing: px(widget.gap),
-          ),
-          itemCount: widget.source.totalCount ?? 0,
-          itemBuilder: (context, index) => _GridSlot<T>(
-            key: ValueKey((widget.source, index)),
-            source: widget.source,
-            index: index,
-            register: (node) => _nodes[index] = node,
-            unregister: () => _nodes.remove(index),
-            onKey: (event) => _key(index, event),
-            onFocus: () {
-              focusedIndex = index;
-              widget.onItemFocused?.call(index);
-            },
-            onSelect: () => widget.onSelect?.call(index),
-            onLongPress: () => widget.onLongPress?.call(index),
-            builder: widget.itemBuilder,
-            decorateFocus: widget.decorateFocus,
+        child: ClipRect(
+          clipper: _GridFocusClip(px(24)),
+          child: GridView.builder(
+            clipBehavior: Clip.none,
+            controller: _scroll,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: widget.columns,
+              mainAxisExtent: px(widget.cellHeight),
+              mainAxisSpacing: px(widget.gap),
+              crossAxisSpacing: px(widget.gap),
+            ),
+            itemCount: widget.source.totalCount ?? 0,
+            itemBuilder: (context, index) => _GridSlot<T>(
+              key: ValueKey((widget.source, index)),
+              source: widget.source,
+              index: index,
+              register: (node) => _nodes[index] = node,
+              unregister: () => _nodes.remove(index),
+              onKey: (event) => _key(index, event),
+              onFocus: () {
+                focusedIndex = index;
+                widget.onItemFocused?.call(index);
+              },
+              onSelect: () => widget.onSelect?.call(index),
+              onLongPress: () => widget.onLongPress?.call(index),
+              builder: widget.itemBuilder,
+              decorateFocus: widget.decorateFocus,
+            ),
           ),
         ),
       ),
@@ -267,4 +271,15 @@ class _GridSlotState<T> extends State<_GridSlot<T>> with AutomaticKeepAliveClien
     node.dispose();
     super.dispose();
   }
+}
+
+// Preserve the focused artwork's scale/ring at every edge while still clipping
+// scrolled rows before they can paint over the tab row or screen header.
+class _GridFocusClip extends CustomClipper<Rect> {
+  const _GridFocusClip(this.margin);
+  final double margin;
+  @override
+  Rect getClip(Size size) => (Offset.zero & size).inflate(margin);
+  @override
+  bool shouldReclip(_GridFocusClip oldClipper) => oldClipper.margin != margin;
 }

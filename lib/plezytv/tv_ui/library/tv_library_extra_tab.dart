@@ -10,6 +10,7 @@ import '../../../media/media_hub.dart';
 import '../../../media/media_item.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/media_playlist.dart';
+import '../../../media/media_server_client.dart';
 import '../../../screens/hub_detail_screen.dart';
 import '../../../screens/libraries/libraries_screen.dart';
 import '../../../utils/media_navigation_helper.dart';
@@ -20,6 +21,7 @@ import '../../../widgets/media_context_menu.dart';
 import '../components/tv_all_card.dart';
 import '../components/tv_button.dart';
 import '../components/tv_cards.dart';
+import '../components/tv_skeletons.dart';
 import '../components/tv_horizontal_row.dart';
 import '../components/tv_paged_grid.dart';
 import '../components/tv_paged_source.dart';
@@ -39,7 +41,11 @@ class TvLibraryExtraTab extends StatefulWidget {
     required this.onLeft,
     required this.ownsTabFocus,
     this.openItem,
+    this.autoFocusOnLoad = true,
+    this.onLoaded,
   });
+  final bool autoFocusOnLoad;
+  final VoidCallback? onLoaded;
   final TvLibraryController controller;
   final LibraryTabType tab;
   final VoidCallback onUp, onLeft;
@@ -61,6 +67,11 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
   late final TvPagedSource<Object> _source;
   List<MediaHub> _hubs = [];
   bool _loading = true, _failed = false, _opening = false;
+  final _retry = FocusNode(debugLabel: 'Library extra retry');
+  bool _retrying = false;
+  Timer? _skeletonTimer;
+  bool _skeleton = false;
+  bool _firstLoad = true;
   int _index = 0, _row = 0, _epoch = 0;
   TvLibraryController get c => widget.controller;
   bool get _recommended => widget.tab == LibraryTabType.recommended;
@@ -126,14 +137,28 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
 
   Future<void> refresh() async {
     final epoch = ++_epoch;
+    setState(() {
+      _retrying = _failed;
+      _loading = _recommended ? _hubs.isEmpty : (_source.totalCount ?? 0) == 0;
+      _failed = false;
+      _skeleton = false;
+    });
+    _skeletonTimer?.cancel();
+    _skeletonTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted && epoch == _epoch && _loading) setState(() => _skeleton = true);
+    });
+    final autoFocus = _firstLoad && widget.autoFocusOnLoad;
     try {
       if (_recommended) {
+        final diagnostics = HubFetchDiagnostics();
         final hubs = (await c.client.fetchLibraryHubs(
           c.library.id,
+          diagnostics: diagnostics,
           libraryName: c.library.title,
           libraryKind: c.library.kind,
         )).where((h) => h.items.isNotEmpty).toList();
         if (!mounted || epoch != _epoch) return;
+        if (diagnostics.failed || diagnostics.cancelled) throw StateError('Library hubs unavailable');
         final cw = hubs.indexWhere((h) => h.isContinueWatchingHub);
         if (cw > 0) hubs.insert(0, hubs.removeAt(cw));
         _hubs = hubs;
@@ -157,13 +182,16 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
       setState(() {
         _loading = false;
         _failed = false;
+        _retrying = false;
       });
+      _firstLoad = false;
+      widget.onLoaded?.call();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
         if (_empty && (widget.ownsTabFocus() || _scope.hasFocus)) {
           widget.onUp();
-        } else if (widget.ownsTabFocus() || (!_recommended && _scope.hasFocus)) {
+        } else if ((autoFocus && widget.ownsTabFocus()) || (!_recommended && _scope.hasFocus)) {
           requestFocus();
         }
       });
@@ -172,13 +200,19 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         setState(() {
           _loading = false;
           _failed = true;
+          _retrying = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && (widget.ownsTabFocus() || _scope.hasFocus)) _retry.requestFocus();
         });
       }
     }
   }
 
   void requestFocus() {
-    if (_recommended && _hubs.isNotEmpty) {
+    if (_failed || _retrying) {
+      _retry.requestFocus();
+    } else if (_recommended && _hubs.isNotEmpty) {
       _rows[_row.clamp(0, _hubs.length - 1)].currentState?.requestFocus();
     } else if (!_empty) {
       _grid.currentState?.jumpTo(_index, waitForLoad: false);
@@ -351,12 +385,38 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
   );
 
   Widget _content(BuildContext context) {
-    if (_loading) {
-      return const SizedBox.expand();
+    if (_loading && !_retrying) {
+      return !_skeleton
+          ? const SizedBox.expand()
+          : GridView.count(
+              crossAxisCount: 6,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: TvTheme.of(context).px(24),
+              crossAxisSpacing: TvTheme.of(context).px(24),
+              childAspectRatio: 228 / 414,
+              children: List.generate(12, (_) => const TvPosterSkeleton(size: TvPosterSize.grid)),
+            );
     }
-    if (_failed) {
+    if (_failed || _retrying) {
+      final theme = TvTheme.of(context), px = TvTheme.of(context).px;
       return Center(
-        child: TvButton(label: TvStrings.retry, onSelect: () => unawaited(refresh())),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: px(96), color: TvTokens.color.text.secondary),
+            SizedBox(height: px(32)),
+            Text(TvStrings.noConnection, style: theme.headline),
+            SizedBox(height: px(16)),
+            Text(TvStrings.noConnectionHelp, style: theme.bodyLarge, textAlign: TextAlign.center),
+            SizedBox(height: px(40)),
+            TvButton(
+              focusNode: _retry,
+              label: _retrying ? TvStrings.connecting : TvStrings.retry,
+              disabled: _retrying,
+              onSelect: () => unawaited(refresh()),
+            ),
+          ],
+        ),
       );
     }
     if (_empty) {
@@ -402,6 +462,8 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
   @override
   void dispose() {
     _epoch++;
+    _skeletonTimer?.cancel();
+    _retry.dispose();
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }

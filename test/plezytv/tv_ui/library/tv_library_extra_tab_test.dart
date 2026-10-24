@@ -24,6 +24,9 @@ import 'package:plezy/plezytv/tv_ui/library/tv_library_extra_tab.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_screen.dart';
 import 'package:plezy/screens/libraries/libraries_screen.dart';
 import '../tv_theme_test_helper.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
+import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
 import 'fake_media_server_client.dart';
 import 'tv_library_screen_test.dart' as fixtures;
 
@@ -44,6 +47,41 @@ void main() {
     addTearDown(c.dispose);
     return c;
   }
+
+  testWidgets('Recommended L17 skeleton and diagnostic L19 failure retry are distinct from empty', (tester) async {
+    final pending = Completer<List<MediaHub>>();
+    final client = FakeMediaServerClient()..hubsPending = pending.future;
+    final c = make(client);
+    await pumpTvWidget(
+      tester,
+      Scaffold(
+        body: TvLibraryExtraTab(
+          controller: c,
+          tab: LibraryTabType.recommended,
+          ownsTabFocus: () => true,
+          onUp: () {},
+          onLeft: () {},
+        ),
+      ),
+    );
+    expect(find.byType(TvPosterSkeleton), findsNothing);
+    await tester.pump(const Duration(milliseconds: 301));
+    expect(find.byType(TvPosterSkeleton), findsNWidgets(12));
+    pending.completeError(StateError('offline'));
+    await fixtures.settle(tester);
+    expect(find.text(TvStrings.noConnection), findsOneWidget);
+    expect(find.text('No recommendations available'), findsNothing);
+    client.hubsPending = null;
+    client.hubsFailure = true;
+    tester.widget<TvButton>(find.byType(TvButton)).onSelect!();
+    await fixtures.settle(tester);
+    expect(find.text(TvStrings.retry), findsOneWidget);
+    expect(find.text('No recommendations available'), findsNothing);
+    client.hubsFailure = false;
+    tester.widget<TvButton>(find.byType(TvButton)).onSelect!();
+    await fixtures.settle(tester);
+    expect(find.text('No recommendations available'), findsOneWidget);
+  });
 
   testWidgets('collection deletion reconciles and keeps neighboring focus', (tester) async {
     final client = FakeMediaServerClient()..collections = List.generate(3, fixtures.movie);

@@ -140,15 +140,7 @@ Future<void> showTvLibraryMore(
 }
 
 Widget _item(String id, String title, VoidCallback onSelect, {TvSettingsItemKind kind = TvSettingsItemKind.action}) =>
-    TvSettingsItem(
-      key: ValueKey(id),
-      icon: Icons.settings,
-      title: title,
-      description: '',
-      value: '',
-      kind: kind,
-      onSelect: onSelect,
-    );
+    TvSettingsItem(key: ValueKey(id), title: title, description: '', value: '', kind: kind, onSelect: onSelect);
 
 /// Public root for the all-hidden entry point supplied by T8.
 TvRightPanelPage tvLibraryManagementPage(BuildContext context) {
@@ -174,34 +166,26 @@ TvRightPanelPage tvLibraryManagementPage(BuildContext context) {
     title: t.libraries.manageLibraries,
     changes: Listenable.merge([libraries, hidden]),
     itemsBuilder: (_) => [
-      for (final (index, library) in libraries.libraries.indexed) ...[
+      Text(TvStrings.libraryReorderHint, style: TvTheme.of(context).caption),
+      for (final (index, library) in libraries.libraries.indexed)
         TvSettingsItem(
           key: ValueKey('order:${library.globalKey}'),
           icon: Icons.reorder,
           title: library.title,
-          description: TvStrings.libraryReorderHint,
+          description: hidden.hiddenLibraryKeys.contains(library.globalKey)
+              ? t.libraries.showLibrary
+              : t.libraries.hideLibrary,
+          selected: hidden.hiddenLibraryKeys.contains(library.globalKey),
           value: '${index + 1}',
           kind: TvSettingsItemKind.reorder,
           onMoveUp: index == 0 ? null : () => move(library.globalKey, -1),
           onMoveDown: index == libraries.libraries.length - 1 ? null : () => move(library.globalKey, 1),
-        ),
-        TvSettingsItem(
-          key: ValueKey('hidden:${library.globalKey}'),
-          icon: Icons.visibility_off,
-          title: hidden.hiddenLibraryKeys.contains(library.globalKey)
-              ? t.libraries.showLibrary
-              : t.libraries.hideLibrary,
-          description: library.title,
-          value: '',
-          kind: TvSettingsItemKind.toggle,
-          selected: hidden.hiddenLibraryKeys.contains(library.globalKey),
           onSelect: () => save(
             () => hidden.hiddenLibraryKeys.contains(library.globalKey)
                 ? hidden.unhideLibrary(library.globalKey)
                 : hidden.hideLibrary(library.globalKey),
           ),
         ),
-      ],
     ],
   );
 }

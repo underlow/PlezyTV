@@ -38,6 +38,8 @@ class FakeMediaServerClient implements MediaServerClient {
   Future<List<MediaLibrary>> fetchLibraries() async => libraries;
 
   List<MediaHub> hubs = [];
+  Future<List<MediaHub>>? hubsPending;
+  bool hubsFailure = false;
   List<MediaItem> collections = [];
   List<MediaPlaylist> playlists = [];
 
@@ -51,7 +53,8 @@ class FakeMediaServerClient implements MediaServerClient {
     HubFetchDiagnostics? diagnostics,
   }) async {
     calls.add('hubs:$libraryId');
-    return hubs;
+    if (hubsFailure) diagnostics?.recordFailure(StateError('offline'));
+    return hubsPending ?? hubs;
   }
 
   @override

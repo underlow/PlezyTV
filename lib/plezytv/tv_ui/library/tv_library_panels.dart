@@ -13,6 +13,7 @@ import '../components/tv_right_panel.dart';
 import '../components/tv_settings_item.dart';
 import '../components/tv_settings_list.dart';
 import '../tv_strings.dart';
+import '../tv_tokens.dart';
 import 'tv_library_controller.dart';
 import 'tv_library_query.dart';
 
@@ -31,7 +32,6 @@ Widget _row(
   focusNode: focusNode,
   onNavigateUp: onUp,
   onNavigateDown: onDown,
-  icon: Icons.tune,
   title: title,
   description: '',
   value: value,
@@ -73,14 +73,20 @@ Future<void> showTvLibrarySort(BuildContext context, FocusNode anchor, TvLibrary
           'sort:${sort.key}',
           sort.title,
           () => unawaited(c.select(sort: sort)),
-          selected: c.selectedSort?.key == sort.key,
+          selected: c.selectedSort?.key == sort.key || (c.selectedSort == null && sort == c.sorts.first),
         ),
+      _row(
+        'ascending',
+        TvStrings.ascending,
+        () => unawaited(c.select(descending: false)),
+        selected: !c.preferences.descending,
+      ),
       _row(
         'direction',
         TvStrings.descending,
-        () => unawaited(c.select(descending: !c.preferences.descending)),
+        () => unawaited(c.select(descending: true)),
         selected: c.preferences.descending,
-        kind: TvSettingsItemKind.toggle,
+        kind: TvSettingsItemKind.singleChoice,
       ),
       _row(
         'reset',
@@ -261,7 +267,8 @@ class _TvLibraryFilterEditorState extends State<TvLibraryFilterEditor> {
     final headerCount = ready && f.supportsExclusion ? 2 : 1;
     return Column(
       children: [
-        if (!ready && error == null) const LinearProgressIndicator(),
+        if (!ready && error == null)
+          LinearProgressIndicator(color: TvTokens.color.accent.normal, backgroundColor: TvTokens.color.bg.skeleton),
         Expanded(
           key: const ValueKey('filter-values'),
           child: TvSettingsList(

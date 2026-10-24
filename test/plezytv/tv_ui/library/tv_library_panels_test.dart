@@ -63,7 +63,24 @@ void main() {
     final client = FakeMediaServerClient()..items = [movie(0), movie(1)];
     final c = await mount(tester, client);
     await button(tester, TvStrings.defaultSort);
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('ascending')), matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    final initialSort = find.byKey(const ValueKey('sort:titleSort'));
+    expect(tester.widget<TvSettingsItem>(initialSort).selected, isTrue);
+    expect(find.descendant(of: initialSort, matching: find.byIcon(Icons.check)), findsOneWidget);
     await activate(tester, 'sort:addedAt');
+    final selectedSort = find.byKey(const ValueKey('sort:addedAt'));
+    expect(find.descendant(of: selectedSort, matching: find.byIcon(Icons.check)), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.descendant(of: selectedSort, matching: find.text('Added'))).style!.fontWeight,
+      FontWeight.w600,
+    );
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('direction')), matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
     expect(c.preferences.descending, isTrue);
     expect(client.queries.last.sort?.field, 'addedAt');
     expect(find.byType(TvRightPanel), findsOneWidget);
