@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:plezy/main.dart' show rootNavigatorKey;
@@ -16,6 +17,7 @@ import 'package:plezy/plezytv/tv_ui/library/tv_library_screen.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_libraries_switch.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_right_panel.dart';
+import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_section_shell.dart';
 import 'package:plezy/providers/libraries_provider.dart';
 import 'package:plezy/providers/hidden_libraries_provider.dart';
@@ -186,9 +188,39 @@ void main() {
     expect(find.text(t.libraries.allLibrariesHidden), findsOneWidget);
     final button = tester.widget<TvButton>(find.byType(TvButton));
     expect(button.focusNode!.hasFocus, isTrue);
-    button.onSelect!();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await settle(tester);
     expect(find.byType(TvRightPanel), findsOneWidget);
+    expect(find.text(t.libraries.manageLibraries), findsWidgets);
+    expect(find.byKey(ValueKey('hidden:${video.globalKey}')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester);
+    expect(find.byType(TvRightPanel), findsNothing);
+    expect(button.focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('real library header opens sort, Filters and More panels and restores anchors', (tester) async {
+    await mount(tester);
+    for (final label in ['Library sort', 'Library filters', 'Library more']) {
+      final button = tester
+          .widgetList<TvButton>(find.byType(TvButton))
+          .firstWhere((button) => button.focusNode?.debugLabel == label);
+      button.focusNode!.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await settle(tester);
+      expect(find.byType(TvRightPanel), findsOneWidget);
+      final title = switch (label) {
+        'Library sort' => t.libraries.sortBy,
+        'Library filters' => t.libraries.filters,
+        _ => TvStrings.moreLibraries,
+      };
+      expect(find.text(title), findsWidgets);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await settle(tester);
+      expect(find.byType(TvRightPanel), findsNothing);
+      expect(button.focusNode!.hasFocus, isTrue);
+    }
   });
 
   testWidgets('no libraries reports empty state', (tester) async {
