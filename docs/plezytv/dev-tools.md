@@ -65,3 +65,14 @@ remote dialog focus, startup timer shutdown and active/covered video routes.
 A real signed release and device are still needed to verify the complete
 GitHub download → Android permission setting → package installer → replacement
 flow. No TV installation was attempted for T4 (device storage is full).
+
+S16 filtered library route:
+`plezytv://screen/library-filter?id=42&field=genre&value=1&server=machine-id`.
+`id`, `field`, `value` are required; `server` is optional. Encode field/value as URL query
+components. IDs retain the Plex digits-only rule. `field` and `value` are accepted only by
+`library-filter`; `q` is not accepted there. The router checks the library, its TV video
+eligibility, then the server's filter field and listed value before pushing a route.
+Unknown libraries, non-video libraries and unknown fields/values leave the current screen in
+place and log a PlezyTV warning. The route starts on Browse, retains saved grouping/sort,
+replaces saved filters with this one clause, and stores all subsequent changes only in memory.
+Back returns to the previous screen; shell selection stays unchanged.

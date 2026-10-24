@@ -1,4 +1,9 @@
 import 'dart:async';
+import '../../media/library_query.dart';
+import '../../media/media_filter.dart';
+import '../../services/plex_client.dart';
+import '../tv_ui/library/tv_library_query.dart';
+import '../tv_ui/library/tv_library_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -42,6 +47,7 @@ class ScreenLinkRouter {
       ScreenTarget.downloads: (link, current) => _tab(link, _receiver.onTabDownloads, NavigationTabId.downloads),
       ScreenTarget.settings: (link, current) => _tab(link, _receiver.onTabSettings, NavigationTabId.settings),
       ScreenTarget.library: _resolve,
+      ScreenTarget.libraryFilter: _resolve,
       ScreenTarget.item: _resolve,
       ScreenTarget.update: (link, current) {
         (updaterOverride ?? PlezyTvUpdater.instance).checkFromLink(() => _context, current);
@@ -156,7 +162,9 @@ class ScreenLinkRouter {
     final provider = context.read<MultiServerProvider>();
     if (!provider.hasConnectedServers) throw const ScreenLinkNotReady();
     _ensureVisible(NavigationTabId.libraries);
-    final loadedLibraries = link.target == ScreenTarget.library ? context.read<LibrariesProvider>() : null;
+    final loadedLibraries = (link.target == ScreenTarget.library || link.target == ScreenTarget.libraryFilter)
+        ? context.read<LibrariesProvider>()
+        : null;
     if (loadedLibraries != null &&
         (loadedLibraries.isLoading ||
             // The provider exposes its initial state only through this getter.
@@ -184,7 +192,7 @@ class ScreenLinkRouter {
       final client = provider.getClientForServer(ServerId(id));
       if (client == null) continue;
       try {
-        if (link.target == ScreenTarget.library) {
+        if (link.target == ScreenTarget.library || link.target == ScreenTarget.libraryFilter) {
           final libraries = await client.fetchLibraries();
           final library = libraries.where((value) => value.id == link.id).firstOrNull;
           if (!context.mounted) throw const ScreenLinkNotReady();
@@ -194,6 +202,34 @@ class ScreenLinkRouter {
           if (library == null) {
             resolution.answered.add(id);
             continue;
+          }
+          if (link.target == ScreenTarget.libraryFilter) {
+            if (!isTvVideoLibrary(library)) throw StateError('not a video library');
+            final filters = await client.fetchLibraryFiltersWithValues(library.id, libraryKind: library.kind);
+            if (!isCurrent()) return;
+            if (!ownsRequest()) throw const ScreenLinkNotReady();
+            final field = filters.filters.where((f) => f.filter == link.field).firstOrNull;
+            if (field == null) throw StateError('unknown filter field ${link.field}');
+            final values =
+                filters.cachedValues[field.filter] ??
+                (client is PlexClient && field.key.isNotEmpty
+                    ? await client.getFilterValues(field.key)
+                    : <MediaFilterValue>[]);
+            if (!isCurrent()) return;
+            if (!ownsRequest()) throw const ScreenLinkNotReady();
+            if (!values.any((v) => v.key == link.value)) throw StateError('unknown filter value ${link.value}');
+            unawaited(
+              profileNavigationRegistry.navigator!.push<void>(
+                MaterialPageRoute(
+                  builder: (_) => TvLibraryScreen.filtered(
+                    library: library,
+                    client: client,
+                    filter: LibraryFilter(field: field.filter, values: [link.value!]),
+                  ),
+                ),
+              ),
+            );
+            return;
           }
           if (!loadedLibraries.libraries.any((value) => value.globalKey == library.globalKey)) {
             // Delta loads keep isLoading false. Join the provider’s coalesced
@@ -240,6 +276,10 @@ class ScreenLinkRouter {
       }
     }
     if (candidates.any((id) => !resolution!.answered.contains(id))) throw const ScreenLinkNotReady();
+    if (link.target == ScreenTarget.library && lastError == null) {
+      _tab(link, _receiver.onTabLibraries, NavigationTabId.libraries);
+      return;
+    }
     throw StateError('${link.target.name} ${link.id} not found${lastError == null ? '' : ': $lastError'}');
   }
 }

@@ -77,3 +77,7 @@ LibraryQuery tvLibraryQuery({
       ? query.copyWith(includeKinds: library.defaultBrowseKinds)
       : query;
 }
+
+/// Same video-only shared grouping rule as Plezy.
+bool isTvVideoLibrary(MediaLibrary library) =>
+    library.kind == MediaKind.movie || library.kind == MediaKind.show || library.isShared;

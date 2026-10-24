@@ -24,7 +24,7 @@ import '../../../providers/multi_server_provider.dart';
 import '../home/tv_home_screen.dart';
 import '../../../screens/downloads/downloads_screen.dart';
 import '../../../screens/explore_screen.dart';
-import '../../../screens/libraries/libraries_screen.dart';
+import '../library/tv_libraries_switch.dart';
 import '../../../screens/libraries/library_quick_picker_sheet.dart';
 import '../../../screens/livetv/live_tv_screen.dart';
 import '../../../screens/search_screen.dart';
@@ -299,6 +299,9 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       if (!section.isNoConnection && (previous.isNoConnection || previous.tab != section.tab)) {
         _onScreen<TabVisibilityAware>(section.tab, (screen) => screen.onTabShown());
       }
+      if (section.tab == NavigationTabId.libraries && section.libraryGlobalKey == null) {
+        _onScreen<TvLibrariesSwitchState>(section.tab, (screen) => screen.selectDefault());
+      }
       if (changed && section.libraryGlobalKey != null) {
         _onScreen<LibraryLoadable>(section.tab, (screen) => screen.loadLibraryByKey(section.libraryGlobalKey!));
       }
@@ -309,7 +312,11 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     });
   }
 
-  void selectLibrary(String key) => selectSection(TvShellSection.library(key));
+  void selectLibrary(String key) => selectSection(
+    context.read<LibrariesProvider>().libraries.any((library) => library.globalKey == key)
+        ? TvShellSection.library(key)
+        : const TvShellSection.tab(NavigationTabId.libraries),
+  );
 
   /// T2 sends distinct intents; only mounted content sections receive them.
   void handleContentIntent(TvShellContentIntent intent) {
@@ -411,9 +418,8 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     if (probe != null) return probe(context, tab, key);
     return switch (tab) {
       NavigationTabId.discover => TvHomeScreen(key: key),
-      NavigationTabId.libraries => LibrariesScreen(
+      NavigationTabId.libraries => TvLibrariesSwitch(
         key: key,
-        onLibraryOrderChanged: () => setState(() {}),
         onLibrarySelected: (key) {
           if (_current.tab == NavigationTabId.libraries && _current.libraryGlobalKey != key) {
             setState(() {
@@ -472,7 +478,14 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
         !_isOffline) {
       _afterSelection(() {
         if (!_isOffline && !isSectionAvailable(_current)) {
-          selectSection(_current.isNoConnection ? _startupSection() : _root, explicit: false);
+          selectSection(
+            _current.tab == NavigationTabId.libraries
+                ? const TvShellSection.tab(NavigationTabId.libraries)
+                : _current.isNoConnection
+                ? _startupSection()
+                : _root,
+            explicit: false,
+          );
         }
       });
     }

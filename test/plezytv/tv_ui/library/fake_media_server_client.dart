@@ -1,6 +1,7 @@
 import 'package:plezy/services/plex_client.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/media_library.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_playlist.dart';
 import 'package:plezy/media/library_filter_result.dart';
@@ -29,6 +30,10 @@ class FakeMediaServerClient implements MediaServerClient {
     calls.add('watched:${item.id}');
     items = [for (final row in items) row.id == item.id ? row.copyWith(viewCount: 1) : row];
   }
+
+  List<MediaLibrary> libraries = [];
+  @override
+  Future<List<MediaLibrary>> fetchLibraries() async => libraries;
 
   List<MediaHub> hubs = [];
   List<MediaItem> collections = [];

@@ -5,7 +5,7 @@ import 'package:plezy/plezytv/screen_links/screen_link_queue.dart';
 
 void main() {
   test('every target parses, including IDs, server and encoded search', () {
-    for (final target in ScreenTarget.values) {
+    for (final target in ScreenTarget.values.where((t) => t != ScreenTarget.libraryFilter)) {
       final link = ScreenLink.parse('plezytv://screen/${target.name}?id=42&server=machine&q=hello%20world');
       expect(link.target, target);
       expect(link.id, '42');
@@ -14,6 +14,26 @@ void main() {
     }
     expect(ScreenLink.parse('plezytv://screen/search').query, isNull);
     expect(ScreenLink.parse('plezytv://screen/item?id=1').server, isNull);
+  });
+
+  test('library-filter has an explicit path and exclusive required parameters', () {
+    final link = ScreenLink.parse('plezytv://screen/library-filter?id=42&field=genre&value=1');
+    expect(link.target, ScreenTarget.libraryFilter);
+    expect(link.field, 'genre');
+    expect(link.value, '1');
+    for (final uri in [
+      'library-filter?id=42&value=1',
+      'library-filter?id=42&field=genre',
+      'library-filter?field=genre&value=1',
+      'libraryFilter?id=42&field=genre&value=1',
+      'library-filter?id=42&field=genre&value=',
+      'library-filter?id=abc&field=genre&value=1',
+      'library-filter?id=42&field=genre&value=1&q=x',
+      for (final target in ScreenTarget.values.where((t) => t != ScreenTarget.libraryFilter))
+        '${target.name}?id=42&field=genre&value=1',
+    ]) {
+      expect(() => ScreenLink.parse('plezytv://screen/$uri'), throwsFormatException, reason: uri);
+    }
   });
 
   test('invalid input and missing or ambiguous parameters fail', () {

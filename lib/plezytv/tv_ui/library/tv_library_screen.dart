@@ -1,4 +1,10 @@
 import 'dart:async';
+import '../../../media/media_library.dart';
+import '../../../media/media_server_client.dart';
+import '../../../media/library_query.dart';
+import '../../../services/storage_service.dart';
+import 'tv_library_preferences.dart';
+import 'tv_library_query.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +39,13 @@ import 'tv_folder_list.dart';
 /// callbacks receive stable anchors for the panels supplied by T5/T7.
 class TvLibraryScreen extends StatefulWidget {
   const TvLibraryScreen({super.key, required this.controller, this.onSort, this.onFilters, this.onMore, this.openItem});
+
+  /// A route-local owner: edits never write library or shell selection settings.
+  static Widget filtered({
+    required MediaLibrary library,
+    required MediaServerClient client,
+    required LibraryFilter filter,
+  }) => _FilteredLibrary(library: library, client: client, filter: filter);
   final TvLibraryController controller;
   final ValueChanged<FocusNode>? onSort, onFilters, onMore;
   final Future<void> Function(BuildContext, MediaItem)? openItem;
@@ -573,6 +586,47 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     for (final node in [_sort, _filters, _more, _action, _tabs]) {
       node.dispose();
     }
+    super.dispose();
+  }
+}
+
+class _FilteredLibrary extends StatefulWidget {
+  const _FilteredLibrary({required this.library, required this.client, required this.filter});
+  final MediaLibrary library;
+  final MediaServerClient client;
+  final LibraryFilter filter;
+  @override
+  State<_FilteredLibrary> createState() => _FilteredLibraryState();
+}
+
+class _FilteredLibraryState extends State<_FilteredLibrary> {
+  TvLibraryController? _controller;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    if (!isTvVideoLibrary(widget.library)) return;
+    final saved = await TvStorageLibraryPreferences(await StorageService.getInstance()).load(widget.library.globalKey);
+    if (!mounted) return;
+    setState(
+      () => _controller = TvLibraryController(
+        library: widget.library,
+        client: widget.client,
+        store: TvMemoryLibraryPreferences.filtered(saved, widget.filter),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => TvTheme(
+    child: Scaffold(body: _controller == null ? const SizedBox.expand() : TvLibraryScreen(controller: _controller!)),
+  );
+  @override
+  void dispose() {
+    _controller?.dispose();
     super.dispose();
   }
 }
