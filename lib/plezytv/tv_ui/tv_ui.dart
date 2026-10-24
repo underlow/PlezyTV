@@ -5,6 +5,7 @@ import 'tv_shell.dart';
 import '../../media/media_item.dart';
 import '../../media/media_kind.dart';
 import '../../utils/layout_constants.dart';
+import 'movie/tv_movie_screen.dart';
 import 'show/tv_show_screen.dart';
 
 /// Typed replacement lookups for upstream screen factories.
@@ -35,15 +36,24 @@ abstract final class TvUi {
     String? initialSeasonId,
     String? initialEpisodeId,
   }) {
-    if (!(enabled ?? TvUi.enabled) || isOffline || metadata.kind != MediaKind.show) return null;
+    if (!(enabled ?? TvUi.enabled) || isOffline) return null;
+    final Widget Function() page;
+    switch (metadata.kind) {
+      case MediaKind.show:
+        page = () => TvShowScreen(
+          metadata: metadata,
+          initialSeasonIndex: initialSeasonIndex,
+          initialSeasonId: initialSeasonId,
+          initialEpisodeId: initialEpisodeId,
+        );
+      case MediaKind.movie:
+        page = () => TvMovieScreen(metadata: metadata);
+      default:
+        return null;
+    }
     return PageRouteBuilder<bool>(
       opaque: true,
-      pageBuilder: (_, _, _) => TvShowScreen(
-        metadata: metadata,
-        initialSeasonIndex: initialSeasonIndex,
-        initialSeasonId: initialSeasonId,
-        initialEpisodeId: initialEpisodeId,
-      ),
+      pageBuilder: (_, _, _) => page(),
       transitionsBuilder: (_, animation, _, child) => FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
         child: child,
