@@ -1,6 +1,8 @@
 {
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S16",
-  "phase": "analysis",
-  "base_commit": "cea6256498ffe737aa56df0215e95f185a82b424"
+  "phase": "implementation",
+  "base_commit": "cea6256498ffe737aa56df0215e95f185a82b424",
+  "profile": "full",
+  "status": "paused"
 }
