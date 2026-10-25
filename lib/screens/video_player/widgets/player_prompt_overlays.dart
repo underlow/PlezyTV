@@ -25,6 +25,7 @@ import '../../../widgets/app_icon.dart';
 import '../../../widgets/optimized_media_image.dart';
 import '../../../widgets/settings_builder.dart';
 import '../../../widgets/video_controls/player_chrome_controller.dart';
+import '../../../plezytv/tv_ui/tv_ui.dart';
 
 class VideoPlayerMacPipPlaceholder extends StatelessWidget {
   const VideoPlayerMacPipPlaceholder({super.key});
@@ -84,16 +85,19 @@ class VideoPlayerBufferingOverlay extends StatelessWidget {
   final ValueListenable<bool> isBuffering;
   final ValueListenable<bool> hasFirstFrame;
   final ValueListenable<bool> isExiting;
+  final bool isLive;
 
   const VideoPlayerBufferingOverlay({
     super.key,
     required this.isBuffering,
     required this.hasFirstFrame,
     required this.isExiting,
+    this.isLive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (TvUi.playerBuffering(context, this, isLive: isLive) case final tv?) return tv;
     return ValueListenableBuilder<bool>(
       valueListenable: PipService().isPipActive,
       builder: (context, isInPip, child) {
@@ -309,6 +313,7 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
   final PlayerChromeController chromeController;
   final VoidCallback onCancel;
   final VoidCallback onPlayNext;
+  final bool isLive;
 
   const VideoPlayerPlayNextOverlay({
     super.key,
@@ -320,6 +325,7 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
     required this.chromeController,
     required this.onCancel,
     required this.onPlayNext,
+    this.isLive = false,
   });
 
   @override
@@ -329,13 +335,15 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
     // Resolved only while shown: the overlay sits in the player build with
     // visible=false for the whole episode, and the lookup hashes the artwork
     // path per call.
-    final backdrop = visible ? _buildThumbnailBackdrop(context, episode) : null;
+    final tvCard = TvUi.playerUpNextCard(context, this, isLive: isLive);
+    final backdrop = visible && tvCard == null ? _buildThumbnailBackdrop(context, episode) : null;
     return _VideoPlayerPromptShell(
       visible: visible,
       chromeController: chromeController,
       focusNodes: [cancelFocusNode, confirmFocusNode],
       backdrop: backdrop,
-      children: [
+      tvContent: tvCard,
+      children: tvCard != null ? const [] : [
         // Clear region that keeps the still visible above the scrimmed text.
         if (backdrop != null) const SizedBox(height: 110),
         _PlayNextEpisodeHeader(episode: episode),
@@ -526,6 +534,7 @@ class _VideoPlayerPromptShell extends StatelessWidget {
   /// Full-bleed artwork painted behind [children] under a darkening scrim.
   final Widget? backdrop;
   final List<Widget> children;
+  final Widget? tvContent; // PlezyTV H4: replaces the card, inside the same position and hold
 
   const _VideoPlayerPromptShell({
     required this.visible,
@@ -533,6 +542,7 @@ class _VideoPlayerPromptShell extends StatelessWidget {
     required this.focusNodes,
     this.backdrop,
     required this.children,
+    this.tvContent,
   });
 
   @override
@@ -548,7 +558,7 @@ class _VideoPlayerPromptShell extends StatelessWidget {
           child: _VideoPlayerPromptInteractionHold(
             chromeController: chromeController,
             focusNodes: focusNodes,
-            child: _VideoPlayerPromptCard(
+            child: tvContent ?? _VideoPlayerPromptCard(
               backdrop: backdrop,
               child: Column(mainAxisSize: .min, crossAxisAlignment: .start, children: children),
             ),
