@@ -76,6 +76,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   List<GlobalKey<TvHorizontalRowState>> _rowOrder = [];
   Object? _connectionError, _reportedError;
   bool _closing = false, _unavailable = false, _collapsed = false, _playing = false;
+
+  /// The player returned while another route covered this one (R10).
+  bool _refreshOnReturn = false;
+
+  /// Watch state before the launch, compared after the return refresh.
+  String? _launchState;
+
+  bool get _isTop => ModalRoute.of(context)?.isCurrent != false;
   double _collapseAt = 300, _barHeight = 150;
 
   @override
@@ -87,6 +95,8 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final top = ModalRoute.of(context)?.isCurrent == true;
+    if (_refreshOnReturn && top && !_playing) _returnedToTop();
     if (_controller != null || _connectionError != null) return;
     _connect();
   }
@@ -172,6 +182,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     if (_playing) return;
     _playing = true;
     final launch = tvMoviePlayerLaunch(c.primaryAction);
+    _launchState = _watchFingerprint(c.movie);
     try {
       final changed = widget.launchPlayer != null
           ? await widget.launchPlayer!(context, c.movie, launch)
@@ -183,11 +194,31 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               isLaunchCurrent: _canUseScreen,
             );
       if (changed == true) c.watchStateChanged = true;
+      if (mounted && !_isTop) _refreshOnReturn = true;
       if (mounted) await c.refresh();
     } finally {
       _playing = false;
     }
+    // The covering route may have closed while this method was refreshing.
+    if (mounted && _refreshOnReturn && _isTop) _returnedToTop();
   }
+
+  /// Rereads watch state and rating after the player left this card covered
+  /// (post-play screen), marking the route result when anything changed.
+  void _returnedToTop() {
+    _refreshOnReturn = false;
+    final c = _controller;
+    if (c == null) return;
+    final before = _launchState ?? _watchFingerprint(c.movie);
+    _launchState = null;
+    unawaited(
+      c.refresh().then((_) {
+        if (mounted && _watchFingerprint(c.movie) != before) c.watchStateChanged = true;
+      }),
+    );
+  }
+
+  static String _watchFingerprint(MediaItem m) => '${m.viewCount}:${m.viewOffsetMs}:${m.userRating}';
 
   Future<void> _playVersion() async {
     final c = _controller!;
@@ -201,9 +232,11 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   }
 
   Future<void> _playExtra(MediaItem item) async {
+    _launchState = _watchFingerprint(_controller!.movie);
     final changed = await navigateToVideoPlayer(context, metadata: item, isLaunchCurrent: _canUseScreen);
     if (!mounted) return;
     if (changed == true) _controller!.watchStateChanged = true;
+    if (!_isTop) _refreshOnReturn = true;
     await _controller!.refresh();
   }
 
