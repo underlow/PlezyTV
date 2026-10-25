@@ -16,6 +16,8 @@ import 'player/tv_player_hooks.dart';
 import 'player/tv_player_overlays.dart';
 import 'player/tv_player_panel.dart';
 import 'player/tv_player_session.dart';
+import 'postplay/tv_postplay_logic.dart';
+import 'postplay/tv_postplay_screen.dart';
 
 /// Typed replacement lookups for upstream screen factories.
 abstract final class TvUi {
@@ -97,6 +99,18 @@ abstract final class TvUi {
       reverseTransitionDuration: AppDurations.animMedium,
     );
   }
+
+  /// S14 C1 — the opaque post-play route laid over the finishing player.
+  static PageRoute<void> postPlayRoute(TvPostPlayArgs args) => PageRouteBuilder<void>(
+    opaque: true,
+    pageBuilder: (_, _, _) => TvPostPlayScreen(args: args),
+    transitionsBuilder: (_, animation, _, child) => FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
+      child: child,
+    ),
+    transitionDuration: AppDurations.animMedium,
+    reverseTransitionDuration: AppDurations.animMedium,
+  );
 
   /// Pass a captured [enabled] value when the choice belongs to a session.
   static Widget? profileHome(
