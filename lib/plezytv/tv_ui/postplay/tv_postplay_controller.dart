@@ -74,7 +74,8 @@ class TvPostPlayController extends ChangeNotifier {
   int? _savingValue;
 
   /// The value [leave] handed off; dispose does not send it again, whether
-  /// that save succeeded or failed.
+  /// that save succeeded or failed. Only until the user is back on the
+  /// screen ([resume]) or rates again.
   int? _leftValue;
   bool _disposed = false;
 
@@ -136,6 +137,7 @@ class TvPostPlayController extends ChangeNotifier {
     final clamped = value.clamp(0, 10);
     if (clamped == rating) return;
     rating = clamped;
+    _leftValue = null;
     _timer?.cancel();
     _timer = Timer(autoSaveDelay, () {
       _timer = null;
@@ -148,6 +150,7 @@ class TvPostPlayController extends ChangeNotifier {
   Future<void> submit() {
     _timer?.cancel();
     _timer = null;
+    _leftValue = null;
     return _save(report: true, force: true);
   }
 
@@ -202,6 +205,10 @@ class TvPostPlayController extends ChangeNotifier {
     _leftValue = rating;
     return _save(report: false, retry: true);
   }
+
+  /// The screen is on top again after [leave] (back from a card opened over
+  /// it): leaving it later sends a still unsaved value again.
+  void resume() => _leftValue = null;
 
   @override
   void dispose() {
