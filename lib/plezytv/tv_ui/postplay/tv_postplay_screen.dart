@@ -28,50 +28,52 @@ import '../tv_ui.dart';
 import 'tv_postplay_controller.dart';
 import 'tv_postplay_logic.dart';
 
-/// Starts playback of [item] in place of the post-play route.
-typedef TvPostPlayLaunch = Future<void> Function(BuildContext context, MediaItem item, {required bool fromStart});
+/// Plezy's `navigateToVideoPlayer`, narrowed to the arguments post-play sets.
+typedef TvPostPlayLaunch =
+    Future<void> Function(
+      BuildContext context, {
+      required MediaItem metadata,
+      required bool usePushReplacement,
+      required bool resolveWatchState,
+      Duration? initialPosition,
+    });
 
-/// Opens a detail page; [replace] swaps it in place of the post-play route.
-typedef TvPostPlayOpenDetail = Future<void> Function(BuildContext context, MediaItem item, {required bool replace});
+/// `TvUi.showDetailRoute`, narrowed to the arguments post-play sets.
+typedef TvPostPlayDetailRoute = PageRoute<dynamic>? Function({required MediaItem metadata, String? initialSeasonId});
 
 /// PlezyTV post-play screen (S14 R3–R9).
 class TvPostPlayScreen extends StatefulWidget {
-  const TvPostPlayScreen({super.key, required this.args, this.controller, this.launchPlayer, this.openDetail});
+  const TvPostPlayScreen({super.key, required this.args, this.controller, this.launchPlayer, this.detailRoute});
 
   final TvPostPlayArgs args;
 
   /// Borrowed controller for tests; otherwise built from the item's client.
   final TvPostPlayController? controller;
 
-  /// Test adapters replacing Plezy navigation.
+  /// Test adapters at the Plezy / TV navigation boundary.
   final TvPostPlayLaunch? launchPlayer;
-  final TvPostPlayOpenDetail? openDetail;
+  final TvPostPlayDetailRoute? detailRoute;
 
   @override
   State<TvPostPlayScreen> createState() => _TvPostPlayScreenState();
 }
 
-Future<void> _defaultLaunch(BuildContext context, MediaItem item, {required bool fromStart}) async {
-  await navigateToVideoPlayer(
-    context,
-    metadata: item,
-    usePushReplacement: true,
-    resolveWatchState: !fromStart,
-    initialPosition: fromStart ? Duration.zero : null,
-  );
-}
+Future<void> _plezyLaunch(
+  BuildContext context, {
+  required MediaItem metadata,
+  required bool usePushReplacement,
+  required bool resolveWatchState,
+  Duration? initialPosition,
+}) => navigateToVideoPlayer(
+  context,
+  metadata: metadata,
+  usePushReplacement: usePushReplacement,
+  resolveWatchState: resolveWatchState,
+  initialPosition: initialPosition,
+);
 
-Future<void> _defaultOpenDetail(BuildContext context, MediaItem item, {required bool replace, String? seasonId}) async {
-  final route = TvUi.showDetailRoute(metadata: item, initialSeasonId: seasonId);
-  final navigator = Navigator.of(context);
-  if (route == null) {
-    await navigateToMediaItem(context, item);
-  } else if (replace) {
-    unawaited(navigator.pushReplacement(route));
-  } else {
-    unawaited(navigator.push(route));
-  }
-}
+PageRoute<dynamic>? _tvDetailRoute({required MediaItem metadata, String? initialSeasonId}) =>
+    TvUi.showDetailRoute(metadata: metadata, initialSeasonId: initialSeasonId);
 
 class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   late final TvPostPlayController _c;
@@ -83,6 +85,12 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   final _row = GlobalKey<TvHorizontalRowState>();
   bool _queued = false, _keyPressed = false, _started = false;
 
+  /// Any key-down while the screen is up, whoever handles it (R9 exception).
+  bool _onAnyKey(KeyEvent event) {
+    if (event is KeyDownEvent) _keyPressed = true;
+    return false;
+  }
+
   MediaItem get _watched => widget.args.watched;
   TvPostPlayVariant get _variant => _c.variant;
 
@@ -90,6 +98,7 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   void initState() {
     super.initState();
     _ownsController = widget.controller == null;
+    HardwareKeyboard.instance.addHandler(_onAnyKey);
   }
 
   @override
@@ -150,6 +159,7 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onAnyKey);
     _c.removeListener(_changed);
     _c.onRateError = null;
     if (_ownsController) _c.dispose();
@@ -161,32 +171,49 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   }
 
   /// Route-changing actions wait until Plezy removed the old player, then run
-  /// once (spec §3).
+  /// once (spec §3). The rating is saved first, so the screen that comes
+  /// next reads it (R6, R10).
   void _afterPlayer(Future<void> Function() action) {
     if (_queued) return;
     _queued = true;
-    unawaited(
-      widget.args.playerRemoved.then<void>((_) {}, onError: (Object _) {}).then((_) async {
+    unawaited(() async {
+      try {
+        await widget.args.playerRemoved.then<void>((_) {}, onError: (Object _) {});
+        await _c.flush();
         if (!mounted) return;
-        try {
-          await action();
-        } finally {
-          _queued = false;
-        }
-      }),
-    );
+        await action();
+      } finally {
+        _queued = false;
+      }
+    }());
   }
 
   void _launch(MediaItem item, {bool fromStart = false}) => _afterPlayer(() {
-    final launch = widget.launchPlayer ?? _defaultLaunch;
-    return launch(context, item, fromStart: fromStart);
+    final launch = widget.launchPlayer ?? _plezyLaunch;
+    return launch(
+      context,
+      metadata: item,
+      usePushReplacement: true,
+      resolveWatchState: !fromStart,
+      initialPosition: fromStart ? Duration.zero : null,
+    );
   });
 
-  void _openDetail(MediaItem item, {required bool replace}) => _afterPlayer(() {
-    final open = widget.openDetail;
-    if (open != null) return open(context, item, replace: replace);
-    return _defaultOpenDetail(context, item, replace: replace);
-  });
+  /// [replace] swaps the card in place of this screen; otherwise it opens
+  /// over it.
+  Future<void> _showDetail(MediaItem item, {required bool replace, String? seasonId}) async {
+    final route = (widget.detailRoute ?? _tvDetailRoute)(metadata: item, initialSeasonId: seasonId);
+    final navigator = Navigator.of(context);
+    if (route == null) {
+      await navigateToMediaItem(context, item);
+    } else if (replace) {
+      unawaited(navigator.pushReplacement(route));
+    } else {
+      unawaited(navigator.push(route));
+    }
+  }
+
+  void _openDetail(MediaItem item, {required bool replace}) => _afterPlayer(() => _showDetail(item, replace: replace));
 
   /// R8, C5: returns to this item's card when it is right underneath (checked
   /// once the player is gone), otherwise replaces this screen with the card.
@@ -200,9 +227,7 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
         Navigator.of(context).pop();
         return;
       }
-      final open = widget.openDetail;
-      if (open != null) return open(context, _c.subject, replace: true);
-      return _defaultOpenDetail(context, _c.subject, replace: true, seasonId: seasonId);
+      return _showDetail(_c.subject, replace: true, seasonId: seasonId);
     });
   }
 
@@ -212,7 +237,6 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   });
 
   KeyEventResult _keys(FocusNode _, KeyEvent event) {
-    if (event is KeyDownEvent) _keyPressed = true;
     final key = event.logicalKey;
     if (key.isBackKey) return handleBackKeyAction(event, _back);
     if (key == LogicalKeyboardKey.mediaPlayPause || key == LogicalKeyboardKey.mediaPlay) {
@@ -234,7 +258,7 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
     }
 
     if (_stars.hasFocus) {
-      if (!up) act(_buttons.requestFocus);
+      if (!up) act(_focusButtons);
       return KeyEventResult.handled;
     }
     if (_buttons.hasFocus) {
@@ -242,11 +266,18 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
       if (!up && hasRow) act(() => _row.currentState?.requestFocus());
       return KeyEventResult.handled;
     }
-    if (hasRow && (_row.currentContext != null) && FocusScope.of(_row.currentContext!).hasFocus && up) {
-      act(_buttons.requestFocus);
-      return KeyEventResult.handled;
-    }
+    if (up && (_row.currentState?.focusInside.value ?? false)) act(_focusButtons);
     return KeyEventResult.handled;
+  }
+
+  /// The button last focused in the row, else the variant's main button: the
+  /// scope alone would take focus itself with no button highlighted.
+  void _focusButtons() {
+    if (_buttons.focusedChild != null) {
+      _buttons.requestFocus();
+    } else {
+      (_variant == TvPostPlayVariant.episode ? _primary : _detail).requestFocus();
+    }
   }
 
   @override
@@ -475,9 +506,13 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
                       ],
                     ),
                   ],
-                  if (_c.loading) ...[
+                  if (_c.subjectLoading) ...[
                     SizedBox(height: px(20)),
-                    const TvRowSkeleton(key: ValueKey('postplay-ratings-skeleton'), count: 1, episode: true),
+                    TvLineSkeleton(
+                      key: const ValueKey('postplay-ratings-skeleton'),
+                      width: 360,
+                      height: TvTokens.type.body.lineHeight.toDouble(),
+                    ),
                   ] else if (ratingsItem != null) ...[
                     SizedBox(height: px(20)),
                     TvRatings(item: ratingsItem),
@@ -546,6 +581,11 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
 }
 
 /// The post-play route; tracks the route directly underneath it (S14 C5).
+///
+/// It appears at once, like `VideoPlayerRoute`: a route is painted see-through
+/// while its entrance runs, and Plezy may remove the player under it within a
+/// frame, which would show the screen below through a fade (R2). Leaving
+/// fades out to the destination.
 class TvPostPlayRoute extends PageRouteBuilder<void> {
   TvPostPlayRoute({required WidgetBuilder builder})
     : super(
@@ -555,7 +595,7 @@ class TvPostPlayRoute extends PageRouteBuilder<void> {
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
           child: child,
         ),
-        transitionDuration: AppDurations.animMedium,
+        transitionDuration: Duration.zero,
         reverseTransitionDuration: AppDurations.animMedium,
       );
 

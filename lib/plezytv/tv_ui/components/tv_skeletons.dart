@@ -78,6 +78,14 @@ class TvRowSkeleton extends StatelessWidget {
   }
 }
 
+/// One text line placeholder, [width] × [height] in design pixels.
+class TvLineSkeleton extends StatelessWidget {
+  const TvLineSkeleton({super.key, required this.width, required this.height});
+  final double width, height;
+  @override
+  Widget build(BuildContext context) => _Line(width: width, height: height);
+}
+
 class _Line extends StatelessWidget {
   const _Line({required this.width, required this.height});
   final double width, height;

@@ -39,10 +39,16 @@ class TvPostPlayController extends ChangeNotifier {
   /// Server metadata for [subject] has arrived.
   bool subjectLoaded = false;
 
-  /// Rows and ratings are still loading (skeletons).
+  /// The rows (season episodes, "Similar") are still loading (skeletons).
   bool loading = true;
 
-  /// Loading failed: rows and ratings stay hidden (R9).
+  /// [subject]'s metadata (ratings, "Your rating") is still loading. The
+  /// rows may still be loading after it arrived.
+  late bool subjectLoading = variant != TvPostPlayVariant.episode;
+
+  /// The screen's own data did not load: the season row (episode variant) or
+  /// [subject] with its ratings and rows (R9). A failed related-hubs request
+  /// only leaves "Similar" empty.
   bool failed = false;
 
   /// Episodes of [next]'s season after it.
@@ -61,6 +67,7 @@ class TvPostPlayController extends ChangeNotifier {
   void Function(Object error)? onRateError;
 
   Timer? _timer;
+  Future<void>? _saving;
   bool _disposed = false;
 
   bool get ratingSupported => client?.capabilities.numericUserRating ?? false;
@@ -95,16 +102,23 @@ class TvPostPlayController extends ChangeNotifier {
             serverName: subject.serverName ?? item.serverName,
           );
           subjectLoaded = true;
-          if (!_dirty && _timer == null) rating = _saved = tvPostPlayRatingUnits(item.userRating);
+          if (!_dirty && _timer == null && _saving == null) rating = _saved = tvPostPlayRatingUnits(item.userRating);
           ratingKnown = true;
-          final hubs = await c.fetchRelatedHubs(id);
-          similar = tvPostPlaySimilarHub(hubs);
+          // Ratings do not wait for the rows.
+          subjectLoading = false;
+          notifyListeners();
+          try {
+            similar = tvPostPlaySimilarHub(await c.fetchRelatedHubs(id));
+          } catch (error) {
+            // Like S8: no related hubs is an empty "Similar", not a failure.
+            appLogger.w('Post-play related hubs failed', error: error);
+          }
       }
     } catch (error) {
       failed = true;
-      if (variant == TvPostPlayVariant.movie) similar = null;
     }
     if (_disposed) return;
+    subjectLoading = false;
     loading = false;
     notifyListeners();
   }
@@ -129,9 +143,20 @@ class TvPostPlayController extends ChangeNotifier {
     return _save(report: true, force: true);
   }
 
-  Future<void> _save({required bool report, bool force = false}) async {
+  Future<void> _save({required bool report, bool force = false}) {
     final c = client;
-    if (c == null || (!force && !_dirty)) return;
+    if (c == null || (!force && !_dirty)) return Future.value();
+    final save = _send(c, report: report);
+    _saving = save;
+    unawaited(
+      save.whenComplete(() {
+        if (identical(_saving, save)) _saving = null;
+      }),
+    );
+    return save;
+  }
+
+  Future<void> _send(MediaServerClient c, {required bool report}) async {
     final value = rating;
     try {
       await c.rate(subject, value > 0 ? value.toDouble() : -1);
@@ -142,6 +167,25 @@ class TvPostPlayController extends ChangeNotifier {
       } else {
         appLogger.w('Failed to save rating after leaving post-play', error: error);
       }
+    }
+  }
+
+  /// Before leaving the screen: waits for a save in flight and saves an
+  /// unsaved value silently, so the next screen reads the new rating (R6,
+  /// R10). Bounded by [timeout] so a hanging server cannot hold navigation.
+  Future<void> flush({Duration timeout = const Duration(seconds: 3)}) async {
+    _timer?.cancel();
+    _timer = null;
+    Future<void> run() async {
+      final inFlight = _saving;
+      if (inFlight != null) await inFlight;
+      if (_dirty) await _save(report: false);
+    }
+
+    try {
+      await run().timeout(timeout);
+    } on TimeoutException {
+      appLogger.w('Post-play rating save still pending when leaving');
     }
   }
 
