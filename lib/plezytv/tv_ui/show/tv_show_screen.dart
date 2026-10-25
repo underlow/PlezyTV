@@ -24,6 +24,7 @@ import '../components/tv_horizontal_row.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_tabs.dart';
 import '../tv_focusable.dart';
+import '../tv_card_registry.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tint_service.dart';
@@ -94,9 +95,30 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   String get _key => _controller!.flattened ? _controller!.flattenedKey : _controller!.seasons[_tab - 1].id;
 
+  /// This card on its route, for the post-play screen above (S14 C5).
+  Route<dynamic>? _cardRoute;
+  TvCardEntry? _cardEntry;
+
+  void _registerCard(TvCardEntry Function() entry) {
+    final route = ModalRoute.of(context);
+    if (route == _cardRoute) return;
+    _unregisterCard();
+    if (route == null) return;
+    _cardRoute = route;
+    TvCardRegistry.register(route, _cardEntry = entry());
+  }
+
+  void _unregisterCard() {
+    final route = _cardRoute, entry = _cardEntry;
+    if (route != null && entry != null) TvCardRegistry.unregister(route, entry);
+    _cardRoute = null;
+    _cardEntry = null;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _registerCard(() => TvCardEntry(itemKey: widget.metadata.globalKey, showSeason: _showSeason));
     final top = ModalRoute.of(context)?.isCurrent == true;
     if (_restoreEpisodeFocus && top) _scheduleEpisodeRestore();
     if (_refreshOnReturn && top && !_playing) {
@@ -179,10 +201,11 @@ class _TvShowScreenState extends State<TvShowScreen> {
         _tab = tvShowInitialTab(
           c.seasons,
           flattened: c.flattened,
-          seasonId: widget.initialSeasonId,
+          seasonId: _returnSeasonId ?? widget.initialSeasonId,
           seasonIndex: widget.initialSeasonIndex,
-          episodeId: widget.initialEpisodeId,
+          episodeId: _returnSeasonId == null ? widget.initialEpisodeId : null,
         );
+        _returnSeasonId = null;
         _selectedSeasonKey = _tab > 0 ? _key : null;
         final selection = ++_selection;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -249,6 +272,25 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (!mounted || _initialFocus || _tab != 0 || _controller?.primaryAction == null) return;
     _initialFocus = true;
     if (!_tabScope.hasFocus) _primary.requestFocus();
+  }
+
+  /// Season chosen by the post-play screen before this card finished loading.
+  String? _returnSeasonId;
+
+  /// S14 R8: the post-play screen above returns here on [seasonId]; focus
+  /// lands in that season once this card is on top again.
+  void _showSeason(String seasonId) {
+    final c = _controller;
+    if (c == null || !_ready) {
+      _returnSeasonId = seasonId;
+      return;
+    }
+    if (c.flattened) return;
+    final index = c.seasons.indexWhere((season) => season.id == seasonId) + 1;
+    if (index == 0) return;
+    if (index != _tab) _select(index);
+    _focusOnReturn = () => unawaited(_enterSeason(focus: true));
+    _refreshOnReturn = true;
   }
 
   void _select(int index, {bool focus = false}) {
@@ -483,6 +525,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   @override
   void dispose() {
+    _unregisterCard();
     ++_selection;
     _skeletonTimer?.cancel();
     _heroTimer?.cancel();
