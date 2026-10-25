@@ -74,6 +74,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
   Timer? _skeletonTimer, _heroTimer;
   bool _skeleton = false, _ready = false, _initialFocus = false;
   bool _playing = false, _pendingEntryFocus = false;
+
+  /// The player returned while another route covered this one (R10).
+  bool _refreshOnReturn = false;
+  void Function()? _focusOnReturn;
+
+  /// Watch state before the launch, compared after the return refresh.
+  String? _launchState;
+
+  bool get _isTop => ModalRoute.of(context)?.isCurrent != false;
   int _tab = 0, _selection = 0;
   MediaItem? _hero, _backdropEpisode;
   Object? _connectionError, _reportedError;
@@ -88,7 +97,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_restoreEpisodeFocus && ModalRoute.of(context)?.isCurrent == true) _scheduleEpisodeRestore();
+    final top = ModalRoute.of(context)?.isCurrent == true;
+    if (_restoreEpisodeFocus && top) _scheduleEpisodeRestore();
+    if (_refreshOnReturn && top && !_playing) {
+      _refreshOnReturn = false;
+      unawaited(_returnedToTop());
+    }
     if (_controller != null || _connectionError != null) return;
     _connect();
   }
@@ -325,6 +339,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
     _playing = true;
     final c = _controller!;
     final seasonKey = _tab > 0 ? _key : null;
+    _launchState = _watchFingerprint(c);
     try {
       if (widget.playEpisode != null) {
         await widget.playEpisode!(context, episode, restart);
@@ -339,6 +354,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
         if (changed == true) c.watchStateChanged = true;
       }
       if (!mounted) return;
+      if (!_isTop) _refreshOnReturn = true;
       await c.refresh();
       if (!mounted) return;
       if (seasonKey != null && _tab > 0 && _key == seasonKey) {
@@ -354,13 +370,54 @@ class _TvShowScreenState extends State<TvShowScreen> {
           final next = items.skip(index + 1).where((e) => !e.isWatched).firstOrNull;
           if (next != null) _lastEpisode[seasonKey] = next.id;
         }
-        if (mounted) await _enterSeason(focus: true);
+        if (mounted) _focusAfterPlay(() => unawaited(_enterSeason(focus: true)));
       } else {
-        _primary.requestFocus();
+        _focusAfterPlay(_primary.requestFocus);
       }
     } finally {
       _playing = false;
     }
+    // The covering route may have closed while this method was refreshing.
+    if (mounted && _refreshOnReturn && _isTop) {
+      _refreshOnReturn = false;
+      unawaited(_returnedToTop());
+    }
+  }
+
+  /// A covered route's focus request would win over the top route's focus,
+  /// so post-playback focus waits until this card is on top again.
+  void _focusAfterPlay(void Function() focus) {
+    if (_isTop) {
+      focus();
+    } else {
+      _refreshOnReturn = true;
+      _focusOnReturn = focus;
+    }
+  }
+
+  /// Rereads watch state and rating after the player left this card covered
+  /// (post-play screen), marking the route result when anything changed.
+  Future<void> _returnedToTop() async {
+    final c = _controller!;
+    final focus = _focusOnReturn;
+    _focusOnReturn = null;
+    final before = _launchState ?? _watchFingerprint(c);
+    _launchState = null;
+    await c.refresh();
+    if (!mounted) return;
+    if (_watchFingerprint(c) != before) c.watchStateChanged = true;
+    if (focus != null) _focusAfterPlay(focus);
+  }
+
+  static String _watchFingerprint(TvShowController c) {
+    String item(MediaItem? e) =>
+        e == null ? '-' : '${e.id}:${e.viewCount}:${e.viewOffsetMs}:${e.viewedLeafCount}:${e.userRating}';
+    return [
+      item(c.show),
+      item(c.onDeckEpisode),
+      for (final season in c.seasons) ...[item(season), ...c.episodesFor(season.id).map(item)],
+      ...c.episodesFor(c.flattenedKey).map(item),
+    ].join('|');
   }
 
   void _back() {
@@ -656,9 +713,11 @@ class _TvShowScreenState extends State<TvShowScreen> {
   }
 
   Future<void> _playExtra(MediaItem item) async {
+    _launchState = _watchFingerprint(_controller!);
     final changed = await navigateToVideoPlayer(context, metadata: item);
     if (!mounted) return;
     if (changed == true) _controller!.watchStateChanged = true;
+    if (!_isTop) _refreshOnReturn = true;
     await _controller!.refresh();
   }
 
