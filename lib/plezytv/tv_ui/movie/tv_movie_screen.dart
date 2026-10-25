@@ -29,6 +29,7 @@ import '../components/tv_horizontal_row.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_skeletons.dart';
 import '../tv_focusable.dart';
+import '../tv_card_registry.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tint_service.dart';
@@ -92,9 +93,30 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     _page.addListener(_scrolled);
   }
 
+  /// This card on its route, for the post-play screen above (S14 C5).
+  Route<dynamic>? _cardRoute;
+  TvCardEntry? _cardEntry;
+
+  void _registerCard(TvCardEntry Function() entry) {
+    final route = ModalRoute.of(context);
+    if (route == _cardRoute) return;
+    _unregisterCard();
+    if (route == null) return;
+    _cardRoute = route;
+    TvCardRegistry.register(route, _cardEntry = entry());
+  }
+
+  void _unregisterCard() {
+    final route = _cardRoute, entry = _cardEntry;
+    if (route != null && entry != null) TvCardRegistry.unregister(route, entry);
+    _cardRoute = null;
+    _cardEntry = null;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _registerCard(() => TvCardEntry(itemKey: widget.metadata.globalKey));
     final top = ModalRoute.of(context)?.isCurrent == true;
     if (_refreshOnReturn && top && !_playing) _returnedToTop();
     if (_controller != null || _connectionError != null) return;
@@ -313,6 +335,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
 
   @override
   void dispose() {
+    _unregisterCard();
     _controller?.removeListener(_changed);
     if (widget.controller == null) _controller?.dispose();
     _primary.dispose();

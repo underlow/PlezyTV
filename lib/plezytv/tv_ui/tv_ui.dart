@@ -103,16 +103,8 @@ abstract final class TvUi {
   }
 
   /// S14 C1 — the opaque post-play route laid over the finishing player.
-  static PageRoute<void> postPlayRoute(TvPostPlayArgs args) => PageRouteBuilder<void>(
-    opaque: true,
-    pageBuilder: (_, _, _) => TvPostPlayScreen(args: args),
-    transitionsBuilder: (_, animation, _, child) => FadeTransition(
-      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
-      child: child,
-    ),
-    transitionDuration: AppDurations.animMedium,
-    reverseTransitionDuration: AppDurations.animMedium,
-  );
+  static PageRoute<void> postPlayRoute(TvPostPlayArgs args) =>
+      TvPostPlayRoute(builder: (_) => TvPostPlayScreen(args: args));
 
   /// Replaces [postPlayRoute] in [exitToPostPlay], for player tests.
   @visibleForTesting

@@ -9,6 +9,7 @@ import '../../../i18n/strings.g.dart';
 import '../../../media/media_item.dart';
 import '../../../media/media_server_client.dart';
 import '../../../utils/formatters.dart';
+import '../../../utils/layout_constants.dart';
 import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/provider_extensions.dart';
 import '../../../utils/snackbar_helper.dart';
@@ -21,6 +22,7 @@ import '../components/tv_rating_stars.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_skeletons.dart';
 import '../tv_theme.dart';
+import '../tv_card_registry.dart';
 import '../tv_tokens.dart';
 import '../tv_ui.dart';
 import 'tv_postplay_controller.dart';
@@ -180,14 +182,29 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
     return launch(context, item, fromStart: fromStart);
   });
 
-  void _openDetail(MediaItem item, {required bool replace, String? seasonId}) => _afterPlayer(() {
+  void _openDetail(MediaItem item, {required bool replace}) => _afterPlayer(() {
     final open = widget.openDetail;
     if (open != null) return open(context, item, replace: replace);
-    return _defaultOpenDetail(context, item, replace: replace, seasonId: seasonId);
+    return _defaultOpenDetail(context, item, replace: replace);
   });
 
-  void _toSubject() =>
-      _openDetail(_c.subject, replace: true, seasonId: _variant == TvPostPlayVariant.movie ? null : _watched.parentId);
+  /// R8, C5: returns to this item's card when it is right underneath (checked
+  /// once the player is gone), otherwise replaces this screen with the card.
+  void _toSubject() {
+    final seasonId = _variant == TvPostPlayVariant.movie ? null : _watched.parentId;
+    _afterPlayer(() async {
+      final route = ModalRoute.of(context);
+      final below = route is TvPostPlayRoute ? TvCardRegistry.of(route.previous) : null;
+      if (below != null && route!.isCurrent && below.itemKey == _c.subject.globalKey) {
+        if (seasonId != null) below.showSeason?.call(seasonId);
+        Navigator.of(context).pop();
+        return;
+      }
+      final open = widget.openDetail;
+      if (open != null) return open(context, _c.subject, replace: true);
+      return _defaultOpenDetail(context, _c.subject, replace: true, seasonId: seasonId);
+    });
+  }
 
   void _back() => _afterPlayer(() async {
     final route = ModalRoute.of(context);
@@ -525,5 +542,30 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
         onSelect: () => _openDetail(hub.items[i], replace: false),
       ),
     );
+  }
+}
+
+/// The post-play route; tracks the route directly underneath it (S14 C5).
+class TvPostPlayRoute extends PageRouteBuilder<void> {
+  TvPostPlayRoute({required WidgetBuilder builder})
+    : super(
+        opaque: true,
+        pageBuilder: (context, _, _) => builder(context),
+        transitionsBuilder: (_, animation, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic),
+          child: child,
+        ),
+        transitionDuration: AppDurations.animMedium,
+        reverseTransitionDuration: AppDurations.animMedium,
+      );
+
+  /// The route right below; the player until Plezy removes it.
+  Route<dynamic>? get previous => _previous;
+  Route<dynamic>? _previous;
+
+  @override
+  void didChangePrevious(Route<dynamic>? previousRoute) {
+    _previous = previousRoute;
+    super.didChangePrevious(previousRoute);
   }
 }
