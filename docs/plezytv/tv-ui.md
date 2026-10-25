@@ -337,11 +337,19 @@ next episode or rewatch, "Your rating" stars (`TvRatingStars` in
 `components/`, tokens `player.postplay` in `TvTokens`), the season's episodes
 and one "similar" row. Rating save repeats Plezy's `rating_bottom_sheet.dart`:
 `rate()` with the value, `rate(-1)` to clear, offered only with
-`capabilities.numericUserRating`; leaving the screen saves an unsaved value
-and waits for a save in flight before the next screen opens (bounded at 3 s),
-so the card below reads the new rating. From the leaving press on, a failed
+`capabilities.numericUserRating`; saves run one after another. A leaving
+press (Back, the card buttons, a launch, a row episode or a similar poster)
+cancels the debounce and starts saving an unsaved value (or resends it once
+after a failed save in flight) without waiting for the server: the screen
+changes as soon as the old player is gone. Each save is held in
+`TvPendingRatings` (`tv_card_registry.dart`) by the item's global key until it
+completes; an S7/S8 card that becomes the top route while a save for its item
+(the movie, or the series that ended) is held rereads once more when it
+finishes, success or failure, and marks `watchStateChanged` if anything
+changed. The card is usable meanwhile. Disposing the screen sends only a
+value that no save is already sending. From the leaving press on, a failed
 save shows no message (Plezy's messenger would show it over the next screen);
-the value is retried silently. Ratings appear as soon as the item
+it is logged. Ratings appear as soon as the item
 loads; a failed related-hubs request only leaves "Similar" out. For a series
 that ended, focus may move once to the stars after loading if no key was
 pressed yet (any key-down counts, seen through `HardwareKeyboard`).
@@ -393,7 +401,8 @@ Contracts:
   watched episode's season); otherwise it is replaced by the card via
   `TvUi.showDetailRoute`. Cards that launch playback defer focus and reread
   watch state and rating when on top again (R10), since `removeRoute` returns
-  `null` to Plezy's result callbacks.
+  `null` to Plezy's result callbacks; a rating save still held in
+  `TvPendingRatings` adds one more reread when it finishes.
 
 Accepted limitations: Back from a gamepad or the companion
 (`KeyEventSimulator`) walks the focus tree directly and does not reach the

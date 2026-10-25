@@ -18,7 +18,9 @@ import 'package:plezy/plezytv/tv_ui/tv_card_registry.dart';
 
 import '../show/fake_media_server_client.dart';
 import '../tv_theme_test_helper.dart';
-import 'tv_postplay_screen_test.dart' show PostPlayClient, episode, movie;
+import 'package:plezy/i18n/strings.g.dart';
+
+import 'tv_postplay_screen_test.dart' show PostPlayClient, episode, movie, showItem;
 
 /// S14 T5 (R8, C5; A2, A20, A36): home → card? → player → post-play, with
 /// the player removed under the post-play route once [removed] completes.
@@ -36,9 +38,15 @@ Future<_Stand> _pump(
   Route<dynamic>? card,
   TvCardEntry? entry,
   required Future<void> removed,
+  PostPlayClient? client,
+  TvPostPlayDetailRoute? detailRoute,
 }) async {
   final stand = _Stand()..card = card;
-  final controller = TvPostPlayController(client: PostPlayClient(numeric: false), watched: watched, next: next);
+  final controller = TvPostPlayController(
+    client: client ?? PostPlayClient(numeric: false),
+    watched: watched,
+    next: next,
+  );
   addTearDown(controller.dispose);
   unawaited(controller.load());
   await pumpTvWidget(tester, const Text('home'));
@@ -57,7 +65,8 @@ Future<_Stand> _pump(
       controller: controller,
       detailRoute: ({required metadata, initialSeasonId}) {
         stand.details.add((metadata, initialSeasonId));
-        return MaterialPageRoute<void>(builder: (_) => Text('new card ${metadata.id}'));
+        return detailRoute?.call(metadata: metadata, initialSeasonId: initialSeasonId) ??
+            MaterialPageRoute<void>(builder: (_) => Text('new card ${metadata.id}'));
       },
     ),
   );
@@ -74,8 +83,34 @@ Future<void> _enter(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// A real S8 for [client]'s movie `m`.
+(TvMovieController, MaterialPageRoute<bool>) _movieCard(PostPlayClient client) {
+  final c = TvMovieController(
+    client: client,
+    metadata: client.items['m']!,
+    versionPreference: (_) async => null,
+    watchEvents: const Stream.empty(),
+  );
+  addTearDown(c.dispose);
+  return (
+    c,
+    MaterialPageRoute<bool>(
+      builder: (_) => TvMovieScreen(metadata: client.items['m']!, controller: c),
+    ),
+  );
+}
+
+/// Up to the stars, one half-star more.
+Future<void> _rateUp(WidgetTester tester) async {
+  await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+  await tester.pump();
+  await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+  await tester.pump();
+}
+
 void main() {
   tearDown(TvCardRegistry.resetForTesting);
+  tearDown(TvPendingRatings.resetForTesting);
 
   testWidgets('A36: this movie card underneath — Back to movie pops without a new route', (tester) async {
     final removed = Completer<void>();
@@ -218,5 +253,114 @@ void main() {
     expect(card.isCurrent, isTrue);
     expect(find.byType(TvShowScreen), findsOneWidget);
     expect(tester.widget<TvTabs>(find.byType(TvTabs)).selectedIndex, 2);
+  });
+
+  group('rating saved in the background (R6, R10, A40)', () {
+    testWidgets('Back: real S8 underneath shows at once, then rereads the new rating', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie(userRating: 4)
+        ..rateGate = Completer();
+      final (c, card) = _movieCard(client);
+      await _pump(tester, watched: movie(userRating: 4), card: card, removed: Future.value(), client: client);
+      await _rateUp(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(card.isCurrent, isTrue, reason: 'Back does not wait for the server');
+      expect(client.rateCalls, 1);
+      expect(c.movie.userRating, 4, reason: 'the server still has the old rating');
+      expect(c.watchStateChanged, isFalse);
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
+      expect(c.movie.userRating, 5);
+      expect(c.watchStateChanged, isTrue);
+      expect(TvPendingRatings.pendingCount, 0);
+    });
+
+    testWidgets('Back to movie: same, through the C5 return', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie(userRating: 4)
+        ..rateGate = Completer();
+      final (c, card) = _movieCard(client);
+      final s = await _pump(tester, watched: movie(userRating: 4), card: card, removed: Future.value(), client: client);
+      await _rateUp(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await _enter(tester); // Back to movie
+      expect(s.details, isEmpty);
+      expect(card.isCurrent, isTrue);
+      expect(c.movie.userRating, 4);
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
+      expect(c.movie.userRating, 5);
+      expect(c.watchStateChanged, isTrue);
+    });
+
+    testWidgets('a failed save: no message, the card shows the server value, nothing held', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie(userRating: 4)
+        ..rateGate = Completer()
+        ..failRate = true;
+      final (c, card) = _movieCard(client);
+      await _pump(tester, watched: movie(userRating: 4), card: card, removed: Future.value(), client: client);
+      await _rateUp(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(card.isCurrent, isTrue);
+      final fetches = client.calls.length;
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text(t.errors.failedToRate), findsNothing);
+      expect(client.calls.length, greaterThan(fetches), reason: 'rereads after the failure too');
+      expect(c.movie.userRating, 4);
+      expect(c.watchStateChanged, isFalse);
+      expect(client.rateCalls, 1);
+      expect(TvPendingRatings.pendingCount, 0);
+    });
+
+    testWidgets('series ended: real S7 underneath rereads the series rating', (tester) async {
+      final client = PostPlayClient()
+        ..items['show'] = showItem(userRating: 4)
+        ..rateGate = Completer();
+      final c = TvShowController(client: client, metadata: client.items['show']!);
+      addTearDown(c.dispose);
+      final card = MaterialPageRoute<bool>(
+        builder: (_) => TvShowScreen(metadata: client.items['show']!, controller: c),
+      );
+      await _pump(tester, watched: episode(3, 8), card: card, removed: Future.value(), client: client);
+      await _rateUp(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(card.isCurrent, isTrue);
+      expect(c.show.userRating, 4);
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
+      expect(c.show.userRating, 5);
+      expect(c.watchStateChanged, isTrue);
+      expect(TvPendingRatings.pendingCount, 0);
+    });
+
+    testWidgets('a new card opened in place of the screen rereads too', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie(userRating: 4)
+        ..rateGate = Completer();
+      final (c, card) = _movieCard(client);
+      final s = await _pump(
+        tester,
+        watched: movie(userRating: 4),
+        removed: Future.value(),
+        client: client,
+        detailRoute: ({required metadata, initialSeasonId}) => card,
+      );
+      await _rateUp(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await _enter(tester); // Back to movie
+      expect(s.details.single.$1.id, 'm');
+      expect(card.isCurrent, isTrue, reason: 'opened before the save finished');
+      expect(c.movie.userRating, 4);
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
+      expect(c.movie.userRating, 5);
+      expect(c.watchStateChanged, isTrue);
+      expect(TvPendingRatings.pendingCount, 0);
+    });
   });
 }

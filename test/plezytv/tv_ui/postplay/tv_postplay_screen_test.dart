@@ -20,6 +20,7 @@ import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
 import 'package:plezy/plezytv/tv_ui/postplay/tv_postplay_controller.dart';
 import 'package:plezy/plezytv/tv_ui/postplay/tv_postplay_logic.dart';
 import 'package:plezy/plezytv/tv_ui/postplay/tv_postplay_screen.dart';
+import 'package:plezy/plezytv/tv_ui/tv_card_registry.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
@@ -92,6 +93,8 @@ class PostPlayClient extends FakeShowClient {
     if (rateGate != null) await rateGate!.future;
     if (failRate) throw StateError('offline');
     rated.add(rating);
+    final stored = items[item.id];
+    if (stored != null) items[item.id] = stored.copyWith(userRating: rating < 0 ? null : rating);
   }
 }
 
@@ -249,6 +252,8 @@ Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
 }
 
 void main() {
+  tearDown(TvPendingRatings.resetForTesting);
+
   group('logic', () {
     test('variant follows the input', () {
       expect(tvPostPlayVariant(episode(1, 1), episode(1, 2)), TvPostPlayVariant.episode);
@@ -525,7 +530,7 @@ void main() {
       expect(tester.widget<TvRatingStars>(find.byType(TvRatingStars)).value, 1);
     });
 
-    testWidgets('Back with an unsaved value: saved before the screen closes (A40, R10)', (tester) async {
+    testWidgets('Back with an unsaved value: closes at once, saved in the background (A40, R6)', (tester) async {
       final client = PostPlayClient()
         ..items['m'] = movie()
         ..rateGate = Completer();
@@ -534,15 +539,17 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowRight);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
+      expect(find.byType(TvPostPlayScreen), findsNothing, reason: 'does not wait for the server');
       expect(client.rateCalls, 1);
-      expect(find.byType(TvPostPlayScreen), findsOneWidget, reason: 'the card below would reread the old rating');
+      expect(TvPendingRatings.of(movie().globalKey), isNotNull, reason: 'held for the card of the movie');
       client.rateGate!.complete();
       await tester.pumpAndSettle();
       expect(client.rated, [2.0]);
-      expect(find.byType(TvPostPlayScreen), findsNothing);
+      expect(client.rateCalls, 1);
+      expect(TvPendingRatings.pendingCount, 0);
     });
 
-    testWidgets('an autosave in flight is awaited before the card opens; no second save', (tester) async {
+    testWidgets('an autosave in flight does not hold the card; no second save', (tester) async {
       final client = PostPlayClient()
         ..items['m'] = movie()
         ..rateGate = Completer();
@@ -553,12 +560,14 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowDown);
       await press(tester, LogicalKeyboardKey.enter); // Back to movie
       await tester.pumpAndSettle();
-      expect(h.details, isEmpty);
+      expect(h.details.single.$1.id, 'm', reason: 'the card opens before the save finishes');
       client.rateGate!.complete();
       await tester.pumpAndSettle();
-      expect(h.details.single.$1.id, 'm');
+      h.dispose();
+      await tester.pumpAndSettle();
       expect(client.rated, [1.0]);
-      expect(client.rateCalls, 1);
+      expect(client.rateCalls, 1, reason: 'neither leaving nor dispose sends the same value again');
+      expect(TvPendingRatings.pendingCount, 0);
     });
 
     testWidgets('Back with an unsaved value the server refuses: the screen closes, no message (R6)', (tester) async {
@@ -589,7 +598,8 @@ void main() {
       expect(client.rateCalls, 1, reason: 'autosave sent, reports its errors');
       await press(tester, LogicalKeyboardKey.arrowDown);
       await press(tester, LogicalKeyboardKey.enter); // Back to movie
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('card m'), findsOneWidget, reason: 'the card does not wait for the save');
       client.rateGate!.complete();
       for (var i = 0; i < 5; i++) {
         await tester.pump();
@@ -598,12 +608,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(client.rateCalls, 2, reason: 'the failed value is sent once more on leaving');
       expect(h.details.single.$1.id, 'm');
-      expect(find.text('card m'), findsOneWidget);
       expect(find.text(t.errors.failedToRate), findsNothing);
+      expect(TvPendingRatings.pendingCount, 0);
     });
 
-    testWidgets('screen-owned controller: client from the provider; plain Back saves (A40)', (tester) async {
-      final client = PostPlayClient()..items['m'] = movie();
+    testWidgets('screen-owned controller: client from the provider; plain Back saves once (A40)', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie()
+        ..rateGate = Completer();
       final servers = Servers(client);
       addTearDown(servers.dispose);
       await pumpTvWidget(tester, const SizedBox.shrink());
@@ -635,8 +647,12 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowRight);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byType(TvPostPlayScreen), findsNothing);
+      expect(find.byType(TvPostPlayScreen), findsNothing, reason: 'closed and disposed while the save runs');
+      expect(client.rateCalls, 1, reason: 'dispose does not send the value leaving already sends');
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
       expect(client.rated, [2.0]);
+      expect(client.rateCalls, 1);
     });
   });
 
@@ -736,6 +752,21 @@ void main() {
       removed.complete();
       await tester.pumpAndSettle();
       expect(find.byType(TvPostPlayScreen), findsNothing);
+    });
+
+    testWidgets('the rating save starts at the press, before the player is gone (R6)', (tester) async {
+      final removed = Completer<void>();
+      final client = PostPlayClient()..items['m'] = movie();
+      await pumpScreen(tester, client: client, watched: movie(), playerRemoved: removed.future);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(client.rateCalls, 1);
+      expect(find.byType(TvPostPlayScreen), findsOneWidget);
+      removed.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(TvPostPlayScreen), findsNothing);
+      expect(client.rateCalls, 1);
     });
 
     testWidgets('an error completion counts as removed', (tester) async {

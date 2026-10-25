@@ -125,8 +125,33 @@ class _TvShowScreenState extends State<TvShowScreen> {
       _refreshOnReturn = false;
       unawaited(_returnedToTop());
     }
-    if (_controller != null || _connectionError != null) return;
-    _connect();
+    if (_controller == null && _connectionError == null) _connect();
+    if (top) _rereadAfterRatingSave();
+  }
+
+  bool _awaitingRating = false;
+
+  /// S14 R6, R10: a post-play rating save for this series may still be
+  /// running when the card shows; reread once it finishes, without blocking
+  /// the card.
+  void _rereadAfterRatingSave() {
+    if (_awaitingRating || _controller == null) return;
+    _awaitingRating =
+        TvPendingRatings.whenSaved(
+          widget.metadata.globalKey,
+          isCurrent: () => mounted,
+          reread: () {
+            _awaitingRating = false;
+            final c = _controller!;
+            final before = _watchFingerprint(c);
+            unawaited(
+              c.refresh().then((_) {
+                if (mounted && _watchFingerprint(c) != before) c.watchStateChanged = true;
+              }),
+            );
+          },
+        ) !=
+        null;
   }
 
   void _connect() {
