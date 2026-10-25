@@ -16,6 +16,11 @@ class TvButton extends StatelessWidget {
     this.onSelect,
     this.focusNode,
     this.autofocus = false,
+    this.onNavigateLeft,
+    this.onNavigateRight,
+    this.onNavigateUp,
+    this.onNavigateDown,
+    this.minWidth,
   }) : assert(label.trim().isNotEmpty);
 
   final String label;
@@ -24,6 +29,10 @@ class TvButton extends StatelessWidget {
   final bool disabled, autofocus;
   final VoidCallback? onSelect;
   final FocusNode? focusNode;
+  final VoidCallback? onNavigateLeft, onNavigateRight, onNavigateUp, onNavigateDown;
+
+  /// Design pixels; defaults to the button token's minimum width.
+  final int? minWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +48,10 @@ class TvButton extends StatelessWidget {
       focusNode: focusNode,
       autofocus: autofocus,
       onSelect: onSelect,
+      onNavigateLeft: onNavigateLeft,
+      onNavigateRight: onNavigateRight,
+      onNavigateUp: onNavigateUp,
+      onNavigateDown: onNavigateDown,
       semanticLabel: label,
       builder: (context, state) {
         final foreground = state.disabled
@@ -50,7 +63,7 @@ class TvButton extends StatelessWidget {
             : TvTokens.color.text.primary;
         return Container(
           height: px(small ? TvTokens.size.buttonSmall.h : TvTokens.size.button.h),
-          constraints: BoxConstraints(minWidth: px(TvTokens.size.button.minW)),
+          constraints: BoxConstraints(minWidth: px(minWidth ?? TvTokens.size.button.minW)),
           padding: EdgeInsets.symmetric(
             horizontal: px(small ? TvTokens.size.buttonSmall.padX : TvTokens.size.button.padX),
           ),

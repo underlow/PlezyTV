@@ -215,10 +215,10 @@ class TvPlayerStand {
   final List<MediaItem> queueSelections = [];
 
   /// Builds the TV panel on Plezy's controls with `onQueueItemSelected`
-  /// recorded. Call after `TvUi.enabledForTesting`; `TvUi.resetForTesting`
-  /// undoes it.
+  /// recorded; the other player builders stay the production ones. Call after
+  /// `TvUi.enabledForTesting`; `TvUi.resetForTesting` undoes it.
   void observeQueueSelections() {
-    TvUi.playerBuildersForTesting = TvPlayerBuilders(
+    TvUi.playerBuildersForTesting = TvUi.productionPlayerBuilders.copyWith(
       panel: (context, args) {
         final p = args.plezy;
         final select = p.onQueueItemSelected;
@@ -366,8 +366,9 @@ class TvPlayerStand {
   /// Wraps [child] in the providers, input-mode tracker and app the
   /// controls expect, on a 1920 × 1080 surface. The screen node walks the
   /// Back chain like `VideoPlayerScreen`; [playNextFocusNode] sits on a
-  /// stand-in prompt button.
-  Widget host(Widget child) => InputModeTracker(
+  /// stand-in prompt button. [layer] is an extra child of the screen's stack
+  /// (a positioned overlay such as H7's pause layer).
+  Widget host(Widget child, {Widget? layer}) => InputModeTracker(
     child: MultiProvider(
       providers: [
         Provider<AppDatabase>.value(value: database),
@@ -392,6 +393,7 @@ class TvPlayerStand {
                 child: Stack(
                   children: [
                     Positioned.fill(child: child),
+                    ?layer,
                     Positioned(
                       left: 0,
                       top: 0,
@@ -456,7 +458,7 @@ class TvPlayerStand {
   );
 
   /// Mounts [controls] and settles with the panel up.
-  Future<void> pumpControls(WidgetTester tester, PlexVideoControls controls) async {
+  Future<void> pumpControls(WidgetTester tester, PlexVideoControls controls, {Widget? layer}) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1920, 1080);
     addTearDown(() {
@@ -465,7 +467,7 @@ class TvPlayerStand {
     });
     await tester.pumpWidget(host(const SizedBox.expand()));
     await tester.pump();
-    await tester.pumpWidget(host(controls));
+    await tester.pumpWidget(host(controls, layer: layer));
     await tester.pumpAndSettle();
     // Markers and the timeline react to position updates, not the snapshot.
     player.setPosition(player.state.position);

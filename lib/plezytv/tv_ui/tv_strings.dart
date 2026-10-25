@@ -51,6 +51,8 @@ abstract final class TvStrings {
     return 'Transcoding · ${mbps == mbps.roundToDouble() ? mbps.toStringAsFixed(0) : mbps.toStringAsFixed(1)} Mbps';
   }
 
+  static const playerPaused = 'Paused';
+  static String playerNextEpisodeIn(int seconds) => 'Next episode in $seconds s';
   static const playerSyncStep = '←/→ · 50 ms step';
   static String playerQueueNow(int remainingMs) => remainingMs > 0 ? 'Now · ${left(remainingMs)}' : 'Now';
   static String playerQueueMore({required int count}) => '$count more';
