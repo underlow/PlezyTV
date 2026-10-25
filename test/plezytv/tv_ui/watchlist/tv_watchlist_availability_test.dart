@@ -176,20 +176,102 @@ void main() {
     expect(rechecks.every((c) => c.refresh), isTrue);
     expect(availability.statusOf(items[0]), isA<TvAvailabilityFound>(), reason: 'old result kept meanwhile');
 
-    // Another new server while those are in flight: no duplicates.
+    // Another new server while those are in flight: no duplicates now; each
+    // is queued once more only if it finishes incomplete (C2).
     servers.set(online: ['a', 'b', 'c']);
+    servers.set(online: ['a', 'b', 'c', 'd']);
     await pumpEventQueue();
     expect(matcher.calls, hasLength(6));
+    await answer(items[0], _found([_copy('x', 'a')]));
+    await answer(items[1], _emptyIncomplete);
+    expect(matcher.calls, hasLength(7));
+    expect(matcher.calls.last.item, items[1]);
+    expect(matcher.calls.last.refresh, isTrue);
+    await answer(items[1], _emptyIncomplete);
+    expect(matcher.calls, hasLength(7), reason: 'once per server change');
   });
 
-  test('changed expectedServerIds also rechecks incomplete results', () async {
-    final item = _item(1);
-    availability.setItems([item]);
-    await answer(item, _emptyIncomplete);
-    servers.set(expected: ['a']);
+  test('a server coming online re-runs a first check that was running and ends incomplete', () async {
+    final items = List.generate(2, _item);
+    availability.setItems(items);
+    expect(matcher.open, hasLength(2));
+    servers.set(online: ['a', 'b']);
     await pumpEventQueue();
     expect(matcher.calls, hasLength(2));
+    await answer(items[0], _emptyIncomplete);
+    await answer(items[1], _complete);
+    expect(matcher.calls, hasLength(3));
+    expect(matcher.calls.last.item, items[0]);
     expect(matcher.calls.last.refresh, isTrue);
+  });
+
+  test('changed expectedServerIds rechecks every item; the old result shows until replaced', () async {
+    final items = List.generate(3, _item);
+    final gone = _copy('g', 'b');
+    availability.setItems(items);
+    await answer(items[0], _emptyIncomplete);
+    await answer(items[1], _found([gone]));
+    await answer(items[2], _complete);
+    expect(matcher.calls, hasLength(3));
+    servers.set(expected: ['a']);
+    await pumpEventQueue();
+    expect(matcher.calls.skip(3).map((c) => c.item), unorderedEquals(items));
+    expect(matcher.calls.skip(3).every((c) => c.refresh), isTrue);
+    expect((availability.statusOf(items[1]) as TvAvailabilityFound).copies, [gone]);
+    await answer(items[1], libraryLookupResult(const [], succeeded: {'a'}));
+    expect(availability.statusOf(items[1]), same(TvAvailability.notFound), reason: 'removed server copy gone');
+  });
+
+  test('changed expectedServerIds re-runs checks that were running at the change', () async {
+    final item = _item(1);
+    availability.setItems([item]);
+    servers.set(expected: ['a']);
+    await pumpEventQueue();
+    expect(matcher.calls, hasLength(1));
+    await answer(item, _complete);
+    expect(matcher.calls, hasLength(2));
+  });
+
+  test('reset forgets results, the queue and running checks', () async {
+    final items = List.generate(5, _item);
+    availability.setItems(items);
+    await answer(items[0], _found([_copy('c', 'a')]));
+    final revision = availability.foundRevision;
+    final watcher = availability.watch(items[0]);
+    expect(watcher.value, isA<TvAvailabilityFound>());
+    availability.reset();
+    expect(availability.statusOf(items[0]), same(TvAvailability.pending));
+    expect(watcher.value, same(TvAvailability.pending));
+    expect(availability.foundRevision, isNot(revision));
+    expect(availability.checking, isFalse);
+    // A late answer from before the reset is ignored.
+    await answer(items[1], _complete);
+    expect(availability.statusOf(items[1]), same(TvAvailability.pending));
+    expect(matcher.open, hasLength(2), reason: 'queue cleared, nothing new started');
+  });
+
+  test('priority survives setItems', () async {
+    final items = List.generate(10, _item);
+    availability.setItems(items);
+    availability.prioritize([items[8], items[9]]);
+    availability.setItems(items.reversed.toList());
+    await answer(items[0], _complete);
+    await answer(items[1], _complete);
+    expect(matcher.calls.skip(3).take(2).map((c) => c.item), [items[8], items[9]]);
+  });
+
+  test('watch notifies only for its item; foundRevision moves only on found changes', () async {
+    final items = List.generate(2, _item);
+    availability.setItems(items);
+    var first = 0;
+    availability.watch(items[0]).addListener(() => first++);
+    final revision = availability.foundRevision;
+    await answer(items[1], _complete);
+    expect(first, 0);
+    expect(availability.foundRevision, revision);
+    await answer(items[0], _found([_copy('c', 'a')]));
+    expect(first, 1);
+    expect(availability.foundRevision, revision + 1);
   });
 
   test('sectionOpened rechecks only notFound results older than 10 minutes', () async {

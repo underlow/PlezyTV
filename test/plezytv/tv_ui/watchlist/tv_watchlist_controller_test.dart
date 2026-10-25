@@ -412,6 +412,25 @@ void main() {
       expect(_titles(c), ['T1', 'T2', 'T3']);
     });
 
+    test('an item added elsewhere that stale membership does not know is kept on later notifications', () {
+      fakeAsync((async) {
+        final src = _FakeSource(s, three());
+        final c = make([src]);
+        c.load();
+        async.flushMicrotasks();
+        src.loadSnapshot();
+        // Added on the phone: the list re-read shows X, the snapshot does not.
+        src.items = [_item(s, 9, title: 'X'), ...src.items];
+        c.backgroundRefresh();
+        async.flushMicrotasks();
+        expect(_titles(c), ['X', 'T1', 'T2', 'T3']);
+        // A later watchlist change on the TV (T3 removed) notifies.
+        src.members!.remove(src.items[3].entryIdentityKey);
+        src.changes.notify();
+        expect(_titles(c), ['X', 'T1', 'T2'], reason: 'only the true -> false flip is dropped');
+      });
+    });
+
     test('a background re-read that still lists a locally removed item does not resurrect it', () async {
       final src = _FakeSource(s, three());
       final c = make([src]);
@@ -433,6 +452,50 @@ void main() {
     await pumpEventQueue();
     expect(_titles(c), ['T2']);
     expect(c.lastChange, TvWatchlistChange.keepFocus);
+  });
+
+  test('onServer tab does not rebuild for results that do not change the found set', () async {
+    const s = CatalogSourceId.trakt;
+    matcher.found.add('T2');
+    final c = make([
+      _FakeSource(s, [for (var i = 1; i <= 6; i++) _item(s, i)]),
+    ]);
+    c.setTab(TvWatchlistTab.onServer);
+    await c.load();
+    final revisions = <int>[];
+    c.addListener(() => revisions.add(c.viewRevision));
+    await pumpEventQueue();
+    expect(_titles(c), ['T2']);
+    expect(revisions.toSet(), hasLength(1), reason: 'one view change for T2; notFound results add none');
+  });
+
+  test('fullReset forgets availability results (F4)', () async {
+    const s = CatalogSourceId.trakt;
+    matcher.found.add('T1');
+    final src = _FakeSource(s, [_item(s, 1)]);
+    final c = make([src]);
+    await c.load();
+    await pumpEventQueue();
+    expect(c.availability.statusOf(src.items[0]), isA<TvAvailabilityFound>());
+    matcher.found.clear();
+    await c.fullReset();
+    expect(c.availability.statusOf(src.items[0]), isNot(isA<TvAvailabilityFound>()));
+    await pumpEventQueue();
+    expect(c.availability.statusOf(src.items[0]), same(TvAvailability.notFound));
+  });
+
+  test('a source appearing after a reset with no sources loads it (F10)', () async {
+    const s = CatalogSourceId.trakt;
+    final src = _FakeSource(s, [_item(s, 1)]);
+    final c = make([]);
+    await c.load();
+    expect(c.phase, TvWatchlistPhase.loading);
+    await c.fullReset();
+    sources.set([src]);
+    await pumpEventQueue();
+    expect(c.source, src);
+    expect(c.phase, TvWatchlistPhase.ready);
+    expect(_titles(c), ['T1']);
   });
 
   test('preferences round-trip through encode/decode', () {

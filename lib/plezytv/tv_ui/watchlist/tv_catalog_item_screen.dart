@@ -163,6 +163,8 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
 
   bool get _openActive => !_pending && _status is! TvAvailabilityNotFound;
 
+  int _checkSeq = 0;
+
   bool get _hasTrailer => _item.trailerUrl?.trim().isNotEmpty ?? false;
 
   void _focusInitial() {
@@ -175,6 +177,8 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
     final known = _status;
     final reuse = !retry && enriched == null && known is! TvAvailabilityPending;
     if (reuse) return;
+    // Only the newest check may show a result or end «checking» (R12).
+    final seq = ++_checkSeq;
     if (_initialized) {
       setState(() => _checking = true);
     } else {
@@ -184,7 +188,7 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
         .check(widget.args.item, enriched: enriched, retry: retry)
         .then(
           (status) {
-            if (!mounted) return;
+            if (!mounted || seq != _checkSeq) return;
             setState(() {
               _status = status;
               _checking = false;
@@ -192,7 +196,7 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           },
           onError: (Object e) {
             appLogger.d('Watchlist catalog check failed', error: e);
-            if (mounted) {
+            if (mounted && seq == _checkSeq) {
               setState(() {
                 _status = TvAvailability.unchecked;
                 _checking = false;

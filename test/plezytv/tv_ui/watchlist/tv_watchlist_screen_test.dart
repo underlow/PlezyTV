@@ -226,6 +226,27 @@ void main() {
     await tester.pump();
   }
 
+  /// OK opens a card route that covers the grid; the item is removed while
+  /// covered, then Back returns to the grid (the real removal path).
+  Future<void> removeWhileCovered(WidgetTester tester) async {
+    TvCatalogItemArgs? opened;
+    cardHook = (context, args) {
+      opened = args;
+      return Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Focus(autofocus: true, debugLabel: 'card', child: SizedBox()),
+        ),
+      );
+    };
+    await key(tester, LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(focusLabel(), 'card', reason: 'the card covers the grid');
+    opened!.onRemoved(opened!.item);
+    await tester.pumpAndSettle();
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('A3: single source loads, counts, focuses the first card, no source button', (tester) async {
     await pumpScreen(tester, [_Source(CatalogSourceId.plex, _items(32))]);
 
@@ -400,6 +421,73 @@ void main() {
     }
   });
 
+  testWidgets('A4 variant: after a sort change mid-scan the visible items are checked first', (tester) async {
+    matcher.hold = true;
+    final state = await pumpScreen(tester, [_Source(CatalogSourceId.plex, _items(375))]);
+    // At the top the visible range stays the same while its items change.
+    state.controller.setSort(TvWatchlistSort.year);
+    await tester.pump();
+    await tester.pump();
+    for (var round = 0; round < 3; round++) {
+      for (final c in matcher.calls.where((c) => !c.completer.isCompleted).toList()) {
+        c.completer.complete(_notFound);
+      }
+      await tester.pump();
+    }
+    final recent = matcher.calls.reversed.take(3).map((c) => c.item.title);
+    final view = [for (final i in state.controller.view) i.title];
+    for (final title in recent) {
+      expect(view.indexOf(title), lessThan(60), reason: '$title is far from the visible rows');
+    }
+  });
+
+  testWidgets('A30: reconnect prime keeps the list, focus and scroll; no reload while loading', (tester) async {
+    final source = _Source(CatalogSourceId.plex, _items(60));
+    final gate = source.gate = Completer<void>();
+    final state = await pumpScreen(tester, [source]);
+    state.primeRefresh();
+    await tester.pump();
+    expect(source.listFetches, 1, reason: 'cold start prime during the first load');
+    gate.complete();
+    source.gate = null;
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 4; i++) {
+      await key(tester, LogicalKeyboardKey.arrowDown);
+    }
+    final index = grid(tester).focusedIndex;
+    final title = state.controller.view[index].title;
+    final top = tester.getTopLeft(find.text(title)).dy;
+
+    state.primeRefresh();
+    expect(state.controller.phase, TvWatchlistPhase.ready);
+    await tester.pumpAndSettle();
+    expect(source.listFetches, 2, reason: 'silent re-read');
+    expect(find.byType(TvPosterSkeleton), findsNothing);
+    expect(grid(tester).focusedIndex, index);
+    expect(focusLabel(), 'TV grid $index');
+    expect(tester.getTopLeft(find.text(title)).dy, top);
+  });
+
+  testWidgets('a background re-read with new metadata updates the posters', (tester) async {
+    final source = _Source(CatalogSourceId.plex, _items(3));
+    final state = await pumpScreen(tester, [source]);
+    await tester.pumpAndSettle();
+    source.items = [
+      CatalogItem(
+        source: CatalogSourceId.plex,
+        kind: MediaKind.movie,
+        title: 'T0',
+        year: 1999,
+        ids: const CatalogItemIds(trakt: 0),
+      ),
+      ...source.items.skip(1),
+    ];
+    state.refresh();
+    await tester.pumpAndSettle();
+    final poster = tester.widgetList<TvPoster>(find.byType(TvPoster)).firstWhere((p) => p.item.title == 'T0');
+    expect(poster.item.year, 1999);
+  });
+
   testWidgets('A5: found with one copy opens its card; Back returns to the same poster', (tester) async {
     matcher.results['T3'] = _found('copy-3');
     await pumpScreen(tester, [_Source(CatalogSourceId.plex, _items(8))]);
@@ -497,14 +585,8 @@ void main() {
       for (var i = 0; i < focusIndex; i++) {
         await key(tester, LogicalKeyboardKey.arrowRight);
       }
-      cardHook = (context, args) async {
-        args.onRemoved(args.item);
-        await tester.pump();
-      };
       final fetches = source.listFetches;
-      await key(tester, LogicalKeyboardKey.enter);
-      await tester.pump();
-      await tester.pump();
+      await removeWhileCovered(tester);
 
       expect([for (final i in state.controller.view) i.title], isNot(contains('T$focusIndex')));
       expect(find.byType(TvPoster), findsNWidgets(4));
@@ -525,9 +607,7 @@ void main() {
     final index = grid(tester).focusedIndex;
     final title = state.controller.view[index].title;
     final before = tester.getTopLeft(find.text(title)).dy;
-    cardHook = (context, args) async => args.onRemoved(args.item);
-    await key(tester, LogicalKeyboardKey.enter);
-    await tester.pump();
+    await removeWhileCovered(tester);
 
     final next = state.controller.view[grid(tester).focusedIndex].title;
     expect(grid(tester).focusedIndex, index);

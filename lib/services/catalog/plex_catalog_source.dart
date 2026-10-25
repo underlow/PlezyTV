@@ -308,7 +308,7 @@ class PlexCatalogSource with CatalogWatchlistMachinery implements CatalogSource,
 
   /// Plex sends `watchlistedAt` as epoch seconds; an ISO string is accepted too.
   static DateTime? _watchlistedAt(Object? value) {
-    if (value is String) {
+    if (value is String && !RegExp(r'^\s*-?\d+\s*$').hasMatch(value)) {
       final parsed = DateTime.tryParse(value);
       if (parsed != null) return parsed;
     }

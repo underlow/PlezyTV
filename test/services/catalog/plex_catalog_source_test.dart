@@ -111,10 +111,11 @@ void main() {
             (request) async => jsonResponse({
               'MediaContainer': {
                 'offset': 0,
-                'size': 3,
-                'totalSize': 3,
+                'size': 4,
+                'totalSize': 4,
                 'Metadata': [
                   {..._metadata(ratingKey: 'a', imdb: 'tt1', tmdb: 1), 'watchlistedAt': 1700000000},
+                  {..._metadata(ratingKey: 'd', imdb: 'tt4', tmdb: 4), 'watchlistedAt': '1700000000'},
                   {..._metadata(ratingKey: 'b', imdb: 'tt2', tmdb: 2), 'watchlistedAt': '2024-03-01T12:00:00Z'},
                   _metadata(ratingKey: 'c', imdb: 'tt3', tmdb: 3),
                 ],
@@ -127,10 +128,12 @@ void main() {
 
       final page = await source.fetchRow(CatalogRowId.watchlist, page: 1, limit: 25);
 
-      expect(page.items.map((i) => i.ids.plex), ['a', 'b', 'c']);
-      expect(page.items[0].addedAt, DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000, isUtc: true));
-      expect(page.items[1].addedAt, DateTime.utc(2024, 3, 1, 12));
-      expect(page.items[2].addedAt, isNull);
+      expect(page.items.map((i) => i.ids.plex), ['a', 'd', 'b', 'c']);
+      final epoch = DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000, isUtc: true);
+      expect(page.items[0].addedAt, epoch);
+      expect(page.items[1].addedAt, epoch, reason: 'all-digit string is epoch seconds, not an ISO year');
+      expect(page.items[2].addedAt, DateTime.utc(2024, 3, 1, 12));
+      expect(page.items[3].addedAt, isNull);
     });
 
     test('sends the current app language so Discover localizes metadata', () async {

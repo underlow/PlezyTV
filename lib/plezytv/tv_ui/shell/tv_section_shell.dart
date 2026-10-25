@@ -547,6 +547,23 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       ));
     }
 
+    // R1: «Список» right after the library entries, before «Ещё».
+    var watchlistAdded = false;
+    void addWatchlist() {
+      if (watchlistAdded || !_hasWatchlist) return;
+      watchlistAdded = true;
+      const section = TvShellSection.watchlist();
+      entries.add((
+        section: section,
+        item: TvSideMenuItem(
+          key: const ValueKey(section),
+          icon: Symbols.bookmark_rounded,
+          label: TvStrings.watchlist,
+          onSelect: () => selectSection(section),
+        ),
+      ));
+    }
+
     addTab(NavigationTabId.search);
     addTab(NavigationTabId.discover);
     if (tabs.any((tab) => tab.id == NavigationTabId.libraries)) {
@@ -566,6 +583,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
           ),
         ));
       }
+      addWatchlist();
       if (libraries.libraries.any((lib) => hidden.contains(lib.globalKey)) || servers.totalServerCount > 1) {
         entries.add((
           section: null,
@@ -578,18 +596,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
         ));
       }
     }
-    if (_hasWatchlist) {
-      const section = TvShellSection.watchlist();
-      entries.add((
-        section: section,
-        item: TvSideMenuItem(
-          key: const ValueKey(section),
-          icon: Symbols.bookmark_rounded,
-          label: TvStrings.watchlist,
-          onSelect: () => selectSection(section),
-        ),
-      ));
-    }
+    addWatchlist();
     addTab(NavigationTabId.liveTv);
     addTab(NavigationTabId.explore);
     if (music?.currentTrack != null && !_isOffline) {

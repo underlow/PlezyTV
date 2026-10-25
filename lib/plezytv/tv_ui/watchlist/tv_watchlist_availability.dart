@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 
@@ -42,9 +43,10 @@ final class TvAvailabilityFound extends TvAvailability {
 }
 
 class _Job {
+  final String key;
   final CatalogItem item;
   final bool refresh;
-  _Job(this.item, this.refresh);
+  _Job(this.key, this.item, this.refresh);
 }
 
 class _Known {
@@ -68,12 +70,29 @@ class TvWatchlistAvailability extends ChangeNotifier {
   final DateTime Function() _now;
 
   final Map<String, _Known> _known = {};
-  final List<_Job> _queue = [];
-  final Set<String> _inFlight = {};
+
+  /// Queued checks in run order, keyed by item key.
+  final LinkedHashMap<String, _Job> _queue = LinkedHashMap();
+
+  /// Running queued checks: key → the generation they started with.
+  final Map<String, int> _inFlight = {};
   final Map<String, int> _generation = {};
+
+  /// Checks running when the expected servers changed: queued again after
+  /// they finish, whatever they answer (R8).
+  final Set<String> _recheckAlways = {};
+
+  /// Checks running when a server came online: queued again once with
+  /// `refreshIncomplete` if they finish incomplete (R8).
+  final Set<String> _recheckIfIncomplete = {};
+
+  /// Last prioritized keys, kept across [setItems] (visible range first).
+  List<String> _priority = const [];
+  final Map<String, ValueNotifier<TvAvailability>> _watchers = {};
   Map<String, CatalogItem> _items = {};
   Set<String> _expected = {};
   Set<String> _online = {};
+  int _foundRevision = 0;
   bool _disposed = false;
 
   TvWatchlistAvailability(this._matcher, this._multiServer, {DateTime Function()? now}) : _now = now ?? DateTime.now {
@@ -82,27 +101,49 @@ class TvWatchlistAvailability extends ChangeNotifier {
     _multiServer.addListener(_onServersChanged);
   }
 
-  static String keyOf(CatalogItem item) => '${item.source.name}/${item.entryIdentityKey}';
+  static final Expando<String> _keys = Expando('TvWatchlistAvailability.key');
+
+  /// Item identity; computed once per item instance.
+  static String keyOf(CatalogItem item) => _keys[item] ??= '${item.source.name}/${item.entryIdentityKey}';
 
   TvAvailability statusOf(CatalogItem item) => _known[keyOf(item)]?.status ?? TvAvailability.pending;
+
+  /// Notifies only when [item]'s own status changes (poster badges).
+  ValueListenable<TvAvailability> watch(CatalogItem item) {
+    final key = keyOf(item);
+    return _watchers[key] ??= ValueNotifier(_known[key]?.status ?? TvAvailability.pending);
+  }
+
+  /// Bumped when an item becomes or stops being [TvAvailabilityFound]; the
+  /// «Есть на сервере» tab rebuilds only then.
+  int get foundRevision => _foundRevision;
 
   /// Whether any item is queued or being checked (R9).
   bool get checking => _queue.isNotEmpty || _inFlight.isNotEmpty;
 
-  /// Replaces the full list. Known results are kept; unknown items are queued.
+  /// Replaces the full list. Known results are kept; unknown items are
+  /// queued; the last prioritized items stay at the front.
   void setItems(List<CatalogItem> items) {
     if (_disposed) return;
     final wasChecking = checking;
     _items = {for (final item in items) keyOf(item): item};
-    final queued = {for (final job in _queue) keyOf(job.item): job};
+    final previous = Map.of(_queue);
     _queue.clear();
-    for (final MapEntry(:key, :value) in _items.entries) {
-      final existing = queued[key];
+    void add(String key, CatalogItem item) {
+      if (_queue.containsKey(key)) return;
+      final existing = previous[key];
       if (existing != null) {
-        _queue.add(_Job(value, existing.refresh));
-      } else if (!_known.containsKey(key) && !_inFlight.contains(key)) {
-        _queue.add(_Job(value, false));
+        _queue[key] = _Job(key, item, existing.refresh);
+      } else if (!_known.containsKey(key) && !_inFlight.containsKey(key)) {
+        _queue[key] = _Job(key, item, false);
       }
+    }
+
+    for (final key in _priority) {
+      if (_items[key] case final item?) add(key, item);
+    }
+    for (final MapEntry(:key, :value) in _items.entries) {
+      add(key, value);
     }
     _pump();
     if (wasChecking != checking) notifyListeners();
@@ -111,13 +152,18 @@ class TvWatchlistAvailability extends ChangeNotifier {
   /// Moves [items] that are still queued to the front, in the given order.
   void prioritize(Iterable<CatalogItem> items) {
     if (_disposed) return;
-    final front = <_Job>[];
-    for (final item in items) {
-      final key = keyOf(item);
-      final index = _queue.indexWhere((job) => keyOf(job.item) == key);
-      if (index >= 0) front.add(_queue.removeAt(index));
+    _priority = [for (final item in items) keyOf(item)];
+    final front = <String, _Job>{};
+    for (final key in _priority) {
+      final job = _queue.remove(key);
+      if (job != null) front[key] = job;
     }
-    _queue.insertAll(0, front);
+    if (front.isEmpty) return;
+    final rest = Map.of(_queue);
+    _queue
+      ..clear()
+      ..addAll(front)
+      ..addAll(rest);
   }
 
   /// Re-asks `notFound` results older than [notFoundRecheckAge] (R8).
@@ -125,9 +171,31 @@ class TvWatchlistAvailability extends ChangeNotifier {
     if (_disposed) return;
     final now = _now();
     _enqueueWhere(
-      (known) => known.status is TvAvailabilityNotFound && now.difference(known.at) >= notFoundRecheckAge,
+      (known) =>
+          known != null && known.status is TvAvailabilityNotFound && now.difference(known.at) >= notFoundRecheckAge,
       refresh: false,
     );
+  }
+
+  /// Profile reset: forget every result, the queue and running checks.
+  void reset() {
+    if (_disposed) return;
+    for (final key in _inFlight.keys) {
+      _bump(key);
+    }
+    _inFlight.clear();
+    _queue.clear();
+    _recheckAlways.clear();
+    _recheckIfIncomplete.clear();
+    _priority = const [];
+    _items = {};
+    final hadFound = _known.values.any((known) => known.status is TvAvailabilityFound);
+    _known.clear();
+    for (final watcher in _watchers.values) {
+      watcher.value = TvAvailability.pending;
+    }
+    if (hadFound) _foundRevision++;
+    notifyListeners();
   }
 
   /// Card check: the known result, or a check outside the queue. [enriched]
@@ -138,7 +206,7 @@ class TvWatchlistAvailability extends ChangeNotifier {
     final known = _known[key];
     if (!retry && enriched == null && known != null) return known.status;
     final generation = _bump(key);
-    _queue.removeWhere((job) => keyOf(job.item) == key);
+    _queue.remove(key);
     final forms = [item, ?enriched];
     final waves = await Future.wait(forms.map((form) => _match(form, retry)));
     var copies = <MediaItem>[];
@@ -153,7 +221,7 @@ class TvWatchlistAvailability extends ChangeNotifier {
     }
     final status = _statusFrom(copies, complete);
     if (!_disposed && _generation[key] == generation) {
-      _known[key] = _Known(status, _now());
+      _record(key, status);
       notifyListeners();
     }
     return status;
@@ -164,32 +232,46 @@ class TvWatchlistAvailability extends ChangeNotifier {
     _disposed = true;
     _queue.clear();
     _multiServer.removeListener(_onServersChanged);
+    for (final watcher in _watchers.values) {
+      watcher.dispose();
+    }
     super.dispose();
   }
+
+  void _record(String key, TvAvailability status) {
+    final wasFound = _known[key]?.status is TvAvailabilityFound;
+    _known[key] = _Known(status, _now());
+    if (wasFound != status is TvAvailabilityFound) _foundRevision++;
+    _watchers[key]?.value = status;
+  }
+
+  static bool _incomplete(TvAvailability status) =>
+      status is TvAvailabilityUnchecked || (status is TvAvailabilityFound && !status.complete);
 
   void _onServersChanged() {
     if (_disposed) return;
     final expected = _multiServer.expectedServerIds.toSet();
     final online = _multiServer.onlineServerIds.toSet();
-    final changed = !setEquals(expected, _expected) || online.difference(_online).isNotEmpty;
+    final expectedChanged = !setEquals(expected, _expected);
+    final cameOnline = online.difference(_online).isNotEmpty;
     _expected = expected;
     _online = online;
-    if (!changed) return;
-    _enqueueWhere(
-      (known) =>
-          known.status is TvAvailabilityUnchecked ||
-          (known.status is TvAvailabilityFound && !(known.status as TvAvailabilityFound).complete),
-      refresh: true,
-    );
+    if (expectedChanged) {
+      // Every item: copies of a removed server disappear when the new
+      // result replaces the old one, which stays visible meanwhile.
+      _recheckAlways.addAll(_inFlight.keys);
+      _enqueueWhere((_) => true, refresh: true);
+    } else if (cameOnline) {
+      _recheckIfIncomplete.addAll(_inFlight.keys);
+      _enqueueWhere((known) => known != null && _incomplete(known.status), refresh: true);
+    }
   }
 
-  void _enqueueWhere(bool Function(_Known) test, {required bool refresh}) {
+  void _enqueueWhere(bool Function(_Known?) test, {required bool refresh}) {
     final wasChecking = checking;
-    final queued = {for (final job in _queue) keyOf(job.item)};
     for (final MapEntry(:key, :value) in _items.entries) {
-      final known = _known[key];
-      if (known == null || !test(known) || queued.contains(key) || _inFlight.contains(key)) continue;
-      _queue.add(_Job(value, refresh));
+      if (_queue.containsKey(key) || _inFlight.containsKey(key) || !test(_known[key])) continue;
+      _queue[key] = _Job(key, value, refresh);
     }
     _pump();
     if (wasChecking != checking) notifyListeners();
@@ -199,22 +281,31 @@ class TvWatchlistAvailability extends ChangeNotifier {
 
   void _pump() {
     while (!_disposed && _inFlight.length < maxConcurrent && _queue.isNotEmpty) {
-      final job = _queue.removeAt(0);
-      final key = keyOf(job.item);
-      _inFlight.add(key);
-      unawaited(_run(job, key, _bump(key)));
+      final job = _queue.remove(_queue.keys.first)!;
+      final generation = _bump(job.key);
+      _inFlight[job.key] = generation;
+      unawaited(_run(job, generation));
     }
   }
 
-  Future<void> _run(_Job job, String key, int generation) async {
+  Future<void> _run(_Job job, int generation) async {
+    final key = job.key;
     final wave = await _match(job.item, job.refresh);
     if (_disposed) return;
-    _inFlight.remove(key);
-    if (_generation[key] == generation) {
-      _known[key] = _Known(
-        wave == null ? TvAvailability.unchecked : _statusFrom(wave.items, _isComplete(wave)),
-        _now(),
-      );
+    if (_inFlight[key] == generation) _inFlight.remove(key);
+    if (_generation[key] != generation) {
+      // Superseded by a card check or a reset; free the slot.
+      _pump();
+      notifyListeners();
+      return;
+    }
+    final status = wave == null ? TvAvailability.unchecked : _statusFrom(wave.items, _isComplete(wave));
+    _record(key, status);
+    final always = _recheckAlways.remove(key);
+    final ifIncomplete = _recheckIfIncomplete.remove(key);
+    final item = _items[key];
+    if (item != null && !_queue.containsKey(key) && (always || (ifIncomplete && _incomplete(status)))) {
+      _queue[key] = _Job(key, item, true);
     }
     _pump();
     notifyListeners();

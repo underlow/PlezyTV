@@ -92,7 +92,9 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
   final _sortButton = FocusNode(debugLabel: 'Watchlist sort');
   final _filtersButton = FocusNode(debugLabel: 'Watchlist filters');
   final _action = FocusNode(debugLabel: 'Watchlist state action');
-  final _media = <String, MediaItem>{};
+
+  /// Poster data per item instance: a re-read brings new instances.
+  final _media = Expando<MediaItem>('TvWatchlistScreen.media');
 
   Timer? _skeletonTimer;
   bool _skeleton = false, _retrying = false, _opening = false, _inGrid = false;
@@ -213,6 +215,11 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
 
   @override
   void fullRefresh() => unawaited(c.fullReset());
+
+  /// Cold start and reconnect (A30): keep the loaded list, focus and scroll;
+  /// re-read silently when ready, retry after an error, skip while loading.
+  @override
+  void primeRefresh() => unawaited(c.backgroundRefresh());
 
   @override
   void onTabHidden() => _shown = false;
@@ -500,11 +507,11 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
 
   Widget _tile(BuildContext context, int index, CatalogItem? item, bool focused) {
     if (item == null) return const SizedBox.shrink();
-    final media = _media.putIfAbsent(TvWatchlistAvailability.keyOf(item), item.toMediaItem);
-    return ListenableBuilder(
-      listenable: availability,
-      builder: (context, _) {
-        final found = availability.statusOf(item) is TvAvailabilityFound;
+    final media = _media[item] ??= item.toMediaItem();
+    return ValueListenableBuilder<TvAvailability>(
+      valueListenable: availability.watch(item),
+      builder: (context, status, _) {
+        final found = status is TvAvailabilityFound;
         final caption = catalogCaption(media);
         return TvPoster(
           item: media,
