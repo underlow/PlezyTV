@@ -95,11 +95,16 @@ return a stateful lightweight section using that key and implement the upstream
 mounts sections lazily and keeps one Libraries section for all library identities.
 `TvSectionShell.sessionControllerFactoryForTesting(context, onContentIntent)`
 can supply a fake session controller, or return null to avoid starting services.
-Reset both hooks to null in teardown. The former
+`TvSectionShell.watchlistBuilderForTesting(context, key, onOpenSearch)` supplies
+the «Список» probe while `sectionBuilderForTesting` is set (otherwise the slot is
+an empty box). Reset these hooks to null in teardown. The former
 `TvShell.mainScreenBuilderForTesting` hook has been removed.
 
-`TvShellSection.tab(NavigationTabId)` and `TvShellSection.library(globalKey)`
-are the shared section identities. `TvSectionShellState` exposes `currentSection`,
+`TvShellSection.tab(NavigationTabId)`, `TvShellSection.library(globalKey)` and
+`TvShellSection.watchlist()` are the shared section identities. `tab` is null for
+the watchlist and No connection; mounted screens, keys and visibility hooks use
+`TvShellSection.slot` (the tab, or `TvShellSection.watchlistSlot`), so code that
+compares `tab` with Home never mistakes either for Home. `TvSectionShellState` exposes `currentSection`,
 `selectionCommand`, `isSectionAvailable`, `selectSection`, `selectLibrary` and
 `focusMenu` for the remaining shell integration. Every accepted selection
 increments the command counter, including a repeated selection, so deferred
@@ -177,6 +182,29 @@ existence. Remote Libraries opens the general Libraries section; Home selects
 Home online or No connection offline. Section replacement stages must preserve
 these scopes, callbacks, readiness and Back behavior. Initial profile prompting
 continues to respect the profile session’s `initialPromptHandled` flag.
+
+### S10 watchlist section
+
+«Список» (`lib/plezytv/tv_ui/watchlist/`) is a fork-owned section with no upstream
+tab. Its menu entry (bookmark icon) follows the library entries and More, before
+Live TV and Explore; the companion remote's next/previous step visits it after
+Libraries. It is available while online with a non-empty
+`CatalogSourcesProvider.watchlistCapableSources`; losing every source leaves for
+Home, and a soft connection loss restores it like other sections.
+`TvWatchlistScreen` is mounted lazily and owns its controller and availability
+service. The shell calls `onTabShown`/`onTabHidden` only on section changes,
+never for a covering route (that would cancel playback started from the list);
+`handleContentIntent` maps resume to `refresh` (`backgroundRefresh`) and profile
+reset to `fullRefresh` (`fullReset`). «Go to search» selects Search.
+
+Two upstream edits support it: `CatalogLibraryMatcher.match` takes
+`refreshIncomplete` (re-queries servers that failed, were cancelled or not
+queried, folding results into cached copies), and `plex_catalog_source.dart`
+parses Plex `watchlistedAt` into `CatalogItem.addedAt` for the date-added sort.
+`TvPagedSource.replaceAll(items, keepFocus:)` replaces in-memory content in one
+notification; `TvPagedGrid` gained optional `onVisibleRangeChanged`,
+`onPlayPause` and `keyOf` (focus kept by key with scroll compensation). Without
+them the S16 grid behaves as before.
 
 ### S16 library section hookup
 

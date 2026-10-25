@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 
 import '../../../focus/key_event_utils.dart';
@@ -25,6 +26,7 @@ import '../home/tv_home_screen.dart';
 import '../../../screens/downloads/downloads_screen.dart';
 import '../../../screens/explore_screen.dart';
 import '../library/tv_libraries_switch.dart';
+import '../watchlist/tv_watchlist_screen.dart';
 import '../../../screens/libraries/library_quick_picker_sheet.dart';
 import '../../../screens/livetv/live_tv_screen.dart';
 import '../../../screens/search_screen.dart';
@@ -49,6 +51,7 @@ import 'tv_shell_session_controller.dart';
 import 'tv_shell_session_services.dart';
 
 typedef TvSectionBuilder = Widget Function(BuildContext context, NavigationTabId tab, GlobalKey key);
+typedef TvWatchlistBuilder = Widget Function(BuildContext context, GlobalKey key, VoidCallback onOpenSearch);
 typedef TvSessionControllerFactory =
     TvShellSessionController? Function(BuildContext context, void Function(TvShellContentIntent) onContentIntent);
 
@@ -63,6 +66,11 @@ class TvSectionShell extends StatefulWidget {
   /// as a real section to observe focus, refresh, visibility and library loads.
   @visibleForTesting
   static TvSectionBuilder? sectionBuilderForTesting;
+
+  /// The «Список» probe while [sectionBuilderForTesting] is set (otherwise an
+  /// empty box); receives the shell's «go to search» callback.
+  @visibleForTesting
+  static TvWatchlistBuilder? watchlistBuilderForTesting;
   @visibleForTesting
   static TvSessionControllerFactory? sessionControllerFactoryForTesting;
 
@@ -71,8 +79,12 @@ class TvSectionShell extends StatefulWidget {
 }
 
 class TvSectionShellState extends State<TvSectionShell> with RouteAware {
-  final _keys = {for (final tab in NavigationTabId.values) tab: GlobalKey()};
-  final _mountedTabs = <NavigationTabId>{};
+  // Mounted screens are keyed by [TvShellSection.slot].
+  final _keys = <Object, GlobalKey>{
+    for (final tab in NavigationTabId.values) tab: GlobalKey(),
+    TvShellSection.watchlistSlot: GlobalKey(),
+  };
+  final _mountedTabs = <Object>{};
   final _contentScope = FocusScopeNode(debugLabel: 'TV sections');
   final _retryFocus = FocusNode(debugLabel: 'TV retry connection');
   final _menuFocus = FocusNode(debugLabel: 'TV menu entry');
@@ -109,8 +121,13 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     hasExplore: _hasExplore,
   );
 
+  bool get _hasWatchlist =>
+      !_isOffline && (context.read<CatalogSourcesProvider?>()?.watchlistCapableSources.isNotEmpty ?? false);
+
   bool isSectionAvailable(TvShellSection section) => section.isNoConnection
       ? _isOffline
+      : section.isWatchlist
+      ? _hasWatchlist
       : availableTabs.any((tab) => tab.id == section.tab) &&
             (section.libraryGlobalKey == null ||
                 context.read<LibrariesProvider>().libraries.any((lib) => lib.globalKey == section.libraryGlobalKey));
@@ -149,9 +166,9 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
                 ? preferred
                 : NavigationTabId.discover,
           );
-    if (!_current.isNoConnection) _mountedTabs.add(_current.tab);
+    if (!_current.isNoConnection) _mountedTabs.add(_current.slot!);
     _afterSelection(() {
-      if (!_current.isNoConnection) _onScreen<TabVisibilityAware>(_current.tab, (screen) => screen.onTabShown());
+      if (!_current.isNoConnection) _onScreen<TabVisibilityAware>(_current.slot, (screen) => screen.onTabShown());
       _focusContent(restore: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -173,10 +190,10 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     receiver.navigationOwner = this;
     void tab(NavigationTabId id) => selectSection(TvShellSection.tab(id));
     void step(int direction) {
-      final tabs = availableTabs;
-      if (tabs.isEmpty) return;
-      final index = _current.isNoConnection ? -1 : tabs.indexWhere((tab) => tab.id == _current.tab);
-      tab(tabs[(index < 0 ? 0 : (index + direction) % tabs.length)].id);
+      final sections = _stepSections();
+      if (sections.isEmpty) return;
+      final index = _current.isNoConnection ? -1 : sections.indexWhere((section) => section.slot == _current.slot);
+      selectSection(sections[(index < 0 ? 0 : (index + direction) % sections.length)]);
     }
 
     receiver.onTabNext = () => step(1);
@@ -188,6 +205,16 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     receiver.onTabSettings = () => tab(NavigationTabId.settings);
     receiver.onHome = () => selectSection(_root);
     receiver.onSearchAction = _search;
+  }
+
+  /// Companion-remote order: upstream tabs with «Список» right after Libraries.
+  List<TvShellSection> _stepSections() {
+    final sections = [for (final tab in availableTabs) TvShellSection.tab(tab.id)];
+    if (_hasWatchlist) {
+      final libraries = sections.indexWhere((section) => section.tab == NavigationTabId.libraries);
+      sections.insert(libraries < 0 ? sections.length : libraries + 1, const TvShellSection.watchlist());
+    }
+    return sections;
   }
 
   void _search(String? query) {
@@ -249,8 +276,8 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     }
   }
 
-  void _onScreen<T>(NavigationTabId tab, void Function(T) action) {
-    final state = _keys[tab]?.currentState;
+  void _onScreen<T>(Object? slot, void Function(T) action) {
+    final state = _keys[slot]?.currentState;
     if (state is T) action(state as T);
   }
 
@@ -272,7 +299,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       if (_current.isNoConnection) {
         _retryFocus.requestFocus();
       } else {
-        _onScreen<FocusableTab>(_current.tab, (screen) => screen.focusActiveTabIfReady());
+        _onScreen<FocusableTab>(_current.slot, (screen) => screen.focusActiveTabIfReady());
       }
     });
   }
@@ -289,15 +316,16 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     setState(() {
       _selectionCommand++;
       _current = section;
-      if (!section.isNoConnection) _mountedTabs.add(section.tab);
+      if (!section.isNoConnection) _mountedTabs.add(section.slot!);
       _exitTimer?.cancel();
     });
-    if (!previous.isNoConnection && (section.isNoConnection || previous.tab != section.tab)) {
-      _onScreen<TabVisibilityAware>(previous.tab, (screen) => screen.onTabHidden());
+    final slotChanged = previous.slot != section.slot;
+    if (!previous.isNoConnection && slotChanged) {
+      _onScreen<TabVisibilityAware>(previous.slot, (screen) => screen.onTabHidden());
     }
     _afterSelection(() {
-      if (!section.isNoConnection && (previous.isNoConnection || previous.tab != section.tab)) {
-        _onScreen<TabVisibilityAware>(section.tab, (screen) => screen.onTabShown());
+      if (!section.isNoConnection && slotChanged) {
+        _onScreen<TabVisibilityAware>(section.slot, (screen) => screen.onTabShown());
       }
       if (section.tab == NavigationTabId.libraries && section.libraryGlobalKey == null) {
         _onScreen<TvLibrariesSwitchState>(section.tab, (screen) => screen.selectDefault());
@@ -324,7 +352,12 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     if (intent == TvShellContentIntent.refreshAfterResume) {
       unawaited(context.read<LibrariesProvider>().refresh());
     }
-    for (final tab in [NavigationTabId.discover, NavigationTabId.libraries, NavigationTabId.search]) {
+    for (final tab in <Object>[
+      NavigationTabId.discover,
+      NavigationTabId.libraries,
+      NavigationTabId.search,
+      TvShellSection.watchlistSlot,
+    ]) {
       switch (intent) {
         case TvShellContentIntent.initialLoad:
           _onScreen<FullRefreshable>(tab, (screen) => screen.primeRefresh());
@@ -369,7 +402,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     }
     final refresh = dispatchPageRefreshShortcut(
       event,
-      _current.isNoConnection ? null : _keys[_current.tab]?.currentState,
+      _current.isNoConnection ? null : _keys[_current.slot]?.currentState,
     );
     if (refresh == KeyEventResult.handled) return refresh;
     if (isSettingsShortcut(event)) {
@@ -410,6 +443,15 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       _onScreen<TabVisibilityAware>(_current.tab, (screen) => screen.onTabShown());
       _onScreen<Refreshable>(_current.tab, (screen) => screen.refresh());
     }
+  }
+
+  Widget _watchlistScreen() {
+    final key = _keys[TvShellSection.watchlistSlot]!;
+    void openSearch() => _search(null);
+    if (TvSectionShell.sectionBuilderForTesting != null) {
+      return TvSectionShell.watchlistBuilderForTesting?.call(context, key, openSearch) ?? SizedBox.shrink(key: key);
+    }
+    return TvWatchlistScreen(key: key, onOpenSearch: openSearch);
   }
 
   Widget _screen(NavigationTabId tab) {
@@ -536,6 +578,18 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
         ));
       }
     }
+    if (_hasWatchlist) {
+      const section = TvShellSection.watchlist();
+      entries.add((
+        section: section,
+        item: TvSideMenuItem(
+          key: const ValueKey(section),
+          icon: Symbols.bookmark_rounded,
+          label: TvStrings.watchlist,
+          onSelect: () => selectSection(section),
+        ),
+      ));
+    }
     addTab(NavigationTabId.liveTv);
     addTab(NavigationTabId.explore);
     if (music?.currentTrack != null && !_isOffline) {
@@ -577,13 +631,23 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
                   const AuthErrorBanner(),
                   Expanded(
                     child: IndexedStack(
-                      index: _current.isNoConnection ? NavigationTabId.values.length : _current.tab.index,
+                      index: _current.isNoConnection
+                          ? NavigationTabId.values.length + 1
+                          : _current.isWatchlist
+                          ? NavigationTabId.values.length
+                          : _current.tab!.index,
                       children: [
                         for (final tab in NavigationTabId.values)
                           TickerMode(
                             enabled: !_current.isNoConnection && _current.tab == tab,
                             child: _mountedTabs.contains(tab) ? _screen(tab) : const SizedBox.shrink(),
                           ),
+                        TickerMode(
+                          enabled: _current.isWatchlist,
+                          child: _mountedTabs.contains(TvShellSection.watchlistSlot)
+                              ? _watchlistScreen()
+                              : const SizedBox.shrink(),
+                        ),
                         TvNoConnectionScreen(
                           retryFocus: _retryFocus,
                           reconnecting: _session?.isReconnecting ?? false,
