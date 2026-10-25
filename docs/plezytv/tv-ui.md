@@ -337,9 +337,12 @@ next episode or rewatch, "Your rating" stars (`TvRatingStars` in
 `components/`, tokens `player.postplay` in `TvTokens`), the season's episodes
 and one "similar" row. Rating save repeats Plezy's `rating_bottom_sheet.dart`:
 `rate()` with the value, `rate(-1)` to clear, offered only with
-`capabilities.numericUserRating`; leaving the screen saves an unsaved value.
-For a series that ended, focus may move once to the stars after loading if no
-key was pressed yet.
+`capabilities.numericUserRating`; leaving the screen saves an unsaved value
+and waits for a save in flight before the next screen opens (bounded at 3 s),
+so the card below reads the new rating. Ratings appear as soon as the item
+loads; a failed related-hubs request only leaves "Similar" out. For a series
+that ended, focus may move once to the stars after loading if no key was
+pressed yet (any key-down counts, seen through `HardwareKeyboard`).
 
 R1: TV, not Live TV, not offline, not Watch Together, movie or episode, the
 completion latch set, no play-next or still-watching prompt, next item not
@@ -368,7 +371,9 @@ suppressed by `BackKeyUpSuppressor` are ignored. Home is not intercepted.
 Contracts:
 
 - **C1** `TvPostPlayArgs { watched, next, playerRemoved }` →
-  `TvUi.postPlayRoute`, an opaque TV fade route. `playerRemoved` is the future of
+  `TvUi.postPlayRoute`, an opaque route that appears without an entrance
+  transition (a route is see-through while it enters, and Plezy may remove the
+  player under it within a frame) and fades out when left. `playerRemoved` is the future of
   Plezy's accepted exit; an error counts as removed.
 - **C2** `TvUi.exitToPostPlay`: if an exit is already pending, nothing; else it
   calls Plezy's exit (`_handleBackButton`) and, only if that set

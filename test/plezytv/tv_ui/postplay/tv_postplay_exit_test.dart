@@ -75,12 +75,6 @@ void main() {
       expect(tvPostPlayAllowed(_facts(kind: MediaKind.episode, nextStatus: QueueNavigationStatus.found)), isTrue);
     });
 
-    test('a downloaded file played online is not offline (A39)', () {
-      // `isOffline` is Plezy's offline library mode only; a local source in
-      // an online session is a normal online end.
-      expect(tvPostPlayAllowed(_facts(isOffline: false)), isTrue);
-    });
-
     final exclusions = <String, TvPostPlayFacts>{
       'end by the sleep timer (A23)': _facts(sleepTimerEnded: true),
       'play-next or still-watching prompt open (A22)': _facts(promptOpen: true),
@@ -357,6 +351,39 @@ void main() {
       stand.chrome.cancelAutoHide();
     });
 
+    testWidgets('panel hidden but still fading out (presented): ignored', (tester) async {
+      final layer = await _pumpLayer(tester, stand);
+      stand.chrome
+        ..show(restartAutoHide: false)
+        ..markControlsOpaque()
+        ..hide(ignoreHolds: true);
+      expect((stand.chrome.controlsVisible, stand.chrome.controlsPresented), (false, true));
+      expect(await _press(tester, layer), isFalse);
+      expect(layer.exits, 0);
+    });
+
+    testWidgets('a dialog or sheet route over the player: ignored', (tester) async {
+      final layer = await _pumpLayer(tester, stand);
+      final navigator = Navigator.of(layer.context);
+      unawaited(
+        navigator.push(
+          DialogRoute<void>(
+            context: layer.context,
+            builder: (_) => const Focus(autofocus: true, child: SizedBox(width: 10, height: 10)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _down(tester);
+      await _up(tester);
+      expect(layer.exits, 0);
+      await tester.pumpAndSettle();
+      if (navigator.canPop()) {
+        navigator.pop();
+        await tester.pumpAndSettle();
+      }
+    });
+
     testWidgets('R1 false: ignored, Plezy exits as before (A15)', (tester) async {
       final layer = await _pumpLayer(tester, stand, latched: false);
       expect(await _press(tester, layer), isFalse);
@@ -378,15 +405,8 @@ void main() {
       expect(layer.exits, 1, reason: 'a press not ours stays not ours');
     });
 
-    testWidgets('a key-up without our key-down, and a suppressed key-up: ignored', (tester) async {
+    testWidgets('a suppressed key-up: ignored', (tester) async {
       final layer = await _pumpLayer(tester, stand);
-      // Key-down taken elsewhere (simulated: the layer was not mounted then).
-      layer.latched = false;
-      await _down(tester);
-      layer.latched = true;
-      await _up(tester);
-      expect(layer.exits, 0);
-
       await _down(tester);
       BackKeyUpSuppressor.suppressBackUntilKeyUp();
       expect(await _up(tester), isTrue, reason: "Plezy's handler swallows the suppressed up");

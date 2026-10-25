@@ -625,12 +625,13 @@ void main() {
           unawaited(
             Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => Scaffold(body: Focus(focusNode: top, autofocus: true, child: const Text('post-play'))),
+                builder: (_) => Scaffold(
+                  body: Focus(focusNode: top, autofocus: true, child: const Text('post-play')),
+                ),
               ),
             ),
           );
           await tester.pump();
-          client.show = client.show.withWatchedFlag(true).copyWith(viewOffsetMs: 0);
           return null;
         },
       ),
@@ -640,6 +641,9 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(top.hasFocus, true);
+    // The server learns of the end after the launcher returned (Plezy's
+    // report on exit), so only the reread on return can show it.
+    client.show = client.show.withWatchedFlag(true).copyWith(viewOffsetMs: 0);
     final calls = client.calls.where((call) => call == 'metadata').length;
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();

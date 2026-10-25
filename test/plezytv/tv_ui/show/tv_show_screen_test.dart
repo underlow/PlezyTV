@@ -455,13 +455,13 @@ void main() {
                     unawaited(
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) =>
-                              Scaffold(body: Focus(focusNode: top, autofocus: true, child: const Text('post-play'))),
+                          builder: (_) => Scaffold(
+                            body: Focus(focusNode: top, autofocus: true, child: const Text('post-play')),
+                          ),
                         ),
                       ),
                     );
                     await tester.pump();
-                    client.onDeck = client.onDeck!.copyWith(viewOffsetMs: 3000000);
                   },
                 ),
               ),
@@ -477,6 +477,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(top.hasFocus, true);
+    // Plezy reports progress on exit, after the launcher returned.
+    client.onDeck = client.onDeck!.copyWith(viewOffsetMs: 3000000);
     final calls = client.calls.where((call) => call == 'metadata').length;
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
@@ -487,6 +489,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(TvShowScreen), findsNothing);
     expect(result, true);
+  });
+
+  testWidgets('R10 episode from a season tab under post-play: focus stays on top, season focus on return', (
+    tester,
+  ) async {
+    final client = fixture();
+    final top = FocusNode();
+    addTearDown(top.dispose);
+    final c = await mount(
+      tester,
+      client,
+      seasonId: 'Season 1',
+      episodeId: 'e3',
+      play: (context, episode, restart) async {
+        // Post-play covers the card; the removed player returns null.
+        unawaited(
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: Focus(focusNode: top, autofocus: true, child: const Text('post-play')),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+      },
+    );
+    expect(focusedEpisode(tester), 'e3');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(top.hasFocus, true, reason: 'the covered card does not take focus');
+    client.episodes['Season 1'] = [
+      for (final e in client.episodes['Season 1']!)
+        if (e.id == 'e3') e.copyWith(viewCount: 1, viewOffsetMs: 0) else e,
+    ];
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(c.episodesFor('Season 1').firstWhere((e) => e.id == 'e3').isWatched, true, reason: 'reread on return');
+    expect(tabs(tester).selectedIndex, 1);
+    expect(tester.widgetList<TvEpisode>(find.byType(TvEpisode)).any((e) => e.focusNode!.hasFocus), true);
   });
 
   testWidgets('Down while season page is pending enters episodes when ready', (tester) async {
