@@ -353,7 +353,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     final session = _session;
     if (session.focusPlayOnNextShow) {
       session.focusPlayOnNextShow = false;
-      return TvPlayerPanelElement.play;
+      return _isAvailable(TvPlayerPanelElement.play) ? TvPlayerPanelElement.play : TvPlayerPanelElement.bar;
     }
     final id = session.lastFocusedId;
     final hiddenAt = session.hiddenAt;
@@ -791,12 +791,12 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
               AppIcon(
                 _queueOpen ? Symbols.keyboard_arrow_up_rounded : Symbols.keyboard_arrow_down_rounded,
                 size: px(24),
-                color: Colors.white.withValues(alpha: 0.7),
+                color: TvTokens.color.text.secondary,
               ),
               SizedBox(width: px(8)),
               Text(
                 _queueOpen ? TvStrings.playerPanel : TvStrings.playerUpNextInQueue,
-                style: theme.caption.copyWith(color: Colors.white.withValues(alpha: 0.7)),
+                style: theme.caption.copyWith(color: TvTokens.color.text.secondary),
               ),
             ],
           ),

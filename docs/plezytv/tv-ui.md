@@ -275,7 +275,7 @@ the player is Live TV; then Plezy's widget or behaviour stays. Code lives in
 | H4 | `lib/screens/video_player/widgets/player_prompt_overlays.dart`, `VideoPlayerPlayNextOverlay.build` | `TvUi.playerUpNextCard`: `TvUpNextCard`, passed as `tvContent` into Plezy's `_VideoPlayerPromptShell` (position, PiP, prompt hold stay Plezy's) | Plezy's card |
 | H5 | same file, `VideoPlayerBufferingOverlay.build` | `TvUi.playerBuffering`: `TvBufferingDots` | Plezy's spinner |
 | H6 | `lib/screens/video_player/parts/build.dart`, `_buildPlaybackFailure` | `TvUi.playerPlaybackError`: `TvPlaybackError` with Plezy's message, retry, focus node and Back | Plezy's failure screen |
-| H7 | same file, overlay stack | `TvUi.playerPauseIndicator`: `TvPauseIndicator` layer; it raises the panel (focus on play) only after a remote transport pause key with no prompt open | no layer |
+| H7 | same file, overlay stack | `TvUi.playerPauseIndicator`: `TvPauseIndicator` layer; it raises the panel (focus on play, or the bar when play is unavailable) only when a remote transport pause key that Plezy could act on (`canControl`, from `_canControlPlayback`) went down within 1.5 s before the pause, with no prompt open | no layer |
 
 `isLive` is passed into `VideoPlayerPlayNextOverlay` and
 `VideoPlayerBufferingOverlay` as an optional field (default `false`) so the
@@ -289,10 +289,18 @@ parts. Upstream hook lines are kept minimal (mostly one line) and are
 deliberately not `dart format`-clean, to keep merge conflicts small.
 
 `TvPlayerSession` (one per `Player`, outside widgets) holds focus memory, the
-"focus play next time" flag, `sidePanelOpen` and the icons' focus node; it
-resets when the video changes. The panel holds the chrome while the right
+"focus play next time" flag, `sidePanelOpen` and the icons' focus node. Only
+focus memory resets when the video changes; the play flag survives, since H7
+may set it for the new item before the panel binds. The panel holds the chrome while the right
 panel is open via `setContentStripVisible(true)`, like Plezy's content strip,
-and is invisible and inert while a play-next or still-watching prompt is open.
+and is invisible and inert while a play-next or still-watching prompt is open;
+the skip button then sits where it does with the panel hidden.
+
+Back with focus on the skip button and the panel up hides the button for that
+marker showing; with focus in the panel, Back hides the panel and, as in Plezy,
+the button with it (R22). Keys handled on the skip button restart the panel's
+auto-hide. The pause indicator goes 5 minutes after the pause began or the panel
+last hid on that pause, so opening and hiding the panel brings it back (R18).
 
 Upstream tests `test/widgets/video_controls_auto_hide_test.dart`,
 `video_controls_quiescence_test.dart` and `video_controls_startup_chrome_test.dart`
@@ -312,8 +320,12 @@ places do not reach the TV player; recheck them on every upstream merge.
 | Skip-button position: right 24, bottom 24 / 115 / 180 (hidden, shown, content strip) | skip wrapper in `lib/widgets/video_controls/video_controls.dart` | `TvSkipButton` offsets in `tv_player_overlays.dart` |
 | Settings, subtitle and audio items: visibility, values and callbacks | `lib/widgets/video_controls/sheets/video_settings_sheet.dart`, `track_sheet.dart` | `tv_player_side_panel.dart` |
 | Play-next card content inside the prompt shell (`tvContent`) | `player_prompt_overlays.dart` | `TvUpNextCard` in `tv_player_overlays.dart` |
+| Skip-button label and icon: "Next episode" for credits ending within 1000 ms of the end with a next episode, else skip credits / intro; auto-skip remaining-seconds suffix | `lib/widgets/video_controls/widgets/skip_marker_button.dart` | `TvSkipButton._button` in `tv_player_overlays.dart` |
+| Audio/subtitle sync: 50 ms step, apply → `recordApplied` → `ScopedPlayerPrefs.write` | `lib/widgets/video_controls/widgets/sync_offset_control.dart` | `_syncStepMs` and sync apply in `tv_player_side_panel.dart` |
+| Sleep timer durations | `lib/widgets/video_controls/widgets/sleep_timer_content.dart` | `_sleepMinutes` in `tv_player_side_panel.dart` |
 
 The upstream workflow warns when the merge changes
 `desktop_video_controls.dart`, `markers.dart`, `player_prompt_overlays.dart`,
-`build.dart`, `navigation.dart`, `video_controls.dart`, the two sheets or `stepped_seek.dart`; use this table
+`build.dart`, `navigation.dart`, `video_controls.dart`, the two sheets, `skip_marker_button.dart`,
+`sync_offset_control.dart`, `sleep_timer_content.dart` or `stepped_seek.dart`; use this table
 as the checklist.

@@ -41,8 +41,12 @@ abstract final class TvUi {
     upNextCard: (context, plezy) => TvUpNextCard(plezy: plezy),
     buffering: (context, plezy) => TvBufferingDots(plezy: plezy),
     playbackError: (args) => TvPlaybackError(args: args),
-    pauseIndicator: (player, chromeController, {required promptOpen}) =>
-        TvPauseIndicator(player: player, chromeController: chromeController, promptOpen: promptOpen),
+    pauseIndicator: (player, chromeController, {required promptOpen, required canControl}) => TvPauseIndicator(
+      player: player,
+      chromeController: chromeController,
+      promptOpen: promptOpen,
+      canControl: canControl,
+    ),
   );
   static TvPlayerBuilders _player = _productionPlayer;
 
@@ -167,10 +171,11 @@ abstract final class TvUi {
     required Player? player,
     required PlayerChromeController chromeController,
     required bool promptOpen,
+    required bool Function() canControl,
     required bool isLive,
   }) {
     final builder = _player.pauseIndicator;
     if (player == null || builder == null || !_playerActive(isLive: isLive)) return null;
-    return builder(player, chromeController, promptOpen: promptOpen);
+    return builder(player, chromeController, promptOpen: promptOpen, canControl: canControl);
   }
 }

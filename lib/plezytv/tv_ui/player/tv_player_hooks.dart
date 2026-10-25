@@ -79,8 +79,14 @@ class TvPlayerBuilders {
   final Widget? Function(TvPlaybackErrorArgs args)? playbackError;
 
   /// H7 — an extra layer in the player stack; [promptOpen] is Plezy's
-  /// play-next or still-watching prompt being up.
-  final Widget? Function(Player player, PlayerChromeController chromeController, {required bool promptOpen})?
+  /// play-next or still-watching prompt being up, [canControl] whether Plezy
+  /// acts on Play/Pause now.
+  final Widget? Function(
+    Player player,
+    PlayerChromeController chromeController, {
+    required bool promptOpen,
+    required bool Function() canControl,
+  })?
   pauseIndicator;
 
   /// These builders with [panel] replaced (tests wrap one builder and keep

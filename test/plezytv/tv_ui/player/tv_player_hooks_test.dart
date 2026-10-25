@@ -34,7 +34,7 @@ TvPlayerBuilders _allOn(List<TvPlayerPanelArgs> panelArgs) => TvPlayerBuilders(
   upNextCard: (context, plezy) => const _Marker('tv up next'),
   buffering: (context, plezy) => const _Marker('tv buffering'),
   playbackError: (args) => const _Marker('tv error'),
-  pauseIndicator: (player, chrome, {required promptOpen}) => const _Marker('tv pause'),
+  pauseIndicator: (player, chrome, {required promptOpen, required canControl}) => const _Marker('tv pause'),
 );
 
 void main() {
@@ -170,13 +170,20 @@ void main() {
                 player: TvStandPlayer(),
                 chromeController: chrome,
                 promptOpen: false,
+                canControl: () => true,
                 isLive: live,
               ) !=
               null,
           ours,
         );
         expect(
-          TvUi.playerPauseIndicator(player: null, chromeController: chrome, promptOpen: false, isLive: live),
+          TvUi.playerPauseIndicator(
+            player: null,
+            chromeController: chrome,
+            promptOpen: false,
+            canControl: () => true,
+            isLive: live,
+          ),
           isNull,
         );
       });
@@ -196,7 +203,13 @@ void main() {
         isA<TvPlaybackError>(),
       );
       expect(
-        TvUi.playerPauseIndicator(player: TvStandPlayer(), chromeController: chrome, promptOpen: false, isLive: false),
+        TvUi.playerPauseIndicator(
+          player: TvStandPlayer(),
+          chromeController: chrome,
+          promptOpen: false,
+          canControl: () => true,
+          isLive: false,
+        ),
         isA<TvPauseIndicator>(),
       );
     });

@@ -224,10 +224,7 @@ class _MediaCardState extends State<_MediaCard> {
             fit: StackFit.expand,
             children: [
               ColoredBox(color: TvTokens.color.surface.level2),
-              if (widget.blurThumbnail)
-                ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), child: image)
-              else
-                image,
+              TvSpoilerBlur(blur: widget.blurThumbnail, child: image),
               TvMediaBadges(item: widget.item, onServer: widget.onServer),
               if (widget.progress != null || widget.item.hasActiveProgress)
                 Positioned(
@@ -354,6 +351,16 @@ class TvMediaBadges extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Artwork blurred for hide-spoilers when [blur] is set.
+class TvSpoilerBlur extends StatelessWidget {
+  const TvSpoilerBlur({super.key, required this.blur, required this.child});
+  final bool blur;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) =>
+      blur ? ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), child: child) : child;
 }
 
 class TvMediaProgress extends StatelessWidget {
