@@ -136,6 +136,18 @@ jobs:
             lib/utils/media_navigation_helper.dart; then
             printf '\nWarning: upstream changes S8 movie dependencies. Review copied action visibility, watchlist/download handlers and missing-item handling in lib/plezytv/tv_ui/movie/ against docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
           fi
+          if ! git diff --quiet origin/main HEAD -- \
+            lib/widgets/video_controls/desktop_video_controls.dart \
+            lib/widgets/video_controls/video_controls.dart \
+            lib/widgets/video_controls/parts/markers.dart \
+            lib/widgets/video_controls/parts/navigation.dart \
+            lib/widgets/video_controls/sheets/video_settings_sheet.dart \
+            lib/widgets/video_controls/sheets/track_sheet.dart \
+            lib/media/stepped_seek.dart \
+            lib/screens/video_player/widgets/player_prompt_overlays.dart \
+            lib/screens/video_player/parts/build.dart; then
+            printf '\nWarning: upstream changes S9 player dependencies. Review the copied seek handling, key-method replacements, skip-button offsets and side-panel item rules in lib/plezytv/tv_ui/player/ against design D6-D8 and docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
+          fi
           number=$(gh pr list --head upstream-sync --base main --state open --json number --jq '.[0].number // empty')
           title='Sync upstream Plezy'
           if [[ "$CHECK_RESULT" != success ]]; then title='Sync upstream Plezy (checks failing)'; fi
