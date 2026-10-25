@@ -232,7 +232,8 @@ class _FakeCatalogLibraryMatcher extends CatalogLibraryMatcher {
   final List<MediaItem> matches;
 
   @override
-  Future<LibraryLookupResult> match(CatalogItem item) async => libraryLookupResult(matches);
+  Future<LibraryLookupResult> match(CatalogItem item, {bool refreshIncomplete = false}) async =>
+      libraryLookupResult(matches);
 }
 
 /// Matches only items that carry an external id, the way a real lookup for a
@@ -245,7 +246,7 @@ class _ExternalIdGatedMatcher extends CatalogLibraryMatcher {
   final List<CatalogItem> calls = [];
 
   @override
-  Future<LibraryLookupResult> match(CatalogItem item) async {
+  Future<LibraryLookupResult> match(CatalogItem item, {bool refreshIncomplete = false}) async {
     calls.add(item);
     return libraryLookupResult(item.ids.toExternalIds().hasAny ? [hit] : const []);
   }
@@ -260,7 +261,7 @@ class _ScriptedMatcher extends CatalogLibraryMatcher {
   int calls = 0;
 
   @override
-  Future<LibraryLookupResult> match(CatalogItem item) async {
+  Future<LibraryLookupResult> match(CatalogItem item, {bool refreshIncomplete = false}) async {
     final pass = passes[calls < passes.length ? calls : passes.length - 1];
     calls++;
     return pass();

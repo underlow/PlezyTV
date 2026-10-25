@@ -56,7 +56,11 @@ class CatalogLibraryMatcher {
 
   void dispose() => _multiServer.removeListener(_syncServerScope);
 
-  Future<LibraryLookupResult> match(CatalogItem item) async {
+  /// With [refreshIncomplete], a cached wave some server sat out (failed,
+  /// cancelled or unqueried) is asked again regardless of [negativeTtl]; the
+  /// new answer folds onto the previous copies. Complete waves are served
+  /// from the cache as usual.
+  Future<LibraryLookupResult> match(CatalogItem item, {bool refreshIncomplete = false}) async {
     _syncServerScope();
     final scopeGeneration = _scopeGeneration;
     final titles = lookupTitles(item);
@@ -74,6 +78,7 @@ class CatalogLibraryMatcher {
     final cached = _cache[key];
     if (cached != null &&
         cached.scopeGeneration == scopeGeneration &&
+        !(refreshIncomplete && _isIncomplete(cached.result)) &&
         (_isAuthoritativeHit(cached.result) || _now().difference(cached.at) < negativeTtl)) {
       return cached.result;
     }
@@ -94,7 +99,7 @@ class CatalogLibraryMatcher {
     );
     // A membership update while HTTP was in flight invalidates that wave too.
     _syncServerScope();
-    if (scopeGeneration != _scopeGeneration) return match(item);
+    if (scopeGeneration != _scopeGeneration) return match(item, refreshIncomplete: refreshIncomplete);
     final entry = _fold(cached?.byServer, result);
     _cache[key] = entry;
     return entry.result;
@@ -175,6 +180,9 @@ class CatalogLibraryMatcher {
   /// every expected server took part in. One that sat out — failed,
   /// cancelled or never asked — leaves the answer incomplete, so it expires
   /// with [negativeTtl] instead of being cached until the profile switches.
+  static bool _isIncomplete(LibraryLookupResult result) =>
+      result.failedServerIds.isNotEmpty || result.cancelledServerIds.isNotEmpty || result.unqueriedServerIds.isNotEmpty;
+
   static bool _isAuthoritativeHit(LibraryLookupResult result) =>
       result.items.isNotEmpty &&
       result.failedServerIds.isEmpty &&
