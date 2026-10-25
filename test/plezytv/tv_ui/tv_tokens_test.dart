@@ -14,7 +14,6 @@ void main() {
   test('A1 every mirrored token equals the design source read at test time', () {
     final source = jsonDecode(File('docs/design/tokens.json').readAsStringSync()) as Map<String, dynamic>;
     source.remove(r'$comment');
-    (source['player'] as Map<String, dynamic>).remove('postplay');
     const pl = TvTokens.player;
     final actual = {
       "color": {
@@ -305,6 +304,12 @@ void main() {
           "lineHeight": pl.subtitles.lineHeight,
           "bottom": pl.subtitles.bottom,
           "outline": rgba(pl.subtitles.outline),
+        },
+        "postplay": {
+          "stillW": pl.postplay.stillW,
+          "stillH": pl.postplay.stillH,
+          "star": pl.postplay.star,
+          "starRadius": pl.postplay.starRadius,
         },
       },
     };

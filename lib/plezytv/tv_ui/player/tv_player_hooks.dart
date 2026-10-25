@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../media/media_item.dart';
 import '../../../mpv/mpv.dart';
+import '../../../providers/playback_state_provider.dart';
 import '../../../screens/video_player/widgets/player_prompt_overlays.dart';
 import '../../../widgets/video_controls/desktop_video_controls.dart';
 import '../../../widgets/video_controls/player_chrome_controller.dart';
@@ -44,6 +46,55 @@ class TvPlaybackErrorArgs {
   final VoidCallback onRetry;
   final FocusNode retryFocusNode;
   final VoidCallback onBack;
+}
+
+/// What H9 hands the post-play exit (S14): Plezy's end-of-item state as
+/// functions read at the event (the latch flips without `setState`), plus
+/// Plezy's exit and whether an exit was already accepted.
+@immutable
+class TvPlayerEndProbe {
+  const TvPlayerEndProbe({
+    required this.watched,
+    required this.next,
+    required this.latched,
+    required this.promptOpen,
+    required this.loadingNext,
+    required this.nextStatus,
+    required this.watchTogether,
+    required this.isOffline,
+    required this.exitPending,
+    required this.exit,
+  });
+
+  /// `_currentMetadata`.
+  final MediaItem Function() watched;
+
+  /// `_episode.next`.
+  final MediaItem? Function() next;
+
+  /// `_episode.completionLatch.triggered`.
+  final bool Function() latched;
+
+  /// The play-next or still-watching prompt is up.
+  final bool Function() promptOpen;
+
+  /// `_episode.isLoadingNext`.
+  final bool Function() loadingNext;
+
+  /// `_episode.nextStatus`.
+  final QueueNavigationStatus Function() nextStatus;
+
+  /// In a Watch Together room.
+  final bool Function() watchTogether;
+
+  /// Plezy's offline library mode (`widget.isOffline`).
+  final bool isOffline;
+
+  /// `_routeExitOperation != null`.
+  final bool Function() exitPending;
+
+  /// `_handleBackButton`.
+  final Future<void> Function() exit;
 }
 
 /// Builders behind the player lookups H1–H7. A null builder (or null result)

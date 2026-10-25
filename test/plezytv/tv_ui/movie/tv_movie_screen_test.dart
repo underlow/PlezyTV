@@ -610,6 +610,51 @@ void main() {
     expect(await result(), true);
   });
 
+  testWidgets('A1 R10 player removed under post-play: focus stays on top, card rereads on return', (tester) async {
+    final client = fixture(movie: movieItem(offset: 600000));
+    final c = controllerFor(client);
+    final top = FocusNode();
+    addTearDown(top.dispose);
+    final result = await pushed(
+      tester,
+      () => TvMovieScreen(
+        metadata: client.show,
+        controller: c,
+        launchPlayer: (context, movie, launch) async {
+          // Post-play covers the card; the removed player returns null.
+          unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  body: Focus(focusNode: top, autofocus: true, child: const Text('post-play')),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          return null;
+        },
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(top.hasFocus, true);
+    // The server learns of the end after the launcher returned (Plezy's
+    // report on exit), so only the reread on return can show it.
+    client.show = client.show.withWatchedFlag(true).copyWith(viewOffsetMs: 0);
+    final calls = client.calls.where((call) => call == 'metadata').length;
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(client.calls.where((call) => call == 'metadata').length, greaterThan(calls));
+    expect(primary(tester).label, 'Rewatch');
+    expect(primary(tester).focusNode!.hasFocus, true);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(await result(), true);
+  });
+
   testWidgets('A18 related movie opens through the real route; its watch change refreshes the first', (tester) async {
     TvUi.enabledForTesting = () => true;
     addTearDown(TvUi.resetForTesting);

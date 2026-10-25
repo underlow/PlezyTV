@@ -432,6 +432,105 @@ void main() {
     expect(result, true);
   });
 
+  testWidgets('R10/A21 player removed under post-play: focus stays on top, card rereads on return', (tester) async {
+    final client = fixture();
+    final c = TvShowController(client: client, metadata: client.show);
+    addTearDown(c.dispose);
+    final top = FocusNode();
+    addTearDown(top.dispose);
+    bool? result;
+    await pumpTvWidget(
+      tester,
+      Builder(
+        builder: (context) => TextButton(
+          child: const Text('Open show'),
+          onPressed: () async {
+            result = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(
+                builder: (_) => TvShowScreen(
+                  metadata: client.show,
+                  controller: c,
+                  playEpisode: (context, episode, restart) async {
+                    // Post-play covers the card; the removed player returns null.
+                    unawaited(
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => Scaffold(
+                            body: Focus(focusNode: top, autofocus: true, child: const Text('post-play')),
+                          ),
+                        ),
+                      ),
+                    );
+                    await tester.pump();
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open show'));
+    await tester.pumpAndSettle();
+    final primary = tester.widget<TvButton>(find.byType(TvButton).first);
+    expect(primary.focusNode!.hasFocus, true);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(top.hasFocus, true);
+    // Plezy reports progress on exit, after the launcher returned.
+    client.onDeck = client.onDeck!.copyWith(viewOffsetMs: 3000000);
+    final calls = client.calls.where((call) => call == 'metadata').length;
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(client.calls.where((call) => call == 'metadata').length, greaterThan(calls));
+    expect(c.onDeckEpisode!.viewOffsetMs, 3000000);
+    expect(tester.widget<TvButton>(find.byType(TvButton).first).focusNode!.hasFocus, true);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(TvShowScreen), findsNothing);
+    expect(result, true);
+  });
+
+  testWidgets('R10 episode from a season tab under post-play: focus stays on top, season focus on return', (
+    tester,
+  ) async {
+    final client = fixture();
+    final top = FocusNode();
+    addTearDown(top.dispose);
+    final c = await mount(
+      tester,
+      client,
+      seasonId: 'Season 1',
+      episodeId: 'e3',
+      play: (context, episode, restart) async {
+        // Post-play covers the card; the removed player returns null.
+        unawaited(
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: Focus(focusNode: top, autofocus: true, child: const Text('post-play')),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+      },
+    );
+    expect(focusedEpisode(tester), 'e3');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(top.hasFocus, true, reason: 'the covered card does not take focus');
+    client.episodes['Season 1'] = [
+      for (final e in client.episodes['Season 1']!)
+        if (e.id == 'e3') e.copyWith(viewCount: 1, viewOffsetMs: 0) else e,
+    ];
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(c.episodesFor('Season 1').firstWhere((e) => e.id == 'e3').isWatched, true, reason: 'reread on return');
+    expect(tabs(tester).selectedIndex, 1);
+    expect(tester.widgetList<TvEpisode>(find.byType(TvEpisode)).any((e) => e.focusNode!.hasFocus), true);
+  });
+
   testWidgets('Down while season page is pending enters episodes when ready', (tester) async {
     final client = fixture();
     final pending = Completer<LibraryPage<MediaItem>>();

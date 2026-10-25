@@ -24,6 +24,7 @@ import '../components/tv_horizontal_row.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_tabs.dart';
 import '../tv_focusable.dart';
+import '../tv_card_registry.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tint_service.dart';
@@ -74,6 +75,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
   Timer? _skeletonTimer, _heroTimer;
   bool _skeleton = false, _ready = false, _initialFocus = false;
   bool _playing = false, _pendingEntryFocus = false;
+
+  /// The player returned while another route covered this one (R10).
+  bool _refreshOnReturn = false;
+  void Function()? _focusOnReturn;
+
+  /// Watch state before the launch, compared after the return refresh.
+  String? _launchState;
+
+  bool get _isTop => ModalRoute.of(context)?.isCurrent != false;
   int _tab = 0, _selection = 0;
   MediaItem? _hero, _backdropEpisode;
   Object? _connectionError, _reportedError;
@@ -85,12 +95,63 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   String get _key => _controller!.flattened ? _controller!.flattenedKey : _controller!.seasons[_tab - 1].id;
 
+  /// This card on its route, for the post-play screen above (S14 C5).
+  Route<dynamic>? _cardRoute;
+  TvCardEntry? _cardEntry;
+
+  void _registerCard(TvCardEntry Function() entry) {
+    final route = ModalRoute.of(context);
+    if (route == _cardRoute) return;
+    _unregisterCard();
+    if (route == null) return;
+    _cardRoute = route;
+    TvCardRegistry.register(route, _cardEntry = entry());
+  }
+
+  void _unregisterCard() {
+    final route = _cardRoute, entry = _cardEntry;
+    if (route != null && entry != null) TvCardRegistry.unregister(route, entry);
+    _cardRoute = null;
+    _cardEntry = null;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_restoreEpisodeFocus && ModalRoute.of(context)?.isCurrent == true) _scheduleEpisodeRestore();
-    if (_controller != null || _connectionError != null) return;
-    _connect();
+    _registerCard(() => TvCardEntry(itemKey: widget.metadata.globalKey, showSeason: _showSeason));
+    final top = ModalRoute.of(context)?.isCurrent == true;
+    if (_restoreEpisodeFocus && top) _scheduleEpisodeRestore();
+    if (_refreshOnReturn && top && !_playing) {
+      _refreshOnReturn = false;
+      unawaited(_returnedToTop());
+    }
+    if (_controller == null && _connectionError == null) _connect();
+    if (top) _rereadAfterRatingSave();
+  }
+
+  bool _awaitingRating = false;
+
+  /// S14 R6, R10: a post-play rating save for this series may still be
+  /// running when the card shows; reread once it finishes, without blocking
+  /// the card.
+  void _rereadAfterRatingSave() {
+    if (_awaitingRating || _controller == null) return;
+    _awaitingRating =
+        TvPendingRatings.whenSaved(
+          widget.metadata.globalKey,
+          isCurrent: () => mounted,
+          reread: () {
+            _awaitingRating = false;
+            final c = _controller!;
+            final before = _watchFingerprint(c);
+            unawaited(
+              c.refresh().then((_) {
+                if (mounted && _watchFingerprint(c) != before) c.watchStateChanged = true;
+              }),
+            );
+          },
+        ) !=
+        null;
   }
 
   void _connect() {
@@ -165,10 +226,11 @@ class _TvShowScreenState extends State<TvShowScreen> {
         _tab = tvShowInitialTab(
           c.seasons,
           flattened: c.flattened,
-          seasonId: widget.initialSeasonId,
+          seasonId: _returnSeasonId ?? widget.initialSeasonId,
           seasonIndex: widget.initialSeasonIndex,
-          episodeId: widget.initialEpisodeId,
+          episodeId: _returnSeasonId == null ? widget.initialEpisodeId : null,
         );
+        _returnSeasonId = null;
         _selectedSeasonKey = _tab > 0 ? _key : null;
         final selection = ++_selection;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -235,6 +297,25 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (!mounted || _initialFocus || _tab != 0 || _controller?.primaryAction == null) return;
     _initialFocus = true;
     if (!_tabScope.hasFocus) _primary.requestFocus();
+  }
+
+  /// Season chosen by the post-play screen before this card finished loading.
+  String? _returnSeasonId;
+
+  /// S14 R8: the post-play screen above returns here on [seasonId]; focus
+  /// lands in that season once this card is on top again.
+  void _showSeason(String seasonId) {
+    final c = _controller;
+    if (c == null || !_ready) {
+      _returnSeasonId = seasonId;
+      return;
+    }
+    if (c.flattened) return;
+    final index = c.seasons.indexWhere((season) => season.id == seasonId) + 1;
+    if (index == 0) return;
+    if (index != _tab) _select(index);
+    _focusOnReturn = () => unawaited(_enterSeason(focus: true));
+    _refreshOnReturn = true;
   }
 
   void _select(int index, {bool focus = false}) {
@@ -325,6 +406,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
     _playing = true;
     final c = _controller!;
     final seasonKey = _tab > 0 ? _key : null;
+    _launchState = _watchFingerprint(c);
     try {
       if (widget.playEpisode != null) {
         await widget.playEpisode!(context, episode, restart);
@@ -339,6 +421,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
         if (changed == true) c.watchStateChanged = true;
       }
       if (!mounted) return;
+      if (!_isTop) _refreshOnReturn = true;
       await c.refresh();
       if (!mounted) return;
       if (seasonKey != null && _tab > 0 && _key == seasonKey) {
@@ -354,13 +437,54 @@ class _TvShowScreenState extends State<TvShowScreen> {
           final next = items.skip(index + 1).where((e) => !e.isWatched).firstOrNull;
           if (next != null) _lastEpisode[seasonKey] = next.id;
         }
-        if (mounted) await _enterSeason(focus: true);
+        if (mounted) _focusAfterPlay(() => unawaited(_enterSeason(focus: true)));
       } else {
-        _primary.requestFocus();
+        _focusAfterPlay(_primary.requestFocus);
       }
     } finally {
       _playing = false;
     }
+    // The covering route may have closed while this method was refreshing.
+    if (mounted && _refreshOnReturn && _isTop) {
+      _refreshOnReturn = false;
+      unawaited(_returnedToTop());
+    }
+  }
+
+  /// A covered route's focus request would win over the top route's focus,
+  /// so post-playback focus waits until this card is on top again.
+  void _focusAfterPlay(void Function() focus) {
+    if (_isTop) {
+      focus();
+    } else {
+      _refreshOnReturn = true;
+      _focusOnReturn = focus;
+    }
+  }
+
+  /// Rereads watch state and rating after the player left this card covered
+  /// (post-play screen), marking the route result when anything changed.
+  Future<void> _returnedToTop() async {
+    final c = _controller!;
+    final focus = _focusOnReturn;
+    _focusOnReturn = null;
+    final before = _launchState ?? _watchFingerprint(c);
+    _launchState = null;
+    await c.refresh();
+    if (!mounted) return;
+    if (_watchFingerprint(c) != before) c.watchStateChanged = true;
+    if (focus != null) _focusAfterPlay(focus);
+  }
+
+  static String _watchFingerprint(TvShowController c) {
+    String item(MediaItem? e) =>
+        e == null ? '-' : '${e.id}:${e.viewCount}:${e.viewOffsetMs}:${e.viewedLeafCount}:${e.userRating}';
+    return [
+      item(c.show),
+      item(c.onDeckEpisode),
+      for (final season in c.seasons) ...[item(season), ...c.episodesFor(season.id).map(item)],
+      ...c.episodesFor(c.flattenedKey).map(item),
+    ].join('|');
   }
 
   void _back() {
@@ -426,6 +550,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   @override
   void dispose() {
+    _unregisterCard();
     ++_selection;
     _skeletonTimer?.cancel();
     _heroTimer?.cancel();
@@ -656,9 +781,11 @@ class _TvShowScreenState extends State<TvShowScreen> {
   }
 
   Future<void> _playExtra(MediaItem item) async {
+    _launchState = _watchFingerprint(_controller!);
     final changed = await navigateToVideoPlayer(context, metadata: item);
     if (!mounted) return;
     if (changed == true) _controller!.watchStateChanged = true;
+    if (!_isTop) _refreshOnReturn = true;
     await _controller!.refresh();
   }
 

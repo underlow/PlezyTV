@@ -19,6 +19,7 @@ extension _VideoPlayerPlaybackPromptMethods on VideoPlayerScreenState {
       _logVideoCompleted('resolvingAdjacency');
       return;
     }
+    TvUi.playerVideoCompleted(player, latched: _episode.completionLatch.triggered, item: _currentMetadata, isLive: widget.isLive);
 
     // mpv does not flip the `pause` property on EOF, so _onPlayingStateChanged
     // never fires false.  Normalize all playback-dependent state.
@@ -147,7 +148,7 @@ extension _VideoPlayerPlaybackPromptMethods on VideoPlayerScreenState {
     } else if (navigationAction == CompletionNavigationAction.exit && !_episode.completionLatch.triggered) {
       _logVideoCompleted('action=exit');
       _episode.completionLatch.latch();
-      unawaited(_handleBackButton());
+      if (!TvUi.playerExitAtEnd(player, isLive: widget.isLive)) unawaited(_handleBackButton());
     } else {
       _logVideoCompleted('action=${navigationAction.name} latched');
     }
