@@ -654,6 +654,56 @@ void main() {
       expect(client.rated, [2.0]);
       expect(client.rateCalls, 1);
     });
+
+    testWidgets('screen-owned controller: a leave save that fails before the route closes is not resent (R6, A40)', (
+      tester,
+    ) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie()
+        ..rateGate = Completer();
+      final servers = Servers(client);
+      addTearDown(servers.dispose);
+      await pumpTvWidget(tester, const SizedBox.shrink());
+      await tester.pumpWidget(
+        InputModeTracker(
+          child: ChangeNotifierProvider<MultiServerProvider>.value(
+            value: servers,
+            child: MaterialApp(
+              home: Builder(
+                builder: (context) => TextButton(
+                  child: const Text('home'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => TvPostPlayScreen(
+                        args: TvPostPlayArgs(watched: movie(), playerRemoved: Future.value()),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('home'));
+      await tester.pumpAndSettle();
+      expect(focusedLabel(), 'stars');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(client.rateCalls, 1, reason: 'leaving sends the value');
+      // The save fails while the screen is still closing.
+      client.failRate = true;
+      client.rateGate!.complete();
+      await tester.pump();
+      expect(find.byType(TvPostPlayScreen), findsOneWidget, reason: 'the route is not disposed yet');
+      await tester.pumpAndSettle();
+      expect(find.byType(TvPostPlayScreen), findsNothing, reason: 'closed and disposed');
+      await tester.pumpAndSettle();
+      expect(client.rateCalls, 1, reason: 'dispose does not resend the value leaving handed off');
+      expect(client.rated, isEmpty);
+    });
   });
 
   group('series ended', () {
