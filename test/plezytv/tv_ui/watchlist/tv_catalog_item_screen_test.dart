@@ -50,7 +50,10 @@ class _FakeServers extends ChangeNotifier implements MultiServerProvider {
 }
 
 class _FakeSource implements CatalogSource {
-  _FakeSource({this.membership = true, this.removeError});
+  _FakeSource({this.membership = true, this.removeError, this.detail});
+
+  /// The enriched form `fetchDetail` returns; the item itself when null.
+  final CatalogItem? detail;
 
   /// Null models membership data that has not loaded yet.
   bool? membership;
@@ -63,7 +66,7 @@ class _FakeSource implements CatalogSource {
 
   @override
   Future<CatalogDetail> fetchDetail(CatalogItem item, {int castLimit = 20, int relatedLimit = 20}) async =>
-      CatalogDetail(item: item);
+      CatalogDetail(item: detail ?? item);
 
   @override
   bool? isOnWatchlist(MediaKind kind, CatalogItemIds ids) => membership;
@@ -214,6 +217,35 @@ void main() {
     expect(button(tester, 'catalog-open').label, 'Open');
     expect(focused(tester, 'catalog-watchlist'), isTrue);
     expect(tester.getTopLeft(find.byKey(const ValueKey('catalog-watchlist'))), removeAt);
+  });
+
+  testWidgets('R12: an older plain check does not end the enriched check in progress', (tester) async {
+    final enriched = CatalogItem(
+      source: CatalogSourceId.trakt,
+      kind: MediaKind.show,
+      title: 'Some Show',
+      year: 2020,
+      ids: const CatalogItemIds(trakt: 7, tmdb: 70),
+    );
+    await pumpCard(
+      tester,
+      item: _item(),
+      source: _FakeSource(detail: enriched),
+    );
+    await tester.pump();
+    expect(matcher.calls, hasLength(3), reason: 'plain check, then original + enriched forms');
+    matcher.calls[0].completer.complete(_notFound);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('catalog-open-progress')), findsOneWidget);
+    expect(button(tester, 'catalog-open').label, isNot('Not on server'));
+
+    matcher.calls[1].completer.complete(_notFound);
+    matcher.calls[2].completer.complete(_found([testMediaItem(id: 'c1', serverId: 'a')]));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('catalog-open-progress')), findsNothing);
+    expect(button(tester, 'catalog-open').label, 'Open');
   });
 
   testWidgets('reduced performance shows a static icon instead of a spinner', (tester) async {

@@ -60,6 +60,10 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
   bool get isJumping => _pending != null;
   Object? _focusedKey;
   (int, int)? _reportedRange;
+
+  /// Offset a keep-focus replacement will jump to after the next frame; a
+  /// second replacement before then corrects from it, not the stale offset.
+  double? _pendingScroll;
   @override
   void initState() {
     super.initState();
@@ -100,6 +104,8 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
     final oldIndex = focusedIndex;
     _transition++;
     _pending = null;
+    final baseOffset = _pendingScroll ?? (_scroll.hasClients ? _scroll.offset : 0.0);
+    _pendingScroll = null;
     if (!keepFocus || count == 0) {
       focusedIndex = 0;
       _focusedKey = null;
@@ -122,13 +128,15 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
     }
     if (target < 0) target = oldIndex.clamp(0, count - 1);
     final rowDelta = target ~/ widget.columns - oldIndex ~/ widget.columns;
-    final scrollTo = _scroll.hasClients ? _scroll.offset + rowDelta * _extent : 0.0;
+    final scrollTo = _scroll.hasClients ? baseOffset + rowDelta * _extent : 0.0;
+    if (_scroll.hasClients) _pendingScroll = scrollTo;
     focusedIndex = target;
     _rememberKey(target);
     final epoch = _transition;
     void apply(Duration _) {
       if (!mounted || epoch != _transition) return;
-      if (_scroll.hasClients) {
+      if (_scroll.hasClients && _pendingScroll != null) {
+        _pendingScroll = null;
         _scroll.jumpTo(scrollTo.clamp(0.0, _scroll.position.maxScrollExtent));
       }
       if (!hadFocus) return;
@@ -153,6 +161,7 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
       widget.source.addListener(_structure);
       _transition++;
       _pending = null;
+      _pendingScroll = null;
       focusedIndex = 0;
     }
   }
@@ -161,9 +170,15 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
     if (!mounted) return;
     if (widget.source.replacingKeepFocus case final keepFocus?) {
       _replaced(keepFocus);
+      // New content: report the visible range again even if unchanged.
+      if (widget.onVisibleRangeChanged != null) {
+        _reportedRange = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _reportRange());
+      }
     } else if (widget.source.totalCount == null) {
       _transition++;
       _pending = null;
+      _pendingScroll = null;
       focusedIndex = 0;
     }
     setState(() {});
@@ -177,6 +192,7 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
     if (count == 0) return;
     final target = index.clamp(0, count - 1), epoch = ++_transition;
     _pending = target;
+    _pendingScroll = null;
     if (_scroll.hasClients) {
       final extent = _extent;
       _scroll.jumpTo((target ~/ widget.columns * extent).clamp(0.0, _scroll.position.maxScrollExtent));

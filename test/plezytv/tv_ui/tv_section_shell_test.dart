@@ -940,7 +940,7 @@ void main() {
 
     List<String> labels(WidgetTester tester) => menu(tester).items.map((item) => item.label).toList();
 
-    testWidgets('A1 item sits after libraries and More, before Live TV and Explore; absent without source', (
+    testWidgets('A1 item sits right after libraries, before More, Live TV and Explore; absent without source', (
       tester,
     ) async {
       servers.totalServerCount = 2;
@@ -954,8 +954,8 @@ void main() {
         t.common.home,
         'Movies',
         'Series',
-        'More',
         TvStrings.watchlist,
+        'More',
         t.navigation.liveTv,
         t.navigation.explore,
         t.common.settings,

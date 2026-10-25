@@ -186,16 +186,29 @@ continues to respect the profile session’s `initialPromptHandled` flag.
 ### S10 watchlist section
 
 «Список» (`lib/plezytv/tv_ui/watchlist/`) is a fork-owned section with no upstream
-tab. Its menu entry (bookmark icon) follows the library entries and More, before
-Live TV and Explore; the companion remote's next/previous step visits it after
+tab. Its menu entry (bookmark icon) follows the library entries directly, before
+More, Live TV and Explore; the companion remote's next/previous step visits it after
 Libraries. It is available while online with a non-empty
 `CatalogSourcesProvider.watchlistCapableSources`; losing every source leaves for
 Home, and a soft connection loss restores it like other sections.
 `TvWatchlistScreen` is mounted lazily and owns its controller and availability
 service. The shell calls `onTabShown`/`onTabHidden` only on section changes,
 never for a covering route (that would cancel playback started from the list);
-`handleContentIntent` maps resume to `refresh` (`backgroundRefresh`) and profile
-reset to `fullRefresh` (`fullReset`). «Go to search» selects Search.
+`handleContentIntent` maps resume to `refresh` (`backgroundRefresh`), the
+cold-start/reconnect prime to `primeRefresh` (also `backgroundRefresh`: a silent
+re-read when ready, retry after an error, nothing while loading, so focus and
+scroll survive), and profile reset to `fullRefresh` (`fullReset`, which also
+forgets every availability result and the check queue). «Go to search» selects
+Search.
+
+`TvWatchlistAvailability` re-checks every item when `expectedServerIds` changes
+(the old result shows until the new one replaces it) and incomplete items when a
+server comes online; checks running at that moment are queued again once after
+they finish (incomplete ones only, for a server coming online). Posters listen to
+their own item (`watch`); the «Есть на сервере» tab rebuilds only when the set of
+found items changes (`foundRevision`). Membership notifications drop only items
+whose `isOnWatchlist` flipped from true to false, since the membership snapshot
+may not know items added on another device.
 
 Two upstream edits support it: `CatalogLibraryMatcher.match` takes
 `refreshIncomplete` (re-queries servers that failed, were cancelled or not
@@ -203,7 +216,10 @@ queried, folding results into cached copies), and `plex_catalog_source.dart`
 parses Plex `watchlistedAt` into `CatalogItem.addedAt` for the date-added sort.
 `TvPagedSource.replaceAll(items, keepFocus:)` replaces in-memory content in one
 notification; `TvPagedGrid` gained optional `onVisibleRangeChanged`,
-`onPlayPause` and `keyOf` (focus kept by key with scroll compensation). Without
+`onPlayPause` and `keyOf` (focus kept by key with scroll compensation; a second
+keep-focus replacement before the next frame corrects from the pending offset).
+With `onVisibleRangeChanged`, the range is reported again after every
+`replaceAll`. Without
 them the S16 grid behaves as before.
 
 ### S16 library section hookup

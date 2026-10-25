@@ -63,6 +63,30 @@ void main() {
     expect(skeleton(), findsNothing);
   });
 
+  testWidgets('two keep-focus replacements in one frame keep the focused row (F3)', (tester) async {
+    await mount(tester, names(120));
+    await focus(tester, 40);
+    final top = topOf(tester, 'item40');
+    final shifted = [for (var i = 0; i < 6; i++) 'new$i', ...names(120)];
+    source.replaceAll(shifted, keepFocus: true);
+    source.replaceAll(shifted, keepFocus: true);
+    await tester.pumpAndSettle();
+    expect(focusedItem(), 'item40');
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'TV grid 46');
+    expect(topOf(tester, 'item40'), top);
+  });
+
+  testWidgets('visible range is reported again after every replacement (F6)', (tester) async {
+    await mount(tester, names(120));
+    final count = ranges.length;
+    source.replaceAll([...names(119), 'other'], keepFocus: true);
+    await tester.pumpAndSettle();
+    expect(ranges.length, count + 1, reason: 'same range, new content');
+    source.replaceAll(names(120), keepFocus: false);
+    await tester.pumpAndSettle();
+    expect(ranges.length, count + 2);
+  });
+
   testWidgets('removing the focused item focuses the next; the last focuses the previous (A27)', (tester) async {
     await mount(tester, names(20));
     await focus(tester, 7);

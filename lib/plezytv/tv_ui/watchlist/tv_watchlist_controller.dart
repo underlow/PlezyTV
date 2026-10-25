@@ -41,12 +41,6 @@ class TvWatchlistController extends ChangeNotifier {
   static const Duration refetchDelay = Duration(seconds: 1);
   static const Duration membershipRetry = Duration(seconds: 30);
 
-  /// Sources known to list their watchlist oldest-first when items carry no
-  /// date (R5). Checked: AniList asks `ADDED_TIME_DESC`, MAL `list_updated_at`
-  /// (newest first); Plex Discover's default order is unconfirmed. None, so
-  /// far.
-  static const Set<CatalogSourceId> oldestFirstSources = {};
-
   final TvWatchlistAvailability availability;
 
   /// Fires when connected sources change (`CatalogSourcesProvider`).
@@ -72,6 +66,14 @@ class TvWatchlistController extends ChangeNotifier {
   int _viewRevision = 0;
 
   int _generation = 0;
+  List<CatalogItem>? _orderOf;
+  Map<String, int> _order = const {};
+  int _seenFoundRevision = 0;
+  bool _seenChecking = false;
+
+  /// Membership per item key as of the last list change or notification;
+  /// only a true → false flip removes an item (R13).
+  Map<String, bool?> _membership = const {};
   bool _snapshotLoaded = false;
   Timer? _refetchTimer;
   Timer? _membershipTimer;
@@ -146,6 +148,7 @@ class TvWatchlistController extends ChangeNotifier {
     _prefs = null;
     _filters = TvWatchlistFilters.none;
     _removed.clear();
+    availability.reset();
     return load();
   }
 
@@ -188,6 +191,7 @@ class TvWatchlistController extends ChangeNotifier {
       _phase = TvWatchlistPhase.ready;
       _snapshotLoaded = _probeSnapshot(source);
       _all = items;
+      _recordMembership();
       availability.setItems(items);
       _dropStaleFilters();
       _rebuild(TvWatchlistChange.reset);
@@ -269,7 +273,15 @@ class TvWatchlistController extends ChangeNotifier {
     final wasLoaded = _snapshotLoaded;
     _snapshotLoaded = _probeSnapshot(source);
     if (!_snapshotLoaded) return;
-    final gone = _all.where((item) => source.isOnWatchlist(item.kind, item.ids) == false).toList();
+    final previous = _membership;
+    _recordMembership();
+    final now = _membership;
+    // Membership data is loaded once per session, so `false` for an item
+    // added on another device may be stale; only a flip is a removal.
+    final gone = _all.where((item) {
+      final key = TvWatchlistAvailability.keyOf(item);
+      return previous[key] == true && now[key] == false;
+    }).toList();
     if (gone.isNotEmpty) {
       final goneKeys = {for (final item in gone) TvWatchlistAvailability.keyOf(item)};
       _setAll(
@@ -280,6 +292,13 @@ class TvWatchlistController extends ChangeNotifier {
     // A first snapshot that agrees with the list is not a change; any other
     // notification may be an addition the snapshot cannot enumerate.
     if (wasLoaded || gone.isNotEmpty) _scheduleRefetch();
+  }
+
+  void _recordMembership() {
+    final source = _source;
+    _membership = {
+      for (final item in _all) TvWatchlistAvailability.keyOf(item): source?.isOnWatchlist(item.kind, item.ids),
+    };
   }
 
   void _scheduleRefetch() {
@@ -300,7 +319,13 @@ class TvWatchlistController extends ChangeNotifier {
     final previous = _source;
     _sources = _ordered(readSources());
     if (previous == null || _prefs == null) {
-      notifyListeners();
+      // Prefs loaded and nothing open (e.g. a reset with no sources): open
+      // the first source that appears instead of staying in loading.
+      if (previous == null && _prefs != null && _sources.isNotEmpty) {
+        unawaited(load());
+      } else {
+        notifyListeners();
+      }
       return;
     }
     final same = _sources.where((s) => s.id == previous.id).firstOrNull;
@@ -315,6 +340,7 @@ class TvWatchlistController extends ChangeNotifier {
       _source = same;
       _subscribe(same);
       _snapshotLoaded = _probeSnapshot(same);
+      _recordMembership();
       _ensureMembership(same, _generation);
       notifyListeners();
     } else {
@@ -324,12 +350,27 @@ class TvWatchlistController extends ChangeNotifier {
 
   // ---------- View ----------
 
+  /// Only a change in which items are found reshapes «Есть на сервере»;
+  /// posters follow their own status ([TvWatchlistAvailability.watch]).
   void _onAvailability() {
-    if (_tab == TvWatchlistTab.onServer) _rebuild(TvWatchlistChange.keepFocus);
+    if (_disposed) return;
+    final foundRevision = availability.foundRevision;
+    final checking = availability.checking;
+    final foundChanged = foundRevision != _seenFoundRevision;
+    final checkingChanged = checking != _seenChecking;
+    _seenFoundRevision = foundRevision;
+    _seenChecking = checking;
+    if (_tab != TvWatchlistTab.onServer) return;
+    if (foundChanged) {
+      _rebuild(TvWatchlistChange.keepFocus);
+    } else if (checkingChanged) {
+      notifyListeners();
+    }
   }
 
   void _setAll(List<CatalogItem> items, TvWatchlistChange change) {
     _all = items;
+    _recordMembership();
     availability.setItems(items);
     _recomputeOptions();
     _rebuild(change);
@@ -396,7 +437,11 @@ class TvWatchlistController extends ChangeNotifier {
 
   List<CatalogItem> _sorted(List<CatalogItem> items) {
     // Index in source order breaks ties so every sort is stable.
-    final order = {for (var i = 0; i < _all.length; i++) TvWatchlistAvailability.keyOf(_all[i]): i};
+    if (!identical(_orderOf, _all)) {
+      _orderOf = _all;
+      _order = {for (var i = 0; i < _all.length; i++) TvWatchlistAvailability.keyOf(_all[i]): i};
+    }
+    final order = _order;
     int byOrder(CatalogItem a, CatalogItem b) =>
         order[TvWatchlistAvailability.keyOf(a)]!.compareTo(order[TvWatchlistAvailability.keyOf(b)]!);
     int nullsLastDesc(Comparable<Object?>? a, Comparable<Object?>? b) {
@@ -408,12 +453,9 @@ class TvWatchlistController extends ChangeNotifier {
     int Function(CatalogItem, CatalogItem) primary;
     switch (_sort) {
       case TvWatchlistSort.added:
-        final anyDated = items.any((item) => item.addedAt != null);
-        if (!anyDated && oldestFirstSources.contains(_source?.id)) {
-          primary = (a, b) => -byOrder(a, b);
-        } else {
-          primary = (a, b) => nullsLastDesc(a.addedAt, b.addedAt);
-        }
+        // Undated lists keep the source order (R5): no source is known to
+        // list oldest first.
+        primary = (a, b) => nullsLastDesc(a.addedAt, b.addedAt);
       case TvWatchlistSort.title:
         primary = (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase());
       case TvWatchlistSort.year:

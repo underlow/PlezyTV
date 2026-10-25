@@ -176,13 +176,13 @@ class CatalogLibraryMatcher {
   static List<String> lookupTitles(CatalogItem item) =>
       titleMatchCandidates([item.originalTitle, item.title, ...item.altTitles]);
 
+  static bool _isIncomplete(LibraryLookupResult result) =>
+      result.failedServerIds.isNotEmpty || result.cancelledServerIds.isNotEmpty || result.unqueriedServerIds.isNotEmpty;
+
   /// Whether [result] may be memoized for the rest of the session: a hit
   /// every expected server took part in. One that sat out — failed,
   /// cancelled or never asked — leaves the answer incomplete, so it expires
   /// with [negativeTtl] instead of being cached until the profile switches.
-  static bool _isIncomplete(LibraryLookupResult result) =>
-      result.failedServerIds.isNotEmpty || result.cancelledServerIds.isNotEmpty || result.unqueriedServerIds.isNotEmpty;
-
   static bool _isAuthoritativeHit(LibraryLookupResult result) =>
       result.items.isNotEmpty &&
       result.failedServerIds.isEmpty &&
