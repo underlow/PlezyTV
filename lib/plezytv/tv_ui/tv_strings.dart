@@ -25,6 +25,10 @@ abstract final class TvStrings {
   static const moreActions = 'More';
   static const showDownloads = 'Show downloads';
   static const onServer = 'On server';
+  static const catalogOpen = 'Open';
+  static const catalogNotOnServer = 'Not on server';
+  static const catalogCouldNotCheck = 'Couldn’t check';
+  static const catalogChooseCopy = 'Choose a copy';
   static String seasons(int count) => '$count ${count == 1 ? 'season' : 'seasons'}';
   static String episodes(int count) => '$count ${count == 1 ? 'episode' : 'episodes'}';
   static String spoilerEpisode({required int season, required int episode, required String title}) =>
