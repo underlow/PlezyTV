@@ -76,6 +76,37 @@ class TvPagedSource<T> extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Non-null only while listeners handle the structural notification sent by
+  /// [replaceAll]; tells the grid whether to keep focus on the same item.
+  bool? get replacingKeepFocus => _replacingKeepFocus;
+  bool? _replacingKeepFocus;
+
+  /// Synchronously replace all content with an in-memory list: every page is
+  /// loaded, no page reloads, a single structural notification.
+  void replaceAll(List<T> items, {required bool keepFocus}) {
+    if (_disposed) return;
+    generation++;
+    _pending.clear();
+    errors.clear();
+    _stale.clear();
+    _items
+      ..clear()
+      ..addAll(items.asMap());
+    totalCount = items.length;
+    _loaded
+      ..clear()
+      ..addAll([for (var p = 0; p * pageSize < items.length; p++) p]);
+    for (final page in _signals.keys.toList()) {
+      _emit(page);
+    }
+    _replacingKeepFocus = keepFocus;
+    try {
+      notifyListeners();
+    } finally {
+      _replacingKeepFocus = null;
+    }
+  }
+
   bool needsReload(int index) => _stale.contains(index ~/ pageSize) && !errors.containsKey(index ~/ pageSize);
 
   void markStale(int index) {

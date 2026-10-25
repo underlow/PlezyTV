@@ -23,6 +23,9 @@ class TvPagedGrid<T> extends StatefulWidget {
     this.onItemFocused,
     this.onSelect,
     this.onLongPress,
+    this.onVisibleRangeChanged,
+    this.onPlayPause,
+    this.keyOf,
   }) : assert(columns > 0),
        assert(cellWidth > 0),
        assert(cellHeight > 0);
@@ -35,6 +38,16 @@ class TvPagedGrid<T> extends StatefulWidget {
   final double cellWidth, cellHeight, gap;
   final VoidCallback? onUp, onLeft, onRight;
   final ValueChanged<int>? onItemFocused, onSelect, onLongPress;
+
+  /// First and last visible indices, reported after scrolling and resizing.
+  final ValueChanged<(int, int)>? onVisibleRangeChanged;
+
+  /// Physical Play/Pause (`mediaPlayPause`, `mediaPlay`) on a loaded item.
+  final ValueChanged<int>? onPlayPause;
+
+  /// Identity used to keep focus on the same item across
+  /// [TvPagedSource.replaceAll] with `keepFocus: true`.
+  final Object? Function(T item)? keyOf;
   @override
   State<TvPagedGrid<T>> createState() => TvPagedGridState<T>();
 }
@@ -45,10 +58,91 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
   int focusedIndex = 0, _transition = 0;
   int? _pending;
   bool get isJumping => _pending != null;
+  Object? _focusedKey;
+  (int, int)? _reportedRange;
   @override
   void initState() {
     super.initState();
     widget.source.addListener(_structure);
+    _scroll.addListener(_reportRange);
+  }
+
+  double get _extent => TvTheme.of(context).px(widget.cellHeight + widget.gap);
+
+  void _reportRange() {
+    final callback = widget.onVisibleRangeChanged;
+    if (callback == null || !mounted || !_scroll.hasClients) return;
+    final count = widget.source.totalCount ?? 0;
+    if (count == 0) return;
+    final position = _scroll.position;
+    if (!position.hasViewportDimension) return;
+    final extent = _extent, offset = position.pixels;
+    final firstRow = (offset / extent).floor().clamp(0, count);
+    final lastRow = ((offset + position.viewportDimension) / extent).ceil() - 1;
+    final first = (firstRow * widget.columns).clamp(0, count - 1);
+    final last = ((lastRow + 1) * widget.columns - 1).clamp(first, count - 1);
+    final range = (first, last);
+    if (range == _reportedRange) return;
+    _reportedRange = range;
+    callback(range);
+  }
+
+  void _rememberKey(int index) {
+    final item = widget.source[index], keyOf = widget.keyOf;
+    _focusedKey = item == null || keyOf == null ? null : keyOf(item);
+  }
+
+  bool get _hasFocus => _nodes.values.any((node) => node.hasFocus);
+
+  void _replaced(bool keepFocus) {
+    final count = widget.source.totalCount ?? 0;
+    final hadFocus = _hasFocus;
+    final oldIndex = focusedIndex;
+    _transition++;
+    _pending = null;
+    if (!keepFocus || count == 0) {
+      focusedIndex = 0;
+      _focusedKey = null;
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+      if (hadFocus && count > 0) {
+        jumpTo(0, waitForLoad: false);
+      }
+      return;
+    }
+    var target = -1;
+    final key = _focusedKey, keyOf = widget.keyOf;
+    if (key != null && keyOf != null) {
+      for (var i = 0; i < count; i++) {
+        final item = widget.source[i];
+        if (item != null && keyOf(item) == key) {
+          target = i;
+          break;
+        }
+      }
+    }
+    if (target < 0) target = oldIndex.clamp(0, count - 1);
+    final rowDelta = target ~/ widget.columns - oldIndex ~/ widget.columns;
+    final scrollTo = _scroll.hasClients ? _scroll.offset + rowDelta * _extent : 0.0;
+    focusedIndex = target;
+    _rememberKey(target);
+    final epoch = _transition;
+    void apply(Duration _) {
+      if (!mounted || epoch != _transition) return;
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(scrollTo.clamp(0.0, _scroll.position.maxScrollExtent));
+      }
+      if (!hadFocus) return;
+      final node = _nodes[target];
+      if (node?.context == null) {
+        WidgetsBinding.instance.addPostFrameCallback(apply);
+        WidgetsBinding.instance.scheduleFrame();
+        return;
+      }
+      if (!node!.hasFocus) node.requestFocus();
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback(apply);
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   @override
@@ -65,7 +159,9 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
 
   void _structure() {
     if (!mounted) return;
-    if (widget.source.totalCount == null) {
+    if (widget.source.replacingKeepFocus case final keepFocus?) {
+      _replaced(keepFocus);
+    } else if (widget.source.totalCount == null) {
       _transition++;
       _pending = null;
       focusedIndex = 0;
@@ -82,7 +178,7 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
     final target = index.clamp(0, count - 1), epoch = ++_transition;
     _pending = target;
     if (_scroll.hasClients) {
-      final extent = TvTheme.of(context).px(widget.cellHeight + widget.gap);
+      final extent = _extent;
       _scroll.jumpTo((target ~/ widget.columns * extent).clamp(0.0, _scroll.position.maxScrollExtent));
     }
     final loading = widget.source.requestIndex(target);
@@ -143,7 +239,10 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
   @override
   Widget build(BuildContext context) {
     final px = TvTheme.of(context).px;
-    return Align(
+    if (widget.onVisibleRangeChanged != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportRange());
+    }
+    Widget grid = Align(
       alignment: Alignment.topLeft,
       child: SizedBox(
         width: px(widget.columns * widget.cellWidth + (widget.columns - 1) * widget.gap),
@@ -169,6 +268,7 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
               onKey: (event) => _key(index, event),
               onFocus: () {
                 focusedIndex = index;
+                _rememberKey(index);
                 widget.onItemFocused?.call(index);
               },
               onSelect: () => widget.onSelect?.call(index),
@@ -180,6 +280,25 @@ class TvPagedGridState<T> extends State<TvPagedGrid<T>> {
         ),
       ),
     );
+    if (widget.onPlayPause != null) {
+      grid = Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: (node, event) {
+          if (event is! KeyDownEvent ||
+              (event.logicalKey != LogicalKeyboardKey.mediaPlayPause &&
+                  event.logicalKey != LogicalKeyboardKey.mediaPlay)) {
+            return KeyEventResult.ignored;
+          }
+          final index = focusedIndex;
+          if (!_hasFocus || widget.source[index] == null) return KeyEventResult.ignored;
+          widget.onPlayPause!(index);
+          return KeyEventResult.handled;
+        },
+        child: grid,
+      );
+    }
+    return grid;
   }
 
   @override
