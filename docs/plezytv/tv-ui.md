@@ -299,7 +299,7 @@ the skip button then sits where it does with the panel hidden.
 Back with focus on the skip button and the panel up hides the button for that
 marker showing; with focus in the panel, Back hides the panel and, as in Plezy,
 the button with it (R22). Keys handled on the skip button restart the panel's
-auto-hide. The button is pinned at its design spot on screen (not offset from Plezy's slot, which moves on its own rebuilds), so it never slides when it reappears; only its own 200 ms tween moves it. The pause indicator goes 5 minutes after the pause began or the panel
+auto-hide. The button is pinned at its design spot in the player's stack (the parent of Plezy's slot, so ancestor scales such as Apple TV's `FormFactorScale` apply to it), not offset from Plezy's slot, which moves on its own rebuilds; it never slides when it reappears, and only its own 200 ms tween moves it. Plezy's slot is a repaint boundary, so when it moves the button is not repainted by itself: after each frame the button checks the slot's place and, when it moved or the chrome controller notified, repaints every frame for 300 ms (Plezy's 200 ms slot motion); nothing is scheduled while the slot is still. The pause indicator goes 5 minutes after the pause began or the panel
 last hid on that pause, so opening and hiding the panel brings it back (R18).
 
 Upstream tests `test/widgets/video_controls_auto_hide_test.dart`,

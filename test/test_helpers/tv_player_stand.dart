@@ -457,17 +457,40 @@ class TvPlayerStand {
     playbackPromptOpen: playbackPromptOpen,
   );
 
-  /// Mounts [controls] and settles with the panel up.
-  Future<void> pumpControls(WidgetTester tester, PlexVideoControls controls, {Widget? layer}) async {
+  /// [host] on a surface [scale] times larger, drawn through a scale
+  /// transform with a 1920 × 1080 media query, as `FormFactorScale` does on
+  /// Apple TV (scale 2).
+  Widget scaledHost(Widget child, {Widget? layer, required double scale}) => Builder(
+    builder: (context) => Transform.scale(
+      scale: scale,
+      alignment: Alignment.topLeft,
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          width: 1920,
+          height: 1080,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: const Size(1920, 1080), devicePixelRatio: scale),
+            child: host(child, layer: layer),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  /// Mounts [controls] and settles with the panel up; [scale] other than 1
+  /// mounts them through [scaledHost].
+  Future<void> pumpControls(WidgetTester tester, PlexVideoControls controls, {Widget? layer, double scale = 1}) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.physicalSize = Size(1920 * scale, 1080 * scale);
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
-    await tester.pumpWidget(host(const SizedBox.expand()));
+    Widget wrap(Widget child) => scale == 1 ? host(child, layer: layer) : scaledHost(child, layer: layer, scale: scale);
+    await tester.pumpWidget(wrap(const SizedBox.expand()));
     await tester.pump();
-    await tester.pumpWidget(host(controls, layer: layer));
+    await tester.pumpWidget(wrap(controls));
     await tester.pumpAndSettle();
     // Markers and the timeline react to position updates, not the snapshot.
     player.setPosition(player.state.position);
