@@ -549,7 +549,7 @@ class TvPlayerSidePanelState extends State<TvPlayerSidePanel> {
       for (final minutes in _sleepMinutes)
         _Option(
           id: 'minutes:$minutes',
-          title: formatDurationTextual(minutes * 60 * 1000),
+          title: formatDurationTextual(minutes * 60 * 1000, abbreviated: false),
           selected: minutes == active,
           onSelect: () => timer.startTimer(Duration(minutes: minutes)),
         ),

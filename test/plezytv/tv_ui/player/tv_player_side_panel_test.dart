@@ -8,7 +8,10 @@ import 'package:plezy/plezytv/tv_ui/player/tv_player_bar.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_panel.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_session.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_side_panel.dart';
+import 'package:plezy/plezytv/tv_ui/tv_theme.dart';
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
+import 'package:plezy/widgets/video_controls/models/track_controls_state.dart';
+import 'package:plezy/widgets/video_controls/sheets/subtitle_search_sheet.dart';
 import 'package:plezy/widgets/video_controls/sheets/video_settings_sheet.dart';
 
 import '../../../test_helpers/tv_player_stand.dart';
@@ -142,6 +145,56 @@ void main() {
     expect(find.text('No transcoding'), findsNothing);
     expect(focused(), side(TvPlayerSidePage.settings, 'subtitles'));
     await press(tester, LogicalKeyboardKey.select);
+    expect(find.text('Search Subtitles'), findsNothing);
+    await stand.unmount(tester);
+  });
+
+  /// Mounts the panel alone on [state], so subtitle search can be offered.
+  Future<void> pumpPanel(WidgetTester tester, {required bool offline}) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1920, 1080);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      stand.host(
+        TvTheme(
+          child: TvPlayerSidePanel(
+            root: TvPlayerSidePage.subtitles,
+            player: stand.player,
+            trackControlsState: const TrackControlsState(ratingKey: 'x', serverId: 's', subtitleSearchSupported: true),
+            isOfflinePlayback: offline,
+            onClose: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('A18/R14: online with search supported — Search Subtitles opens Plezy\'s sheet, focus returns', (
+    tester,
+  ) async {
+    await pumpPanel(tester, offline: false);
+    expect(find.text('Search Subtitles'), findsOneWidget);
+    final search = side(TvPlayerSidePage.subtitles, 'search');
+    for (var i = 0; i < 6 && focused() != search; i++) {
+      await press(tester, LogicalKeyboardKey.arrowDown);
+    }
+    expect(focused(), search);
+    await press(tester, LogicalKeyboardKey.select);
+    expect(find.byType(SubtitleSearchSheet), findsOneWidget);
+    await back(tester);
+    await tester.pumpAndSettle();
+    expect(find.byType(SubtitleSearchSheet), findsNothing);
+    expect(find.byType(TvPlayerSidePanel), findsOneWidget);
+    expect(focused(), search, reason: 'focus returns to the row that opened the sheet');
+    await stand.unmount(tester);
+  });
+
+  testWidgets('A18: offline with search supported — no Search Subtitles', (tester) async {
+    await pumpPanel(tester, offline: true);
     expect(find.text('Search Subtitles'), findsNothing);
     await stand.unmount(tester);
   });
