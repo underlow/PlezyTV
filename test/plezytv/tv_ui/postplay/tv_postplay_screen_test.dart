@@ -561,6 +561,47 @@ void main() {
       expect(client.rateCalls, 1);
     });
 
+    testWidgets('Back with an unsaved value the server refuses: the screen closes, no message (R6)', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie()
+        ..failRate = true;
+      await pumpScreen(tester, client: client, watched: movie());
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump();
+        expect(find.text(t.errors.failedToRate), findsNothing);
+      }
+      await tester.pumpAndSettle();
+      expect(client.rateCalls, 1);
+      expect(find.byType(TvPostPlayScreen), findsNothing);
+      expect(find.text(t.errors.failedToRate), findsNothing);
+    });
+
+    testWidgets('an autosave failing while the user leaves shows no message; retried silently (R6)', (tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie()
+        ..failRate = true
+        ..rateGate = Completer();
+      final h = await pumpScreen(tester, client: client, watched: movie());
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(client.rateCalls, 1, reason: 'autosave sent, reports its errors');
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await press(tester, LogicalKeyboardKey.enter); // Back to movie
+      await tester.pump();
+      client.rateGate!.complete();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump();
+        expect(find.text(t.errors.failedToRate), findsNothing);
+      }
+      await tester.pumpAndSettle();
+      expect(client.rateCalls, 2, reason: 'the failed value is sent once more on leaving');
+      expect(h.details.single.$1.id, 'm');
+      expect(find.text('card m'), findsOneWidget);
+      expect(find.text(t.errors.failedToRate), findsNothing);
+    });
+
     testWidgets('screen-owned controller: client from the provider; plain Back saves (A40)', (tester) async {
       final client = PostPlayClient()..items['m'] = movie();
       final servers = Servers(client);
@@ -680,9 +721,9 @@ void main() {
       expect(find.byType(TvPostPlayScreen), findsOneWidget);
       removed.complete();
       await tester.pumpAndSettle();
-      expect(h.details.length + h.launches.length, greaterThan(0), reason: 'run once the player is gone');
-      expect(h.details.length, lessThanOrEqualTo(1));
-      expect(h.launches.length, lessThanOrEqualTo(1));
+      await tester.pump(const Duration(seconds: 1));
+      // Which press wins is not specified; never a card and a launch both.
+      expect(h.details.length + h.launches.length, 1, reason: 'exactly one action once the player is gone');
     });
 
     testWidgets('Back waits too, then pops', (tester) async {

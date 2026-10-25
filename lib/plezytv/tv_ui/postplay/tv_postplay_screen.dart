@@ -8,6 +8,7 @@ import '../../../focus/key_event_utils.dart';
 import '../../../i18n/strings.g.dart';
 import '../../../media/media_item.dart';
 import '../../../media/media_server_client.dart';
+import '../../../utils/app_logger.dart';
 import '../../../utils/formatters.dart';
 import '../../../utils/layout_constants.dart';
 import '../../../utils/media_navigation_helper.dart';
@@ -117,8 +118,14 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
     } else {
       _c = widget.controller!;
     }
-    _c.onRateError = (_) {
-      if (mounted) showErrorSnackBar(context, t.errors.failedToRate);
+    _c.onRateError = (error) {
+      // Once leaving has started the save is retried silently (R6); Plezy's
+      // messenger would show the message over the next screen.
+      if (mounted && !_queued && (ModalRoute.isCurrentOf(context) ?? true)) {
+        showErrorSnackBar(context, t.errors.failedToRate);
+      } else {
+        appLogger.w('Post-play rating save failed while leaving', error: error);
+      }
     };
     _c.addListener(_changed);
     if (_ownsController) unawaited(_c.load());
@@ -172,14 +179,20 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
 
   /// Route-changing actions wait until Plezy removed the old player, then run
   /// once (spec §3). The rating is saved first, so the screen that comes
-  /// next reads it (R6, R10).
+  /// next reads it (R6, R10); from the press on, a failed save shows no
+  /// message.
   void _afterPlayer(Future<void> Function() action) {
     if (_queued) return;
     _queued = true;
     unawaited(() async {
       try {
         await widget.args.playerRemoved.then<void>((_) {}, onError: (Object _) {});
-        await _c.flush();
+        try {
+          await _c.flush();
+        } catch (error) {
+          // A failed save must not stop the user from leaving (R6).
+          appLogger.w('Post-play rating save failed before leaving', error: error);
+        }
         if (!mounted) return;
         await action();
       } finally {

@@ -339,7 +339,9 @@ and one "similar" row. Rating save repeats Plezy's `rating_bottom_sheet.dart`:
 `rate()` with the value, `rate(-1)` to clear, offered only with
 `capabilities.numericUserRating`; leaving the screen saves an unsaved value
 and waits for a save in flight before the next screen opens (bounded at 3 s),
-so the card below reads the new rating. Ratings appear as soon as the item
+so the card below reads the new rating. From the leaving press on, a failed
+save shows no message (Plezy's messenger would show it over the next screen);
+the value is retried silently. Ratings appear as soon as the item
 loads; a failed related-hubs request only leaves "Similar" out. For a series
 that ended, focus may move once to the stars after loading if no key was
 pressed yet (any key-down counts, seen through `HardwareKeyboard`).
