@@ -30,6 +30,7 @@ import 'tv_player_bar.dart';
 import 'tv_player_hooks.dart';
 import 'tv_player_queue_row.dart';
 import 'tv_player_session.dart';
+import 'tv_player_side_panel.dart';
 
 /// Focusable elements of the panel; [name] is the id kept in
 /// [TvPlayerSession] focus memory.
@@ -101,6 +102,10 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     if (_isEpisode) TvPlayerPanelElement.next,
   ];
 
+  /// The icon that opened the right panel (R11), null while it is closed.
+  TvPlayerPanelElement? _sideIcon;
+  final _sidePanel = GlobalKey<TvPlayerSidePanelState>();
+
   static const _icons = [TvPlayerPanelElement.subtitles, TvPlayerPanelElement.audio, TvPlayerPanelElement.settings];
 
   @override
@@ -169,6 +174,10 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     _keyRepeatThumbnailTimer?.cancel();
     _timelineSeek.dispose();
     final session = _session;
+    if (_sideIcon != null) {
+      // Not while the tree is locked: listeners (the skip button) rebuild.
+      scheduleMicrotask(() => session.sidePanelOpen.value = false);
+    }
     if (identical(session.iconsFocusNode, _node(TvPlayerPanelElement.subtitles))) session.iconsFocusNode = null;
     for (final node in _nodes.values) {
       node.dispose();
@@ -186,6 +195,9 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     final chrome = _chrome;
     if (!mounted || chrome == null) return;
     if (_queueOpen && !chrome.contentStripVisible) _onQueueClosedOutside();
+    if (_sideIcon != null && !chrome.contentStripVisible) {
+      _closeSidePanel(focusIcon: chrome.controlsVisible && !_promptOpen);
+    }
     final visible = chrome.controlsVisible;
     if (visible == _wasVisible) return;
     _wasVisible = visible;
@@ -208,7 +220,45 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     // A pause flag must not send a later showing to play (R7).
     _session.focusPlayOnNextShow = false;
     _closeQueue(focusBar: false);
+    _closeSidePanel(focusIcon: false);
   }
+
+  // ---- Right panel (R11–R16) ----
+
+  /// Opens the right panel for [icon]. It holds the chrome the way Plezy's
+  /// content strip does, so auto-hide stays off while it is open (R11) and
+  /// Plezy's Back chain and hiding know about it.
+  void _openSidePanel(TvPlayerPanelElement icon) {
+    if (_promptOpen) return;
+    _timelineSeek.flush();
+    _resetSeekState();
+    setState(() => _sideIcon = icon);
+    _session.sidePanelOpen.value = true;
+    _chrome?.setContentStripVisible(true);
+    _chrome?.cancelAutoHide();
+  }
+
+  /// Closes the right panel; focus back on the icon that opened it (R7).
+  /// Releasing the hold restarts auto-hide.
+  void _closeSidePanel({bool focusIcon = true}) {
+    final icon = _sideIcon;
+    if (icon == null) return;
+    setState(() => _sideIcon = null);
+    _session.sidePanelOpen.value = false;
+    final chrome = _chrome;
+    if (chrome != null && chrome.contentStripVisible) chrome.setContentStripVisible(false);
+    if (focusIcon) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _sideIcon == null && !_promptOpen) _go(icon);
+      });
+    }
+  }
+
+  static TvPlayerSidePage _sideRoot(TvPlayerPanelElement icon) => switch (icon) {
+    TvPlayerPanelElement.subtitles => TvPlayerSidePage.subtitles,
+    TvPlayerPanelElement.audio => TvPlayerSidePage.audio,
+    _ => TvPlayerSidePage.settings,
+  };
 
   // ---- Queue (R9, R10) ----
 
@@ -286,6 +336,11 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
       _placeFocusScheduled = false;
       if (!mounted || !(_chrome?.controlsVisible ?? true)) return;
       if (_promptOpen) return _yieldToPrompt();
+      final side = _sidePanel.currentState;
+      if (_sideIcon != null && side != null) {
+        if (!side.sheetOpen) side.refocus();
+        return;
+      }
       // Within one showing, a reclaimed remote returns to where it was.
       _node(_focused ?? _initialFocus()).requestFocus();
     });
@@ -361,7 +416,10 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     final navigationKey = classifyPlayerNavigationKey(event, isAppleTV: PlatformDetector.isAppleTV());
     if (navigationKey == PlayerNavigationKey.none || navigationKey == PlayerNavigationKey.home) return null;
     if (event is KeyDownEvent) {
-      _backAction = _queueOpen
+      final side = _sidePanel.currentState;
+      _backAction = _sideIcon != null && side != null
+          ? side.back
+          : _queueOpen
           ? _closeQueue
           : _icons.any((element) => _node(element).hasPrimaryFocus)
           ? () => _go(TvPlayerPanelElement.bar)
@@ -507,18 +565,39 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _bottomShade(context),
+                // R11: the bottom panel and clock step aside for the right
+                // panel; kept mounted so focus can return to the icon.
+                if (_sideIcon == null) _bottomShade(context),
                 _header(context),
-                Transform.translate(
-                  offset: Offset(0, _queueOpen ? -TvTheme.of(context).px(_queueLift) : 0),
-                  child: Stack(fit: StackFit.expand, children: _bottom(context)),
+                _aside(
+                  Transform.translate(
+                    offset: Offset(0, _queueOpen ? -TvTheme.of(context).px(_queueLift) : 0),
+                    child: Stack(fit: StackFit.expand, children: _bottom(context)),
+                  ),
                 ),
                 if (_queueOpen) _queue(context),
+                if (_sideIcon case final icon?)
+                  TvPlayerSidePanel(
+                    key: _sidePanel,
+                    root: _sideRoot(icon),
+                    player: _plezy.player,
+                    trackControlsState: _plezy.trackControlsState,
+                    isOfflinePlayback: widget.args.isOfflinePlayback,
+                    onClose: _closeSidePanel,
+                  ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _aside(Widget child) {
+    final open = _sideIcon != null;
+    return ExcludeFocus(
+      excluding: open,
+      child: Visibility(visible: !open, maintainState: true, child: child),
     );
   }
 
@@ -599,7 +678,11 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
             ),
           ),
           SizedBox(width: px(TvTokens.space.lg)),
-          _TvPlayerClock(style: theme.title),
+          Visibility(
+            visible: _sideIcon == null,
+            maintainState: true,
+            child: _TvPlayerClock(style: theme.title),
+          ),
         ],
       ),
     );
@@ -662,8 +745,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
               TvPlayerPanelElement.audio => t.videoControls.audioLabel,
               _ => t.common.settings,
             },
-            // The right panel opens in T4.
-            onSelect: _activity,
+            onSelect: () => _openSidePanel(element),
             onFocusChange: (focused) => _onElementFocus(element, focused),
             onNavigateLeft: () => _iconStep(element, -1),
             onNavigateRight: () => _iconStep(element, 1),

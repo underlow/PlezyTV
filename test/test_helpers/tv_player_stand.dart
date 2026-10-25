@@ -13,6 +13,8 @@ import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/media_source_info.dart';
+import 'package:plezy/media/media_version.dart';
+import 'package:plezy/models/transcode_quality_preset.dart';
 import 'package:plezy/media/play_queue.dart';
 import 'package:plezy/mpv/mpv.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_hooks.dart';
@@ -24,6 +26,7 @@ import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/video_volume_controller.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/watch_together/providers/watch_together_provider.dart';
+import 'package:plezy/widgets/overlay_sheet.dart';
 import 'package:plezy/widgets/video_controls/desktop_video_controls.dart';
 import 'package:plezy/widgets/video_controls/player_chrome_controller.dart';
 import 'package:plezy/widgets/video_controls/video_controls.dart';
@@ -44,6 +47,15 @@ class TvStandPlayer implements Player {
 
   final Duration duration;
   Duration _position;
+
+  /// Engine tracks and selection; [select*] update the selection and stream.
+  Tracks tracks = const Tracks();
+  TrackSelection selection = const TrackSelection();
+  final _trackController = StreamController<TrackSelection>.broadcast();
+
+  /// Every [setProperty] call as `name=value`, and every [setRate].
+  final List<String> properties = [];
+  final List<double> rates = [];
   bool _playing = true;
   bool _buffering = false;
   final _playingController = StreamController<bool>.broadcast();
@@ -73,21 +85,57 @@ class TvStandPlayer implements Player {
     await _playingController.close();
     await _bufferingController.close();
     await _positionController.close();
+    await _trackController.close();
   }
 
   @override
   String get playerType => 'mpv';
 
   @override
-  PlayerState get state =>
-      PlayerState(playing: _playing, buffering: _buffering, position: _position, duration: duration, seekable: true);
+  PlayerState get state => PlayerState(
+    playing: _playing,
+    buffering: _buffering,
+    position: _position,
+    duration: duration,
+    seekable: true,
+    tracks: tracks,
+    track: selection,
+  );
 
   @override
   PlayerStreams get streams => emptyPlayerStreams(
     playing: _playingController.stream,
     buffering: _bufferingController.stream,
     position: _positionController.stream,
+    track: _trackController.stream,
   );
+
+  @override
+  Future<void> selectSubtitleTrack(SubtitleTrack track) async {
+    selection = selection.copyWith(subtitle: track);
+    _trackController.add(selection);
+  }
+
+  @override
+  Future<void> selectAudioTrack(AudioTrack track) async {
+    selection = selection.copyWith(audio: track);
+    _trackController.add(selection);
+  }
+
+  @override
+  Future<void> selectSecondarySubtitleTrack(SubtitleTrack track) async {}
+
+  @override
+  bool get supportsSecondarySubtitles => false;
+
+  @override
+  Future<void> setProperty(String name, String value) async => properties.add('$name=$value');
+
+  @override
+  Future<String?> getProperty(String name) async => null;
+
+  @override
+  Future<void> setRate(double rate) async => rates.add(rate);
 
   @override
   Future<void> seek(Duration position) async {
@@ -152,6 +200,10 @@ class TvPlayerStand {
   /// Plezy's `_VideoPlayerPromptInteractionHold`, focus on it holds the chrome
   /// up (`PlayerChromeHold.promptInteraction`) and losing it releases.
   late FocusNode playNextFocusNode;
+
+  /// Tracks Plezy's `onSubtitleTrackChanged` / `onAudioTrackChanged` heard.
+  final List<SubtitleTrack> subtitleChanges = [];
+  final List<AudioTrack> audioChanges = [];
 
   int nextCalls = 0;
   int previousCalls = 0;
@@ -275,6 +327,8 @@ class TvPlayerStand {
     previousCalls = 0;
     exitCalls = 0;
     queueSelections.clear();
+    subtitleChanges.clear();
+    audioChanges.clear();
     navigation = PlayerNavigationCoordinator(
       chromeController: chrome,
       isPromptOpen: () => false,
@@ -334,17 +388,19 @@ class TvPlayerStand {
                 if (key == PlayerNavigationKey.none) return KeyEventResult.ignored;
                 return handlePlayerNavigationKeyAction(event, key, () => navigation.handle(key));
               },
-              child: Stack(
-                children: [
-                  Positioned.fill(child: child),
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    width: 1,
-                    height: 1,
-                    child: Focus(focusNode: playNextFocusNode, child: const SizedBox.expand()),
-                  ),
-                ],
+              child: OverlaySheetHost(
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: child),
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      width: 1,
+                      height: 1,
+                      child: Focus(focusNode: playNextFocusNode, child: const SizedBox.expand()),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -367,7 +423,19 @@ class TvPlayerStand {
     bool withPrevious = false,
     bool playNextPromptOpen = false,
     bool playbackPromptOpen = false,
+    List<MediaVersion> availableVersions = const [],
+    bool serverSupportsTranscoding = false,
+    bool isTranscoding = false,
+    TranscodeQualityPreset selectedQualityPreset = TranscodeQualityPreset.original,
+    VoidCallback? onCycleBoxFitMode,
   }) => PlexVideoControls(
+    availableVersions: availableVersions,
+    serverSupportsTranscoding: serverSupportsTranscoding,
+    isTranscoding: isTranscoding,
+    selectedQualityPreset: selectedQualityPreset,
+    onCycleBoxFitMode: onCycleBoxFitMode,
+    onSubtitleTrackChanged: subtitleChanges.add,
+    onAudioTrackChanged: audioChanges.add,
     player: player,
     volumeController: volume,
     metadata: metadata ?? testMediaItem(id: 'tv-stand-movie', title: 'Stand movie'),
