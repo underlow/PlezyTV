@@ -172,6 +172,22 @@ void main() {
     await stand.unmount(tester);
   });
 
+  testWidgets('the queue disappearing while the row is open closes it; the panel stays with focus on the bar', (
+    tester,
+  ) async {
+    await pumpEpisodeWithQueue(tester);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(find.byType(TvPlayerQueueRow), findsOneWidget);
+    stand.playbackState.clearShuffle();
+    await tester.pumpAndSettle();
+    expect(find.byType(TvPlayerQueueRow), findsNothing);
+    expect(stand.chrome.contentStripVisible, isFalse);
+    expect(stand.chrome.controlsVisible, isTrue);
+    expect(find.byType(TvPlayerPanel), findsOneWidget);
+    expect(focused(), label(TvPlayerPanelElement.bar));
+    await stand.unmount(tester);
+  });
+
   testWidgets('R11a: a prompt opening over the row closes it and the strip', (tester) async {
     await pumpEpisodeWithQueue(tester);
     await press(tester, LogicalKeyboardKey.arrowDown);

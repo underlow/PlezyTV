@@ -13,6 +13,7 @@ import '../../widgets/video_controls/player_chrome_controller.dart';
 import '../../widgets/video_controls/video_controls.dart';
 import '../../widgets/video_controls/widgets/skip_marker_button.dart';
 import 'player/tv_player_hooks.dart';
+import 'player/tv_player_overlays.dart';
 import 'player/tv_player_panel.dart';
 import 'player/tv_player_session.dart';
 
@@ -32,10 +33,22 @@ abstract final class TvUi {
     _player = _productionPlayer;
   }
 
-  /// Player builders in production. A null builder keeps Plezy until its task
-  /// switches it on (S9: T2 — panel, T5 — the rest).
-  static final _productionPlayer = TvPlayerBuilders(panel: (context, args) => TvPlayerPanel(args: args));
+  /// Player builders in production (S9 H1–H7).
+  static final _productionPlayer = TvPlayerBuilders(
+    panel: (context, args) => TvPlayerPanel(args: args),
+    skipButton: TvSkipButton.build,
+    panelOwnsRemote: ({required controlsVisible}) => controlsVisible,
+    upNextCard: (context, plezy) => TvUpNextCard(plezy: plezy),
+    buffering: (context, plezy) => TvBufferingDots(plezy: plezy),
+    playbackError: (args) => TvPlaybackError(args: args),
+    pauseIndicator: (player, chromeController, {required promptOpen}) =>
+        TvPauseIndicator(player: player, chromeController: chromeController, promptOpen: promptOpen),
+  );
   static TvPlayerBuilders _player = _productionPlayer;
+
+  /// The production player builders, for tests that replace one of them.
+  @visibleForTesting
+  static TvPlayerBuilders get productionPlayerBuilders => _productionPlayer;
 
   /// Replaces the player builders; gating on TV and Live TV still applies.
   @visibleForTesting
@@ -153,10 +166,11 @@ abstract final class TvUi {
   static Widget? playerPauseIndicator({
     required Player? player,
     required PlayerChromeController chromeController,
+    required bool promptOpen,
     required bool isLive,
   }) {
     final builder = _player.pauseIndicator;
     if (player == null || builder == null || !_playerActive(isLive: isLive)) return null;
-    return builder(player, chromeController);
+    return builder(player, chromeController, promptOpen: promptOpen);
   }
 }

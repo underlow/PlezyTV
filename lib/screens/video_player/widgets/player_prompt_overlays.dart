@@ -342,7 +342,8 @@ class VideoPlayerPlayNextOverlay extends StatelessWidget {
       chromeController: chromeController,
       focusNodes: [cancelFocusNode, confirmFocusNode],
       backdrop: backdrop,
-      children: tvCard != null ? [tvCard] : [
+      tvContent: tvCard,
+      children: tvCard != null ? const [] : [
         // Clear region that keeps the still visible above the scrimmed text.
         if (backdrop != null) const SizedBox(height: 110),
         _PlayNextEpisodeHeader(episode: episode),
@@ -533,6 +534,7 @@ class _VideoPlayerPromptShell extends StatelessWidget {
   /// Full-bleed artwork painted behind [children] under a darkening scrim.
   final Widget? backdrop;
   final List<Widget> children;
+  final Widget? tvContent; // PlezyTV H4: replaces the card, inside the same position and hold
 
   const _VideoPlayerPromptShell({
     required this.visible,
@@ -540,6 +542,7 @@ class _VideoPlayerPromptShell extends StatelessWidget {
     required this.focusNodes,
     this.backdrop,
     required this.children,
+    this.tvContent,
   });
 
   @override
@@ -555,7 +558,7 @@ class _VideoPlayerPromptShell extends StatelessWidget {
           child: _VideoPlayerPromptInteractionHold(
             chromeController: chromeController,
             focusNodes: focusNodes,
-            child: _VideoPlayerPromptCard(
+            child: tvContent ?? _VideoPlayerPromptCard(
               backdrop: backdrop,
               child: Column(mainAxisSize: .min, crossAxisAlignment: .start, children: children),
             ),

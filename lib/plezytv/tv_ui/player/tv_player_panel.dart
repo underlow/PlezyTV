@@ -448,6 +448,14 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
     _go(_icons[index]);
   }
 
+  /// ↑ from the icons goes to the skip button when it is on screen above
+  /// them (R17); its node is Plezy's, attached only while the button shows.
+  void _iconsUp() {
+    final skip = widget.args.skipMarkerFocusNode;
+    if ((skip.context?.mounted ?? false) && skip.canRequestFocus) skip.requestFocus();
+    _activity();
+  }
+
   void _onDown() => _openQueue();
 
   void _previous() {
@@ -749,7 +757,7 @@ class TvPlayerPanelState extends State<TvPlayerPanel> {
             onFocusChange: (focused) => _onElementFocus(element, focused),
             onNavigateLeft: () => _iconStep(element, -1),
             onNavigateRight: () => _iconStep(element, 1),
-            onNavigateUp: _activity,
+            onNavigateUp: _iconsUp,
             onNavigateDown: () => _go(TvPlayerPanelElement.bar),
           ),
         ),

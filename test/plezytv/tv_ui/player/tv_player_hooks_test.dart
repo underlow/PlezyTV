@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_hooks.dart';
+import 'package:plezy/plezytv/tv_ui/player/tv_player_overlays.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_panel.dart';
 import 'package:plezy/plezytv/tv_ui/player/tv_player_session.dart';
 import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
@@ -33,7 +34,7 @@ TvPlayerBuilders _allOn(List<TvPlayerPanelArgs> panelArgs) => TvPlayerBuilders(
   upNextCard: (context, plezy) => const _Marker('tv up next'),
   buffering: (context, plezy) => const _Marker('tv buffering'),
   playbackError: (args) => const _Marker('tv error'),
-  pauseIndicator: (player, chrome) => const _Marker('tv pause'),
+  pauseIndicator: (player, chrome, {required promptOpen}) => const _Marker('tv pause'),
 );
 
 void main() {
@@ -165,26 +166,39 @@ void main() {
         final chrome = PlayerChromeController();
         addTearDown(chrome.dispose);
         expect(
-          TvUi.playerPauseIndicator(player: TvStandPlayer(), chromeController: chrome, isLive: live) != null,
+          TvUi.playerPauseIndicator(
+                player: TvStandPlayer(),
+                chromeController: chrome,
+                promptOpen: false,
+                isLive: live,
+              ) !=
+              null,
           ours,
         );
-        expect(TvUi.playerPauseIndicator(player: null, chromeController: chrome, isLive: live), isNull);
+        expect(
+          TvUi.playerPauseIndicator(player: null, chromeController: chrome, promptOpen: false, isLive: live),
+          isNull,
+        );
       });
     }
 
-    test('production builders: every lookup keeps Plezy on TV', () {
+    test('production builders: H3, H6, H7 are ours on TV (T5)', () {
       TvUi.enabledForTesting = () => true;
       final chrome = PlayerChromeController();
       addTearDown(chrome.dispose);
-      expect(TvUi.playerPanelOwnsRemote(isLive: false, controlsVisible: true), isFalse);
+      expect(TvUi.playerPanelOwnsRemote(isLive: false, controlsVisible: true), isTrue);
+      expect(TvUi.playerPanelOwnsRemote(isLive: false, controlsVisible: false), isFalse);
       expect(
         TvUi.playerPlaybackError(
           TvPlaybackErrorArgs(message: 'm', onRetry: () {}, retryFocusNode: FocusNode(), onBack: () {}),
           isLive: false,
         ),
-        isNull,
+        isA<TvPlaybackError>(),
       );
-      expect(TvUi.playerPauseIndicator(player: TvStandPlayer(), chromeController: chrome, isLive: false), isNull);
+      expect(
+        TvUi.playerPauseIndicator(player: TvStandPlayer(), chromeController: chrome, promptOpen: false, isLive: false),
+        isA<TvPauseIndicator>(),
+      );
     });
 
     group('H4, H5 overlays', () {
