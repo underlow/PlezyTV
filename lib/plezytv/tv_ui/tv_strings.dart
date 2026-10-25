@@ -42,6 +42,16 @@ abstract final class TvStrings {
   static String unwatched(int count) => '$count unwatched';
   static const playerUpNextInQueue = 'Up next in queue';
   static const playerPanel = 'Panel';
+  static const playerMore = 'More';
+  static const playerMoreDescription = 'Other playback settings';
+  static const playerDirectPlay = 'No transcoding';
+  static String playerTranscoding(int? kbps) {
+    if (kbps == null) return 'Transcoding';
+    final mbps = kbps / 1000;
+    return 'Transcoding · ${mbps == mbps.roundToDouble() ? mbps.toStringAsFixed(0) : mbps.toStringAsFixed(1)} Mbps';
+  }
+
+  static const playerSyncStep = '←/→ · 50 ms step';
   static String playerQueueNow(int remainingMs) => remainingMs > 0 ? 'Now · ${left(remainingMs)}' : 'Now';
   static String playerQueueMore({required int count}) => '$count more';
   static String playerQueueMoreEpisodes({required int? season, required int count}) {
