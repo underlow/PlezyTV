@@ -72,6 +72,10 @@ class TvPostPlayController extends ChangeNotifier {
 
   /// The value the last queued save sends.
   int? _savingValue;
+
+  /// The value [leave] handed off; dispose does not send it again, whether
+  /// that save succeeded or failed.
+  int? _leftValue;
   bool _disposed = false;
 
   bool get ratingSupported => client?.capabilities.numericUserRating ?? false;
@@ -195,13 +199,14 @@ class TvPostPlayController extends ChangeNotifier {
   Future<void> leave() {
     _timer?.cancel();
     _timer = null;
+    _leftValue = rating;
     return _save(report: false, retry: true);
   }
 
   @override
   void dispose() {
-    // A value already being sent (e.g. by [leave]) is not sent twice.
-    final pending = rating != (_savingValue ?? _saved);
+    // A value already being sent, or handed off by [leave], is not sent twice.
+    final pending = rating != (_savingValue ?? _saved) && rating != _leftValue;
     _timer?.cancel();
     _timer = null;
     _disposed = true;
