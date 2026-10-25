@@ -258,3 +258,73 @@ server reports the movie missing, the screen follows `media_detail_screen.dart`:
 it closes, or shows an unavailable state when it is the first route. A failed
 full-metadata load keeps the passed metadata. The upstream workflow warns on the
 S8 paths; recheck the copied rules against them when merging.
+
+## Player panel (S9)
+
+On TV, outside Live TV, the player keeps Plezy's `PlexVideoControls` (keys,
+markers, auto-skip, toasts, chrome fade) and replaces only what it draws. The
+lookups in `TvUi` are synchronous and return `null`/`false` when TV UI is off or
+the player is Live TV; then Plezy's widget or behaviour stays. Code lives in
+`lib/plezytv/tv_ui/player/`; hook argument types are in `tv_player_hooks.dart`.
+
+| Hook | File, place | Lookup returns | Fallback |
+|---|---|---|---|
+| H1 | `lib/widgets/video_controls/parts/navigation.dart`, the desktop-controls builder | `TvUi.playerPanel`: `TvPlayerPanel` built from the unmounted `DesktopVideoControls` plus `canControl`, `canNavigateMediaItems`, `playbackPromptOpen`, `playNextFocusNode`, `isOfflinePlayback`, `_skipMarkerFocusNode` | Plezy's `DesktopVideoControls` |
+| H2 | `lib/widgets/video_controls/widgets/skip_marker_button.dart`, `SkipMarkerButton.build` | `TvUi.playerSkipButton`: `TvSkipButton` | Plezy's button |
+| H3 | `lib/widgets/video_controls/parts/markers.dart`, skip-button focus request | `TvUi.playerPanelOwnsRemote`: `true` while the panel is shown, so the skip button does not take focus | `false`, Plezy focuses the button |
+| H4 | `lib/screens/video_player/widgets/player_prompt_overlays.dart`, `VideoPlayerPlayNextOverlay.build` | `TvUi.playerUpNextCard`: `TvUpNextCard`, passed as `tvContent` into Plezy's `_VideoPlayerPromptShell` (position, PiP, prompt hold stay Plezy's) | Plezy's card |
+| H5 | same file, `VideoPlayerBufferingOverlay.build` | `TvUi.playerBuffering`: `TvBufferingDots` | Plezy's spinner |
+| H6 | `lib/screens/video_player/parts/build.dart`, `_buildPlaybackFailure` | `TvUi.playerPlaybackError`: `TvPlaybackError` with Plezy's message, retry, focus node and Back | Plezy's failure screen |
+| H7 | same file, overlay stack | `TvUi.playerPauseIndicator`: `TvPauseIndicator` layer; it raises the panel (focus on play, or the bar when play is unavailable) only when a remote transport pause key that Plezy could act on (`canControl`, from `_canControlPlayback`) went down within 1.5 s before the pause, with no prompt open. Key based (Android TV): Apple TV's Siri Remote Play/Pause goes through the native `play_pause` channel, not a Flutter key, so it does not raise the panel; the fork targets Android TV | no layer |
+
+`isLive` is passed into `VideoPlayerPlayNextOverlay` and
+`VideoPlayerBufferingOverlay` as an optional field (default `false`) so the
+lookups can exclude Live TV.
+
+Part-file rule, clarified: `build.dart`, `navigation.dart` and `markers.dart`
+are `part` files and cannot import. The `tv_ui.dart` and `tv_player_hooks.dart`
+imports go into their libraries, `lib/screens/video_player_screen.dart` and
+`lib/widgets/video_controls/video_controls.dart`; the hook lines stay in the
+parts. Upstream hook lines are kept minimal (mostly one line) and are
+deliberately not `dart format`-clean, to keep merge conflicts small.
+
+`TvPlayerSession` (one per `Player`, outside widgets) holds focus memory, the
+"focus play next time" flag, `sidePanelOpen` and the icons' focus node. Only
+focus memory resets when the video changes; the play flag survives, since H7
+may set it for the new item before the panel binds. The panel holds the chrome while the right
+panel is open via `setContentStripVisible(true)`, like Plezy's content strip,
+and is invisible and inert while a play-next or still-watching prompt is open;
+the skip button then sits where it does with the panel hidden.
+
+Back with focus on the skip button and the panel up hides the button for that
+marker showing; with focus in the panel, Back hides the panel and, as in Plezy,
+the button with it (R22). Keys handled on the skip button restart the panel's
+auto-hide. The button is pinned at its design spot in the player's stack (the parent of Plezy's slot, so ancestor scales such as Apple TV's `FormFactorScale` apply to it), not offset from Plezy's slot, which moves on its own rebuilds; it never slides when it reappears, and only its own 200 ms tween moves it. Plezy's slot is a repaint boundary, so when it moves the button is not repainted by itself: after each frame the button checks the slot's place and, when it moved or the chrome controller notified, repaints every frame for 300 ms (Plezy's 200 ms slot motion); nothing is scheduled while the slot is still. The pause indicator goes 5 minutes after the pause began or the panel
+last hid on that pause, so opening and hiding the panel brings it back (R18).
+
+Upstream tests `test/widgets/video_controls_auto_hide_test.dart`,
+`video_controls_quiescence_test.dart` and `video_controls_startup_chrome_test.dart`
+set `TvUi.enabledForTesting = () => false`: they test Plezy's desktop controls,
+not the TV panel. The shared TV player test stand is
+`test/test_helpers/tv_player_stand.dart`.
+
+The panel repeats the following from Plezy (D6). Upstream changes to these
+places do not reach the TV player; recheck them on every upstream merge.
+
+| Duty | Plezy source | TV copy |
+|---|---|---|
+| Held ←/→ seeking on the bar: direction change, repeat count, step cap, preview, reset on release (D8) | `DesktopVideoControlsState` in `lib/widgets/video_controls/desktop_video_controls.dart`, over `lib/media/stepped_seek.dart` | `tv_player_panel.dart` |
+| The four `_desktopControlsKey` methods (`requestPlayPauseFocus`, `abandonPendingSeek`, `dismissContentStrip`, `hideContentStrip`) replaced by panel subscriptions to `contentStripVisible`, `controlsVisible`, video change and prompt state (D7) | `desktop_video_controls.dart`, `video_controls.dart`, `parts/navigation.dart` | `tv_player_panel.dart`, `tv_player_session.dart` |
+| Focus inside the panel and Back inside it (R16) | `desktop_video_controls.dart` | `tv_player_panel.dart`, `tv_player_side_panel.dart` |
+| `DesktopVideoControls` constructor fields used by the test stand | `desktop_video_controls.dart` | `test/test_helpers/tv_player_stand.dart` |
+| Settings, subtitle and audio items: visibility, values and callbacks | `lib/widgets/video_controls/sheets/video_settings_sheet.dart`, `track_sheet.dart` | `tv_player_side_panel.dart` |
+| Play-next card content inside the prompt shell (`tvContent`) | `player_prompt_overlays.dart` | `TvUpNextCard` in `tv_player_overlays.dart` |
+| Skip-button label and icon: "Next episode" for credits ending within 1000 ms of the end with a next episode, else skip credits / intro; auto-skip remaining-seconds suffix | `lib/widgets/video_controls/widgets/skip_marker_button.dart` | `TvSkipButton._button` in `tv_player_overlays.dart` |
+| Audio/subtitle sync: 50 ms step, apply → `recordApplied` → `ScopedPlayerPrefs.write` | `lib/widgets/video_controls/widgets/sync_offset_control.dart` | `_syncStepMs` and sync apply in `tv_player_side_panel.dart` |
+| Sleep timer durations | `lib/widgets/video_controls/widgets/sleep_timer_content.dart` | `_sleepMinutes` in `tv_player_side_panel.dart` |
+
+The upstream workflow warns when the merge changes
+`desktop_video_controls.dart`, `markers.dart`, `player_prompt_overlays.dart`,
+`build.dart`, `navigation.dart`, `video_controls.dart`, the two sheets, `skip_marker_button.dart`,
+`sync_offset_control.dart`, `sleep_timer_content.dart` or `stepped_seek.dart`; use this table
+as the checklist.

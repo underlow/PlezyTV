@@ -122,6 +122,8 @@ import 'video_player/widgets/player_prompt_overlays.dart';
 import '../widgets/overlay_sheet.dart';
 import '../widgets/video_controls/player_chrome_controller.dart';
 import '../widgets/video_controls/video_controls.dart';
+import '../plezytv/tv_ui/tv_ui.dart';
+import '../plezytv/tv_ui/player/tv_player_hooks.dart';
 import '../widgets/video_controls/widgets/player_toast_indicator.dart';
 import '../focus/focusable_button.dart';
 import '../focus/input_mode_tracker.dart';

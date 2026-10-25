@@ -40,6 +40,27 @@ abstract final class TvStrings {
   static const movieUnavailable = 'This movie is no longer available';
   static String left(int milliseconds) => '${formatDurationTextual(milliseconds)} left';
   static String unwatched(int count) => '$count unwatched';
+  static const playerUpNextInQueue = 'Up next in queue';
+  static const playerPanel = 'Panel';
+  static const playerMore = 'More';
+  static const playerMoreDescription = 'Other playback settings';
+  static const playerDirectPlay = 'No transcoding';
+  static String playerTranscoding(int? kbps) {
+    if (kbps == null) return 'Transcoding';
+    final mbps = kbps / 1000;
+    return 'Transcoding · ${mbps == mbps.roundToDouble() ? mbps.toStringAsFixed(0) : mbps.toStringAsFixed(1)} Mbps';
+  }
+
+  static const playerPaused = 'Paused';
+  static String playerNextEpisodeIn(int seconds) => 'Next episode in $seconds s';
+  static String playerSyncStep(int stepMs) => '←/→ · $stepMs ms step';
+  static String playerQueueNow(int remainingMs) => remainingMs > 0 ? 'Now · ${left(remainingMs)}' : 'Now';
+  static String playerQueueMore({required int count}) => '$count more';
+  static String playerQueueMoreEpisodes({required int? season, required int count}) {
+    final more = '$count more ${count == 1 ? 'episode' : 'episodes'}';
+    return season == null ? more : 'Season $season · $more';
+  }
+
   static String episode({required int season, required int episode, required String title}) =>
       '${formatSeasonEpisodeLabel(season, episode)} · $title';
 }
