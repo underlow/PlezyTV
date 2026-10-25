@@ -9,7 +9,8 @@
 `lib/services/catalog/`, `lib/providers/catalog_sources_provider.dart`, карточка каталога Plezy
 `lib/screens/catalog_item_detail_screen.dart` (образец слияния копий, подписей копий и трейлера; не править).
 
-Единственная правка апстрима — параметр в `lib/services/catalog/catalog_library_matcher.dart` (C1). Остальное —
+Правки апстрима — параметр в `lib/services/catalog/catalog_library_matcher.dart` (C1) и разбор `watchlistedAt` в
+`lib/services/catalog/plex_catalog_source.dart` (T2b, решение пользователя после T2). Остальное —
 fork-owned файлы. Если задача обнаруживает, что без другой правки апстрима нельзя, — `needs-decision`.
 
 ## 1. Подход
@@ -91,7 +92,7 @@ onRestored; }`, маршрут `tvCatalogItemRoute(TvCatalogItemArgs) → PageRo
 
 ## 3. Задачи
 
-Порядок: T1, T2, T3 (независимы), затем T5 (нужен T1), T4 (нужны T1–T3 и T5), T6 (нужен T4).
+Порядок: T1, T2, T3 (независимы), затем T2b и T5 (нужен T1), T4 (нужны T1–T3 и T5), T6 (нужен T4).
 
 ### T1. Матчер и служба наличия
 
@@ -152,6 +153,16 @@ onRestored; }`, маршрут `tvCatalogItemRoute(TvCatalogItemArgs) → PageRo
 `isOnWatchlist=false` и через `itemRemoved` убирает сразу, загрузка данных о составе без изменений не
 перечитывает, двойное уведомление даёт одно перечитывание (A27, A28, A34); замена объекта источника —
 уведомления нового объекта доходят. `flutter analyze` чисто.
+
+### T2b. Дата добавления Plex
+
+**Результат:** в `PlexCatalogSource._fromMetadata` (`lib/services/catalog/plex_catalog_source.dart`) у
+`CatalogItem` заполняется `addedAt` из `metadata['watchlistedAt']`: целое (epoch-секунды, через `flexibleInt`) или
+ISO-строка; иначе `null`. Минимальная правка, без смены запроса и прочих полей. **Входы:** R5; T2 (контроллер уже
+сортирует по `addedAt`, без даты — порядок источника). **Зависимости:** нет.
+**Сохранить:** остальные поля и запросы Plex; Explore и его порядок.
+**Проверки:** тест рядом с существующими тестами `PlexCatalogSource` в `test/` — epoch-секунды и ISO-строка дают
+`addedAt`, отсутствие поля даёт `null`. `flutter analyze` чисто.
 
 ### T3. Расширения сетки
 
