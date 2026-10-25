@@ -275,7 +275,7 @@ the player is Live TV; then Plezy's widget or behaviour stays. Code lives in
 | H4 | `lib/screens/video_player/widgets/player_prompt_overlays.dart`, `VideoPlayerPlayNextOverlay.build` | `TvUi.playerUpNextCard`: `TvUpNextCard`, passed as `tvContent` into Plezy's `_VideoPlayerPromptShell` (position, PiP, prompt hold stay Plezy's) | Plezy's card |
 | H5 | same file, `VideoPlayerBufferingOverlay.build` | `TvUi.playerBuffering`: `TvBufferingDots` | Plezy's spinner |
 | H6 | `lib/screens/video_player/parts/build.dart`, `_buildPlaybackFailure` | `TvUi.playerPlaybackError`: `TvPlaybackError` with Plezy's message, retry, focus node and Back | Plezy's failure screen |
-| H7 | same file, overlay stack | `TvUi.playerPauseIndicator`: `TvPauseIndicator` layer; it raises the panel (focus on play, or the bar when play is unavailable) only when a remote transport pause key that Plezy could act on (`canControl`, from `_canControlPlayback`) went down within 1.5 s before the pause, with no prompt open | no layer |
+| H7 | same file, overlay stack | `TvUi.playerPauseIndicator`: `TvPauseIndicator` layer; it raises the panel (focus on play, or the bar when play is unavailable) only when a remote transport pause key that Plezy could act on (`canControl`, from `_canControlPlayback`) went down within 1.5 s before the pause, with no prompt open. Key based (Android TV): Apple TV's Siri Remote Play/Pause goes through the native `play_pause` channel, not a Flutter key, so it does not raise the panel; the fork targets Android TV | no layer |
 
 `isLive` is passed into `VideoPlayerPlayNextOverlay` and
 `VideoPlayerBufferingOverlay` as an optional field (default `false`) so the
@@ -299,7 +299,7 @@ the skip button then sits where it does with the panel hidden.
 Back with focus on the skip button and the panel up hides the button for that
 marker showing; with focus in the panel, Back hides the panel and, as in Plezy,
 the button with it (R22). Keys handled on the skip button restart the panel's
-auto-hide. The pause indicator goes 5 minutes after the pause began or the panel
+auto-hide. The button is pinned at its design spot on screen (not offset from Plezy's slot, which moves on its own rebuilds), so it never slides when it reappears; only its own 200 ms tween moves it. The pause indicator goes 5 minutes after the pause began or the panel
 last hid on that pause, so opening and hiding the panel brings it back (R18).
 
 Upstream tests `test/widgets/video_controls_auto_hide_test.dart`,
@@ -317,7 +317,6 @@ places do not reach the TV player; recheck them on every upstream merge.
 | The four `_desktopControlsKey` methods (`requestPlayPauseFocus`, `abandonPendingSeek`, `dismissContentStrip`, `hideContentStrip`) replaced by panel subscriptions to `contentStripVisible`, `controlsVisible`, video change and prompt state (D7) | `desktop_video_controls.dart`, `video_controls.dart`, `parts/navigation.dart` | `tv_player_panel.dart`, `tv_player_session.dart` |
 | Focus inside the panel and Back inside it (R16) | `desktop_video_controls.dart` | `tv_player_panel.dart`, `tv_player_side_panel.dart` |
 | `DesktopVideoControls` constructor fields used by the test stand | `desktop_video_controls.dart` | `test/test_helpers/tv_player_stand.dart` |
-| Skip-button position: right 24, bottom 24 / 115 / 180 (hidden, shown, content strip) | skip wrapper in `lib/widgets/video_controls/video_controls.dart` | `TvSkipButton` offsets in `tv_player_overlays.dart` |
 | Settings, subtitle and audio items: visibility, values and callbacks | `lib/widgets/video_controls/sheets/video_settings_sheet.dart`, `track_sheet.dart` | `tv_player_side_panel.dart` |
 | Play-next card content inside the prompt shell (`tvContent`) | `player_prompt_overlays.dart` | `TvUpNextCard` in `tv_player_overlays.dart` |
 | Skip-button label and icon: "Next episode" for credits ending within 1000 ms of the end with a next episode, else skip credits / intro; auto-skip remaining-seconds suffix | `lib/widgets/video_controls/widgets/skip_marker_button.dart` | `TvSkipButton._button` in `tv_player_overlays.dart` |

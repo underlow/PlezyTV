@@ -191,6 +191,37 @@ void main() {
       expect(focused(), label(TvPlayerPanelElement.subtitles));
       await stand.unmount(tester);
     });
+
+    testWidgets('closing the right panel: the button appears at its spot and does not slide', (tester) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.select);
+      expect(find.byType(TvPlayerSidePanel), findsOneWidget);
+      await enterIntro(tester);
+      expect(skipText, findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonB);
+      await tester.pump();
+      expect(skipText, findsOneWidget);
+      final button = find.descendant(of: skip, matching: find.byType(Container)).first;
+      // Design spot: 24 above the icons (y = 840), right edge on theirs (1824).
+      void atSpot(String when) {
+        final rect = tester.getRect(button);
+        expect(rect.bottom, closeTo(816, 1), reason: when);
+        expect(rect.right, closeTo(1824, 1), reason: when);
+      }
+
+      atSpot('on the first frame');
+      for (var ms = 20; ms <= 240; ms += 20) {
+        await tester.pump(const Duration(milliseconds: 20));
+        atSpot('at $ms ms');
+      }
+      await tester.pumpAndSettle();
+      atSpot('settled');
+      expect(stand.chrome.controlsVisible, isTrue);
+      await stand.unmount(tester);
+    });
   });
 
   group('pause (H7, R5, R18)', () {
@@ -208,6 +239,15 @@ void main() {
       await hide(tester);
       await press(tester, LogicalKeyboardKey.mediaPlayPause);
       expect(stand.player.state.playing, isTrue, reason: 'Plezy ignores it');
+      await tester.pump(const Duration(milliseconds: 500));
+      stand.player.setPlaying(false);
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse, reason: 'host pause within the window: the key was not ours');
+      expect(session().focusPlayOnNextShow, isFalse);
+      stand.player.setPlaying(true);
+      await tester.pumpAndSettle();
+
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
       await tester.pump(const Duration(minutes: 10));
       stand.player.setPlaying(false);
       await tester.pumpAndSettle();
