@@ -143,6 +143,9 @@ jobs:
             lib/widgets/video_controls/parts/navigation.dart \
             lib/widgets/video_controls/sheets/video_settings_sheet.dart \
             lib/widgets/video_controls/sheets/track_sheet.dart \
+            lib/widgets/video_controls/widgets/skip_marker_button.dart \
+            lib/widgets/video_controls/widgets/sync_offset_control.dart \
+            lib/widgets/video_controls/widgets/sleep_timer_content.dart \
             lib/media/stepped_seek.dart \
             lib/screens/video_player/widgets/player_prompt_overlays.dart \
             lib/screens/video_player/parts/build.dart; then

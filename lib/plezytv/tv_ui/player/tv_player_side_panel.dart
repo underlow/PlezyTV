@@ -93,8 +93,10 @@ class TvPlayerSidePanel extends StatefulWidget {
   State<TvPlayerSidePanel> createState() => TvPlayerSidePanelState();
 }
 
+/// Plezy's SyncOffsetControl tap step.
+const _syncStepMs = 50;
+
 class TvPlayerSidePanelState extends State<TvPlayerSidePanel> {
-  static const _syncStepMs = 50; // Plezy's SyncOffsetControl tap step.
   static const _speeds = <double>[
     0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, //
     3.0, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, maximumPlaybackRate,
@@ -937,7 +939,7 @@ class _TvSyncItem extends StatelessWidget {
                   children: [
                     Text(title, style: theme.body, maxLines: 1, overflow: TextOverflow.ellipsis),
                     Text(
-                      TvStrings.playerSyncStep,
+                      TvStrings.playerSyncStep(_syncStepMs),
                       style: theme.caption.copyWith(color: TvTokens.color.text.tertiary),
                       maxLines: 1,
                     ),

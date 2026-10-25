@@ -119,6 +119,60 @@ void main() {
       await stand.unmount(tester);
     });
 
+    testWidgets('keys on the button restart the panel\'s auto-hide', (tester) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
+      await enterIntro(tester);
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(focused(), 'SkipMarkerButton');
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(seconds: 2));
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump();
+      }
+      expect(stand.chrome.controlsVisible, isTrue, reason: '8 s of keys, each within the 5 s auto-hide');
+      expect(focused(), 'SkipMarkerButton');
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse, reason: 'hides once the keys stop');
+      await stand.unmount(tester);
+    });
+
+    testWidgets('R11a: with the still-watching prompt holding the chrome, the button sits as with the panel hidden', (
+      tester,
+    ) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
+      WidgetsBinding.instance.addPostFrameCallback((_) => stand.playNextFocusNode.requestFocus());
+      await tester.pumpWidget(stand.host(stand.controls(markers: tvStandMarkers(), playbackPromptOpen: true)));
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isTrue, reason: 'the prompt holds the chrome');
+      await enterIntro(tester);
+
+      expect(skipText, findsOneWidget);
+      expect(focused(), stand.playNextFocusNode.debugLabel, reason: 'focus stays on the prompt');
+      expect(tester.getRect(skipText).bottom, greaterThan(980), reason: 'bottom right, not above the icons');
+      await stand.unmount(tester);
+    });
+
+    testWidgets('showing the panel moves the button smoothly (Plezy\'s 200 ms motion)', (tester) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
+      await hide(tester);
+      await enterIntro(tester);
+      final hidden = tester.getRect(skipText).bottom;
+      stand.chrome.show();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      final early = tester.getRect(skipText).bottom;
+      expect(early, lessThanOrEqualTo(hidden));
+      expect(hidden - early, lessThan(40), reason: 'no jump on the first frame');
+      await tester.pumpAndSettle();
+      expect(tester.getRect(skipText).bottom, lessThan(840));
+      await stand.unmount(tester);
+    });
+
     testWidgets('A25: a marker while the right panel is open — hidden, no focus; back on close', (tester) async {
       await setUpAt();
       await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
@@ -140,12 +194,50 @@ void main() {
   });
 
   group('pause (H7, R5, R18)', () {
-    Widget layer() => TvUi.playerPauseIndicator(
+    Widget layer({bool canControl = true}) => TvUi.playerPauseIndicator(
       player: stand.player,
       chromeController: stand.chrome,
       promptOpen: false,
+      canControl: () => canControl,
       isLive: false,
     )!;
+
+    testWidgets('A26: an ignored Play/Pause (guest) does not raise the panel on a later pause', (tester) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(canControl: false), layer: layer(canControl: false));
+      await hide(tester);
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(stand.player.state.playing, isTrue, reason: 'Plezy ignores it');
+      await tester.pump(const Duration(minutes: 10));
+      stand.player.setPlaying(false);
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse, reason: 'host pause: not from our remote');
+      expect(session().focusPlayOnNextShow, isFalse);
+      await stand.unmount(tester);
+    });
+
+    testWidgets('a pause later than 1.5 s after the key does not raise the panel; one within does', (tester) async {
+      await setUpAt();
+      // Plezy ignores the key (no control), but the layer would accept it.
+      await stand.pumpControls(tester, stand.controls(canControl: false), layer: layer());
+      await hide(tester);
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      await tester.pump(const Duration(seconds: 2));
+      stand.player.setPlaying(false);
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isFalse);
+      expect(session().focusPlayOnNextShow, isFalse);
+
+      stand.player.setPlaying(true);
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      await tester.pump(const Duration(seconds: 1));
+      stand.player.setPlaying(false);
+      await tester.pumpAndSettle();
+      expect(stand.chrome.controlsVisible, isTrue, reason: 'within the window');
+      expect(focused(), label(TvPlayerPanelElement.bar), reason: 'play is unavailable without control');
+      await stand.unmount(tester);
+    });
 
     testWidgets('A27: Play/Pause with the panel hidden pauses and shows the panel with focus on play', (tester) async {
       await setUpAt();
@@ -174,19 +266,20 @@ void main() {
           player: stand.player,
           chromeController: stand.chrome,
           promptOpen: true,
+          canControl: () => true,
           isLive: false,
         ),
       );
       await hide(tester);
-      stand.player.setPlaying(false);
-      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(stand.player.state.playing, isFalse, reason: 'Plezy pauses');
       expect(stand.chrome.controlsVisible, isFalse);
       expect(session().focusPlayOnNextShow, isFalse);
       expect(find.text('Paused'), findsNothing);
       await stand.unmount(tester);
     });
 
-    testWidgets('A13: Back on a paused panel — indicator; gone after 5 min and stays gone until playback resumes', (
+    testWidgets('A13: Back on a paused panel — indicator; gone after 5 min; back after the panel shows and hides', (
       tester,
     ) async {
       await setUpAt();
@@ -212,8 +305,21 @@ void main() {
 
       stand.chrome.show();
       await tester.pumpAndSettle();
+      expect(find.text('Paused'), findsNothing, reason: 'panel visible');
       await hide(tester);
-      expect(find.text('Paused'), findsNothing, reason: 'does not return while still paused');
+      expect(find.text('Paused'), findsOneWidget, reason: 'R18: re-armed by the hide on the same pause');
+      await tester.pump(const Duration(minutes: 4, seconds: 59));
+      expect(find.text('Paused'), findsOneWidget, reason: '5 min count from the hide');
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Paused'), findsNothing);
+
+      stand.chrome.show();
+      await tester.pumpAndSettle();
+      await hide(tester);
+      expect(find.text('Paused'), findsOneWidget);
+      stand.player.setPlaying(true);
+      await tester.pumpAndSettle();
+      expect(find.text('Paused'), findsNothing, reason: 'gone on resume');
 
       stand.player.setPlaying(true);
       await tester.pumpAndSettle();

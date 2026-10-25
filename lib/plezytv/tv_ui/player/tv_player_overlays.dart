@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +26,7 @@ import '../../../widgets/video_controls/video_controls.dart'
     show PlayerNavigationKey, PlexVideoControls, classifyPlayerNavigationKey, handlePlayerNavigationKeyAction;
 import '../../../widgets/video_controls/widgets/skip_marker_button.dart';
 import '../components/tv_button.dart';
+import '../components/tv_cards.dart';
 import '../tv_focusable.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
@@ -44,17 +44,33 @@ import 'tv_player_session.dart';
 /// moves ↓ to the icons, and on Back with the panel up hides it for the rest
 /// of that showing (Plezy's own dismissal only acts with the chrome down).
 class TvSkipButton extends StatefulWidget {
-  const TvSkipButton({super.key, required this.plezy, required this.player, required this.chromeController});
+  const TvSkipButton({
+    super.key,
+    required this.plezy,
+    required this.player,
+    required this.chromeController,
+    this.promptOpen = false,
+  });
 
   final SkipMarkerButton plezy;
   final Player player;
   final PlayerChromeController chromeController;
 
+  /// Plezy's still-watching prompt is up: its hold keeps the chrome
+  /// "visible" while the panel is invisible (R11a), so the button sits where
+  /// it does with the panel hidden.
+  final bool promptOpen;
+
   /// The H2 builder: null (Plezy's button) outside `PlexVideoControls`.
   static Widget? build(BuildContext context, SkipMarkerButton plezy) {
     final controls = context.findAncestorWidgetOfExactType<PlexVideoControls>();
     if (controls == null) return null;
-    return TvSkipButton(plezy: plezy, player: controls.player, chromeController: controls.chromeController);
+    return TvSkipButton(
+      plezy: plezy,
+      player: controls.player,
+      chromeController: controls.chromeController,
+      promptOpen: controls.playbackPromptOpen,
+    );
   }
 
   @override
@@ -78,6 +94,9 @@ class _TvSkipButtonState extends State<TvSkipButton> {
   static const _plezyBottomHidden = 24.0;
   static const _plezyBottomShown = 115.0;
   static const _plezyBottomStrip = 180.0;
+  // Plezy's AnimatedPositioned motion; our offset follows it so the sum moves smoothly.
+  static const _plezyMove = Duration(milliseconds: 200);
+  static const _plezyCurve = Curves.easeInOut;
 
   // Design positions (1920 × 1080): right edge on the icons' right edge,
   // 24 above the icons (y = 840, and 400 higher over the queue row).
@@ -129,10 +148,15 @@ class _TvSkipButtonState extends State<TvSkipButton> {
 
   /// ↓ to the icons and Back with the panel up; with the panel down the keys
   /// go on to Plezy (Back declines the marker there, ↑/↓ raise the panel).
+  /// Keys handled here with the panel up restart its auto-hide, as the
+  /// panel's own keys do.
   KeyEventResult _onKey(FocusNode _, KeyEvent event) {
     final navigationKey = classifyPlayerNavigationKey(event, isAppleTV: PlatformDetector.isAppleTV());
     if (navigationKey == PlayerNavigationKey.back || navigationKey == PlayerNavigationKey.physicalEscape) {
-      if (event is KeyDownEvent) _backOwned = _chrome.controlsVisible;
+      if (event is KeyDownEvent) {
+        _backOwned = _chrome.controlsVisible;
+        if (_backOwned) _activity();
+      }
       if (!_backOwned) return KeyEventResult.ignored;
       if (event is KeyUpEvent) _backOwned = false;
       return handlePlayerNavigationKeyAction(event, navigationKey, _dismiss);
@@ -140,16 +164,22 @@ class _TvSkipButtonState extends State<TvSkipButton> {
     if (!_chrome.controlsVisible) return KeyEventResult.ignored;
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.arrowDown) {
-      if (event is! KeyUpEvent) _icons?.requestFocus();
+      if (event is! KeyUpEvent) {
+        _activity();
+        _icons?.requestFocus();
+      }
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp ||
         key == LogicalKeyboardKey.arrowLeft ||
         key == LogicalKeyboardKey.arrowRight) {
+      if (event is! KeyUpEvent) _activity();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
+
+  void _activity() => _chrome.restartAutoHideForCurrentPlaybackState();
 
   @override
   Widget build(BuildContext context) {
@@ -160,13 +190,16 @@ class _TvSkipButtonState extends State<TvSkipButton> {
         if (_session.sidePanelOpen.value) return const SizedBox.shrink();
         final dismissed = _dismissed;
         if (dismissed != null && _sameMarker(dismissed, widget.plezy.marker)) return const SizedBox.shrink();
-        final shown = _chrome.controlsVisible;
-        final strip = shown && _chrome.contentStripVisible;
-        final plezyBottom = !shown
+        // Plezy places its button by the chrome; ours follows the panel,
+        // which a prompt keeps invisible under the chrome hold (G).
+        final plezyShown = _chrome.controlsVisible;
+        final plezyBottom = !plezyShown
             ? _plezyBottomHidden
-            : strip
+            : _chrome.contentStripVisible
             ? _plezyBottomStrip
             : _plezyBottomShown;
+        final shown = plezyShown && !widget.promptOpen;
+        final strip = shown && _chrome.contentStripVisible;
         return TvTheme(
           child: Builder(
             builder: (context) {
@@ -178,8 +211,11 @@ class _TvSkipButtonState extends State<TvSkipButton> {
                     ? _bottomOverQueue
                     : _bottomShown,
               );
-              return Transform.translate(
-                offset: Offset(-(px(_right) - _plezyRight), -(bottom - plezyBottom)),
+              return TweenAnimationBuilder<Offset>(
+                tween: Tween(end: Offset(-(px(_right) - _plezyRight), -(bottom - plezyBottom))),
+                duration: _plezyMove,
+                curve: _plezyCurve,
+                builder: (context, offset, child) => Transform.translate(offset: offset, child: child),
                 child: Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _onKey, child: _button(context)),
               );
             },
@@ -266,12 +302,23 @@ class _TvSkipButtonState extends State<TvSkipButton> {
 /// up (Plezy pauses without raising the chrome) raises the panel with focus on
 /// play (R5, R7, design flow 5). While paused with the panel down, a mini
 /// indicator sits bottom left (R18, `10-player-hidden-paused`); it goes away
-/// 5 minutes after the pause began and stays away until playback resumes.
+/// 5 minutes after the pause began or the panel last hid on this pause, and
+/// stays away until playback resumes or the panel shows and hides again.
 class TvPauseIndicator extends StatefulWidget {
-  const TvPauseIndicator({super.key, required this.player, required this.chromeController, required this.promptOpen});
+  const TvPauseIndicator({
+    super.key,
+    required this.player,
+    required this.chromeController,
+    required this.promptOpen,
+    required this.canControl,
+  });
 
   final Player player;
   final PlayerChromeController chromeController;
+
+  /// Whether Plezy acts on Play/Pause now (false for a Watch Together guest
+  /// without control); read when the key goes down.
+  final bool Function() canControl;
 
   /// Plezy's play-next or still-watching prompt is up: the panel stays inert
   /// (R11a), so a pause neither raises it nor shows the indicator.
@@ -290,20 +337,37 @@ class _TvPauseIndicatorState extends State<TvPauseIndicator> {
   bool _expired = false;
   Timer? _expiry;
 
-  /// A Play/Pause key went down since the last playing change: only such a
-  /// pause raises the panel; others (end of the episode, background) do not.
+  /// A Play/Pause key Plezy could act on went down within [_pauseKeyWindow]:
+  /// only such a pause raises the panel; others (end of the episode, a host's
+  /// pause, sleep timer, background) do not. The window keeps an ignored press
+  /// from arming a later pause.
   bool _pauseKey = false;
+  Timer? _pauseKeyExpiry;
+  static const _pauseKeyWindow = Duration(milliseconds: 1500);
   static final _pauseKeys = {LogicalKeyboardKey.mediaPlayPause, LogicalKeyboardKey.mediaPause};
 
   bool _observeKey(KeyEvent event) {
-    if (event is KeyDownEvent && _pauseKeys.contains(event.logicalKey)) _pauseKey = true;
+    if (event is KeyDownEvent && _pauseKeys.contains(event.logicalKey) && widget.canControl()) {
+      _pauseKey = true;
+      _pauseKeyExpiry?.cancel();
+      _pauseKeyExpiry = Timer(_pauseKeyWindow, _clearPauseKey);
+    }
     return false;
   }
+
+  void _clearPauseKey() {
+    _pauseKey = false;
+    _pauseKeyExpiry?.cancel();
+    _pauseKeyExpiry = null;
+  }
+
+  late bool _chromeVisible;
 
   @override
   void initState() {
     super.initState();
     _subscribe();
+    _chromeVisible = widget.chromeController.controlsVisible;
     widget.chromeController.addListener(_onChrome);
     HardwareKeyboard.instance.addHandler(_observeKey);
   }
@@ -319,6 +383,7 @@ class _TvPauseIndicatorState extends State<TvPauseIndicator> {
     if (oldWidget.chromeController != widget.chromeController) {
       oldWidget.chromeController.removeListener(_onChrome);
       widget.chromeController.addListener(_onChrome);
+      _chromeVisible = widget.chromeController.controlsVisible;
     }
   }
 
@@ -326,6 +391,7 @@ class _TvPauseIndicatorState extends State<TvPauseIndicator> {
   void dispose() {
     _playingSubscription?.cancel();
     _expiry?.cancel();
+    _pauseKeyExpiry?.cancel();
     widget.chromeController.removeListener(_onChrome);
     HardwareKeyboard.instance.removeHandler(_observeKey);
     super.dispose();
@@ -337,7 +403,23 @@ class _TvPauseIndicatorState extends State<TvPauseIndicator> {
   }
 
   void _onChrome() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final visible = widget.chromeController.controlsVisible;
+    final hid = _chromeVisible && !visible;
+    _chromeVisible = visible;
+    // R18: the panel hiding on this pause shows the indicator again, and its
+    // 5 minutes count from the hide.
+    setState(() {
+      if (hid && _paused) _arm();
+    });
+  }
+
+  void _arm() {
+    _expired = false;
+    _expiry?.cancel();
+    _expiry = Timer(Duration(milliseconds: TvTokens.player.pausedIndicatorHide), () {
+      if (mounted) setState(() => _expired = true);
+    });
   }
 
   void _resume() {
@@ -351,21 +433,17 @@ class _TvPauseIndicatorState extends State<TvPauseIndicator> {
     if (!mounted || playing == _playing) return;
     _playing = playing;
     if (playing) {
-      _pauseKey = false;
+      _clearPauseKey();
       setState(_resume);
       return;
     }
     setState(() {
       _paused = true;
-      _expired = false;
-    });
-    _expiry?.cancel();
-    _expiry = Timer(Duration(milliseconds: TvTokens.player.pausedIndicatorHide), () {
-      if (mounted) setState(() => _expired = true);
+      _arm();
     });
     final chrome = widget.chromeController;
     final byKey = _pauseKey;
-    _pauseKey = false;
+    _clearPauseKey();
     if (byKey && !chrome.controlsVisible && !widget.promptOpen) {
       // The panel consumes the flag when it mounts on this showing.
       TvPlayerSession.of(widget.player).focusPlayOnNextShow = true;
@@ -485,9 +563,14 @@ class _TvUpNextCardState extends State<TvUpNextCard> {
                           ),
                           SizedBox(height: px(TvTokens.space.xs)),
                           Text(
-                            episode.parentIndex != null && episode.index != null
-                                ? 'S${episode.parentIndex} E${episode.index} · ${episode.title ?? ''}'
-                                : episode.title ?? '',
+                            switch ((episode.parentIndex, episode.index)) {
+                              (final season?, final number?) => TvStrings.episode(
+                                season: season,
+                                episode: number,
+                                title: episode.title ?? '',
+                              ),
+                              _ => episode.title ?? '',
+                            },
                             style: theme.title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -573,26 +656,15 @@ class _TvUpNextCardState extends State<TvUpNextCard> {
             placeholder,
             SettingValueBuilder<bool>(
               pref: SettingsService.hideSpoilers,
-              builder: (context, hideSpoilers, _) => hideSpoilers && episode.shouldHideSpoiler
-                  ? ImageFiltered(imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), child: image)
-                  : image,
+              builder: (context, hideSpoilers, _) =>
+                  TvSpoilerBlur(blur: hideSpoilers && episode.shouldHideSpoiler, child: image),
             ),
             if (progress != null)
-              Align(
-                alignment: Alignment.bottomLeft,
-                child: SizedBox(
-                  height: px(TvTokens.size.progressBar.h),
-                  child: Stack(
-                    children: [
-                      Positioned.fill(child: ColoredBox(color: TvTokens.color.status.progressTrack)),
-                      FractionallySizedBox(
-                        widthFactor: progress.clamp(0.0, 1.0),
-                        heightFactor: 1,
-                        child: ColoredBox(color: TvTokens.color.status.progressFill),
-                      ),
-                    ],
-                  ),
-                ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: TvMediaProgress(item: episode, fraction: progress.clamp(0.0, 1.0)),
               ),
           ],
         ),
