@@ -29,6 +29,30 @@ abstract final class TvStrings {
   static const catalogNotOnServer = 'Not on server';
   static const catalogCouldNotCheck = 'Couldn’t check';
   static const catalogChooseCopy = 'Choose a copy';
+  static const watchlist = 'Watchlist';
+  static const watchlistSource = 'Source';
+  static const watchlistTabAll = 'All';
+  static const watchlistTabMovies = 'Movies';
+  static const watchlistTabShows = 'Shows';
+  static const watchlistTabOnServer = 'On server';
+  static const watchlistSortAdded = 'Date added';
+  static const watchlistSortTitle = 'Title';
+  static const watchlistSortYear = 'Year';
+  static const watchlistSortRating = 'Rating';
+  static const watchlistGenres = 'Genres';
+  static const watchlistDecades = 'Decades';
+  static String watchlistDecade(int decade) => '${decade}s';
+  static const watchlistNoMovies = 'No movies in your watchlist';
+  static const watchlistNoShows = 'No shows in your watchlist';
+  static const watchlistNothingOnServer = 'Nothing from your watchlist is on the server';
+  static const watchlistChecking = 'Checking what’s on the server…';
+  static const watchlistEmpty = 'Your watchlist is empty';
+  static const watchlistEmptyHelp =
+      'Add movies and shows with “Watchlist” on their card — they appear here even if they are not on the server yet.';
+  static const watchlistGoToSearch = 'Go to search';
+  static const watchlistLoadFailed = 'Couldn’t load the watchlist';
+  static const watchlistLoadFailedHelp = 'Check your internet connection and try again.';
+  static String watchlistOnServerCaption(String caption) => caption.isEmpty ? onServer : '$onServer · $caption';
   static String seasons(int count) => '$count ${count == 1 ? 'season' : 'seasons'}';
   static String episodes(int count) => '$count ${count == 1 ? 'episode' : 'episodes'}';
   static String spoilerEpisode({required int season, required int episode, required String title}) =>
