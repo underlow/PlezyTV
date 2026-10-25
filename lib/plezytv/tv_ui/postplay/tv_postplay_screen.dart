@@ -86,6 +86,9 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   final _row = GlobalKey<TvHorizontalRowState>();
   bool _queued = false, _keyPressed = false, _started = false;
 
+  /// The route was on top at the last dependency change.
+  bool _current = true;
+
   /// Any key-down while the screen is up, whoever handles it (R9 exception).
   bool _onAnyKey(KeyEvent event) {
     if (event is KeyDownEvent) _keyPressed = true;
@@ -105,6 +108,10 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final current = ModalRoute.isCurrentOf(context) ?? true;
+    // Back on top after a card opened over the screen (R6).
+    if (_started && current && !_current) _c.resume();
+    _current = current;
     if (_started) return;
     _started = true;
     if (_ownsController) {

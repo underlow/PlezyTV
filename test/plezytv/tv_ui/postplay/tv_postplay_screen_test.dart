@@ -704,6 +704,96 @@ void main() {
       expect(client.rateCalls, 1, reason: 'dispose does not resend the value leaving handed off');
       expect(client.rated, isEmpty);
     });
+
+    /// Screen-owned controller over home; a Similar poster opens a card over
+    /// the screen. Rates 1 star, opens the poster, the leave save fails, and
+    /// the card is closed again.
+    Future<(PostPlayClient, NavigatorState)> backFromSimilarAfterFailedSave(WidgetTester tester) async {
+      final client = PostPlayClient()
+        ..items['m'] = movie()
+        ..hubs['m'] = [
+          hub('sim', [movie(id: 's1')]),
+        ]
+        ..rateGate = Completer();
+      final servers = Servers(client);
+      addTearDown(servers.dispose);
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await pumpTvWidget(tester, const SizedBox.shrink());
+      await tester.pumpWidget(
+        InputModeTracker(
+          child: ChangeNotifierProvider<MultiServerProvider>.value(
+            value: servers,
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              home: Builder(
+                builder: (context) => TextButton(
+                  child: const Text('home'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => TvPostPlayScreen(
+                        args: TvPostPlayArgs(watched: movie(), playerRemoved: Future.value()),
+                        detailRoute: ({required metadata, initialSeasonId}) => cardRoute(metadata),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('home'));
+      await tester.pumpAndSettle();
+      expect(focusedLabel(), 'stars');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TvPoster>(), isNotNull);
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(client.rateCalls, 1, reason: 'opening the poster sends the value');
+      client.failRate = true;
+      client.rateGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('card s1'), findsOneWidget);
+      expect(find.text(t.errors.failedToRate), findsNothing);
+      client
+        ..failRate = false
+        ..rateGate = null;
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('card s1'), findsNothing);
+      expect(client.rateCalls, 1);
+      return (client, navigatorKey.currentState!);
+    }
+
+    testWidgets('back from Similar, the same value picked again: removing the screen saves it (R6, A40)', (
+      tester,
+    ) async {
+      final (client, navigator) = await backFromSimilarAfterFailedSave(tester);
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(focusedLabel(), 'stars');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      // Removed before the autosave, without the screen's own leaving.
+      navigator.removeRoute(ModalRoute.of(tester.element(find.byType(TvPostPlayScreen)))!);
+      await tester.pump();
+      expect(find.byType(TvPostPlayScreen), findsNothing, reason: 'disposed before the autosave');
+      await tester.pumpAndSettle();
+      expect(client.rateCalls, 2, reason: 'dispose sends the unsaved value once');
+      expect(client.rated, [2.0]);
+    });
+
+    testWidgets('back from Similar, stars untouched: removing the screen retries the failed save (R6)', (tester) async {
+      final (client, navigator) = await backFromSimilarAfterFailedSave(tester);
+      navigator.popUntil((route) => route.isFirst);
+      await tester.pumpAndSettle();
+      expect(find.byType(TvPostPlayScreen), findsNothing);
+      expect(client.rateCalls, 2, reason: 'dispose sends the unsaved value once');
+      expect(client.rated, [2.0]);
+    });
   });
 
   group('series ended', () {
