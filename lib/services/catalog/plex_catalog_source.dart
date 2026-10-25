@@ -302,7 +302,18 @@ class PlexCatalogSource with CatalogWatchlistMachinery implements CatalogSource,
       contentAdvisory: _contentAdvisoryFor(metadata),
       budget: flexibleInt(metadata['budget']),
       revenue: flexibleInt(metadata['revenue']),
+      addedAt: _watchlistedAt(metadata['watchlistedAt']),
     );
+  }
+
+  /// Plex sends `watchlistedAt` as epoch seconds; an ISO string is accepted too.
+  static DateTime? _watchlistedAt(Object? value) {
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) return parsed;
+    }
+    final seconds = flexibleInt(value);
+    return seconds == null ? null : DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
   }
 
   static List<String>? _tagsFor(Object? value) {
