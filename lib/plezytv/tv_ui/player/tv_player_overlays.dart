@@ -105,11 +105,16 @@ class _TvSkipButtonState extends State<TvSkipButton> {
   void initState() {
     super.initState();
     _chrome.addListener(_onChrome);
+    _session.markSkipButton(this, mounted: true);
   }
 
   @override
   void didUpdateWidget(TvSkipButton oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      TvPlayerSession.of(oldWidget.player).markSkipButton(this, mounted: false);
+      _session.markSkipButton(this, mounted: true);
+    }
     if (oldWidget.chromeController != widget.chromeController) {
       oldWidget.chromeController.removeListener(_onChrome);
       widget.chromeController.addListener(_onChrome);
@@ -120,6 +125,7 @@ class _TvSkipButtonState extends State<TvSkipButton> {
   @override
   void dispose() {
     _chrome.removeListener(_onChrome);
+    _session.markSkipButton(this, mounted: false);
     super.dispose();
   }
 

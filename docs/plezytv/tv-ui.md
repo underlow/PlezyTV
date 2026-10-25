@@ -328,3 +328,88 @@ The upstream workflow warns when the merge changes
 `build.dart`, `navigation.dart`, `video_controls.dart`, the two sheets, `skip_marker_button.dart`,
 `sync_offset_control.dart`, `sleep_timer_content.dart` or `stepped_seek.dart`; use this table
 as the checklist.
+
+## Post-play screen (S14)
+
+When a movie or episode ends on TV and leaving the player is allowed (R1), the
+player is replaced by `TvPostPlayScreen` (`lib/plezytv/tv_ui/postplay/`): the
+next episode or rewatch, "Your rating" stars (`TvRatingStars` in
+`components/`, tokens `player.postplay` in `TvTokens`), the season's episodes
+and one "similar" row. Rating save repeats Plezy's `rating_bottom_sheet.dart`:
+`rate()` with the value, `rate(-1)` to clear, offered only with
+`capabilities.numericUserRating`; saves run one after another. A leaving
+press (Back, the card buttons, a launch, a row episode or a similar poster)
+cancels the debounce and starts saving an unsaved value (or resends it once
+after a failed save in flight) without waiting for the server: the screen
+changes as soon as the old player is gone. Each save is held in
+`TvPendingRatings` (`tv_card_registry.dart`) by the item's global key until it
+completes; an S7/S8 card that becomes the top route while a save for its item
+(the movie, or the series that ended) is held rereads once more when it
+finishes, success or failure, and marks `watchStateChanged` if anything
+changed. The card is usable meanwhile. Disposing the screen sends only a
+value that no save is already sending. From the leaving press on, a failed
+save shows no message (Plezy's messenger would show it over the next screen);
+it is logged. Ratings appear as soon as the item
+loads; a failed related-hubs request only leaves "Similar" out. For a series
+that ended, focus may move once to the stars after loading if no key was
+pressed yet (any key-down counts, seen through `HardwareKeyboard`).
+
+R1: TV, not Live TV, not offline, not Watch Together, movie or episode, the
+completion latch set, no play-next or still-watching prompt, next item not
+loading, adjacency not failed, not ended by the end-of-video sleep timer, and a
+normal launch: no queue, or the unshuffled queue of the item's own show or
+season. Playlists, collections, library folders and shuffle keep Plezy's exit
+(`tvPostPlayAllowed`, `tvNormalLaunch` in `tv_postplay_exit.dart`).
+
+| Hook | File, place | Lookup | Fallback |
+|---|---|---|---|
+| H8 | `lib/screens/video_player/parts/playback_prompts.dart`, `_onVideoCompleted`: one added line after the live/transition/resolving filters, one changed line in the `exit` branch | `TvUi.playerVideoCompleted` records an end by the sleep timer (C3); `TvUi.playerExitAtEnd` takes the `exit` branch to post-play when R1 holds. It relies on the H9 layer being mounted (it holds the end binding); without it Plezy's `_handleBackButton` runs | Plezy's exit |
+| H9 | `lib/screens/video_player/parts/build.dart`, one line next to H7 in the overlay stack | `TvUi.playerPostPlayExit`: `TvPostPlayExitLayer` with a `TvPlayerEndProbe` of functions read at event time (latch, prompts, next status, Watch Together, offline, `_routeExitOperation`, `_handleBackButton`) | no layer |
+
+**Early Back handler (C4).** While the H9 layer is mounted it registers
+`FocusManager.instance.addEarlyKeyEventHandler`, the only place that can stop
+the focus-tree walk before Plezy's Back chain in `video_controls.dart` and the
+player screen. On Back down it decides ownership for the whole press: its own
+when the player is the current route, the S9 panel is hidden, no sheet or side
+panel is open, the skip button is not shown (`TvSkipButton` marks itself in
+`TvPlayerSession`) and R1 holds. It then swallows both down and up, acts in
+Plezy's phase (`handleBackKeyAction` in `lib/focus/key_event_utils.dart`: up on
+Android, down on Apple TV), calls `BackKeyCoordinator.markHandled()` and goes
+to post-play. Other presses pass to Plezy unchanged; unmatched ups and ups
+suppressed by `BackKeyUpSuppressor` are ignored. Home is not intercepted.
+
+Contracts:
+
+- **C1** `TvPostPlayArgs { watched, next, playerRemoved }` →
+  `TvUi.postPlayRoute`, an opaque route that appears without an entrance
+  transition (a route is see-through while it enters, and Plezy may remove the
+  player under it within a frame) and fades out when left. `playerRemoved` is the future of
+  Plezy's accepted exit; an error counts as removed.
+- **C2** `TvUi.exitToPostPlay`: if an exit is already pending, nothing; else it
+  calls Plezy's exit (`_handleBackButton`) and, only if that set
+  `_routeExitOperation`, pushes the post-play route over the player. Plezy then
+  stops, reports and removes only the player route (`navigator.removeRoute`)
+  within its navigation budget (up to 1 s). Until then route-creating actions
+  and Back on the screen wait for `playerRemoved`. Back on the screen goes
+  through `handleBackKeyAction` / `BackKeyCoordinator.consumeIfHandled`.
+- **C3** The sleep-timer flag lives in `TvPlayerSession` for the current item;
+  any other fresh end or a new item clears it.
+- **C4** the early Back handler above.
+- **C5** `TvCardRegistry` (`lib/plezytv/tv_ui/tv_card_registry.dart`): S7/S8
+  cards register their route and item. After `playerRemoved`, if the route
+  below post-play is this item's card, post-play pops (S7 switches to the
+  watched episode's season); otherwise it is replaced by the card via
+  `TvUi.showDetailRoute`. Cards that launch playback defer focus and reread
+  watch state and rating when on top again (R10), since `removeRoute` returns
+  `null` to Plezy's result callbacks; a rating save still held in
+  `TvPendingRatings` adds one more reread when it finishes.
+
+Accepted limitations: Back from a gamepad or the companion
+(`KeyEventSimulator`) walks the focus tree directly and does not reach the
+early handler, so it keeps Plezy's exit (R1). Apple TV's Siri Remote Play/Pause
+uses the native `play_pause` channel, as for H7, so on the post-play screen
+it does not start the next episode (the fork targets Android TV); on Android TV
+Play/Pause starts the next episode and does nothing on the movie screen. The upstream workflow warns when the merge
+changes `playback_prompts.dart`, `build.dart`, `video_player_screen.dart`,
+`key_event_utils.dart`, `playback_state_provider.dart` or
+`rating_bottom_sheet.dart`.

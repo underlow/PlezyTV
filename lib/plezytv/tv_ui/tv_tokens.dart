@@ -123,7 +123,7 @@ abstract final class TvTokens {
     curve: "easeOutCubic",
   );
 
-  /// Player panel (S9). `postplay` belongs to S14 and is not mirrored yet.
+  /// Player panel (S9) and the post-play screen (S14, `postplay`).
   ///
   /// Mirrored but unused — Plezy owns this behaviour: `seekSteps`,
   /// `seekAccelEvery`, `seekCommitDelay` (stepped seek), `skipButtonHide`
@@ -159,5 +159,6 @@ abstract final class TvTokens {
     miniPause: (h: 56, bg: Color(0xA6000000)),
     upNextCard: (w: 720, thumbW: 288, thumbH: 162, bg: Color(0xF21A1C21), radius: 16),
     subtitles: (size: 40, lineHeight: 52, bottom: 120, outline: Color(0xFF000000)),
+    postplay: (stillW: 720, stillH: 405, star: 56, starRadius: 14),
   );
 }
