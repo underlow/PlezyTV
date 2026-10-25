@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -201,18 +202,15 @@ class _TvSkipButtonState extends State<TvSkipButton> {
                     : _bottomShown,
               );
               // Plezy's slot moves by its own state (and not on every chrome
-              // change), so the button is pinned on screen instead of offset
-              // from it: a fresh mount appears at its spot, then only our
-              // tween moves it.
-              final screen = MediaQuery.sizeOf(context);
+              // change), so the button is pinned to the player's box instead
+              // of offset from the slot: a fresh mount appears at its spot,
+              // then only our tween moves it.
               return TweenAnimationBuilder<double>(
                 tween: Tween(end: bottom),
                 duration: _move,
                 curve: _moveCurve,
-                builder: (context, bottom, child) => _ScreenPinned(
-                  bottomRight: Offset(screen.width - px(_right), screen.height - bottom),
-                  child: child!,
-                ),
+                builder: (context, bottom, child) =>
+                    _PlayerPinned(right: px(_right), bottom: bottom, slotMoves: _chrome, child: child!),
                 child: Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _onKey, child: _button(context)),
               );
             },
@@ -840,38 +838,152 @@ class _TvPlaybackErrorState extends State<TvPlaybackError> {
   }
 }
 
-/// Paints [child] with its bottom-right corner at [bottomRight] in global
-/// coordinates, wherever its parent lays it out.
-class _ScreenPinned extends SingleChildRenderObjectWidget {
-  const _ScreenPinned({required this.bottomRight, required Widget super.child});
+/// Paints [child] with its bottom-right corner [right] and [bottom] in from
+/// the bottom-right corner of the player's stack (the parent of Plezy's skip
+/// slot), wherever the slot lays it out.
+///
+/// The pin is computed in the stack's own coordinates, so ancestor scales
+/// (Apple TV's `FormFactorScale`) apply to it as to the rest of the player.
+/// Plezy's slot is a repaint boundary (its `AnimatedOpacity`): when the slot
+/// moves, only its layer moves and this box is not repainted. After each
+/// frame the box checks the slot's place and, when it moved, repaints and
+/// then follows every frame for the length of Plezy's slot motion; a
+/// [slotMoves] notification (the chrome controller, which drives the slot)
+/// starts that following too. Nothing is scheduled while the slot is still.
+class _PlayerPinned extends SingleChildRenderObjectWidget {
+  const _PlayerPinned({
+    required this.right,
+    required this.bottom,
+    required this.slotMoves,
+    required Widget super.child,
+  });
 
-  final Offset bottomRight;
+  final double right;
+  final double bottom;
+  final Listenable slotMoves;
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _RenderScreenPinned(bottomRight);
+  RenderObject createRenderObject(BuildContext context) => _RenderPlayerPinned(right, bottom, slotMoves);
 
   @override
-  void updateRenderObject(BuildContext context, _RenderScreenPinned renderObject) =>
-      renderObject.bottomRight = bottomRight;
+  void updateRenderObject(BuildContext context, _RenderPlayerPinned renderObject) => renderObject
+    ..right = right
+    ..bottom = bottom
+    ..slotMoves = slotMoves;
 }
 
-class _RenderScreenPinned extends RenderProxyBox {
-  _RenderScreenPinned(this._bottomRight);
+class _RenderPlayerPinned extends RenderProxyBox {
+  _RenderPlayerPinned(this._right, this._bottom, this._slotMoves);
 
-  Offset _bottomRight;
+  /// Plezy's slot motion (200 ms) with a margin.
+  static const _followFor = Duration(milliseconds: 300);
+
+  double _right;
+  double _bottom;
+  Listenable _slotMoves;
   Offset _shift = Offset.zero;
+  bool _watching = false;
+  bool _following = false;
+  Duration? _followEnd;
 
-  set bottomRight(Offset value) {
-    if (value == _bottomRight) return;
-    _bottomRight = value;
+  set right(double value) {
+    if (value == _right) return;
+    _right = value;
+    _moved();
+  }
+
+  set bottom(double value) {
+    if (value == _bottom) return;
+    _bottom = value;
+    _moved();
+  }
+
+  set slotMoves(Listenable value) {
+    if (identical(value, _slotMoves)) return;
+    if (attached) {
+      _slotMoves.removeListener(_follow);
+      value.addListener(_follow);
+    }
+    _slotMoves = value;
+  }
+
+  void _moved() {
     markNeedsPaint();
+    markNeedsSemanticsUpdate();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _slotMoves.addListener(_follow);
+    _watch();
+  }
+
+  @override
+  void detach() {
+    _slotMoves.removeListener(_follow);
+    super.detach();
+  }
+
+  /// The player's stack: the parent of the nearest ancestor it positions.
+  RenderBox? get _stack {
+    RenderObject? node = this;
+    while (node != null && node.parentData is! StackParentData) {
+      node = node.parent;
+    }
+    final stack = node?.parent;
+    return stack is RenderBox ? stack : null;
+  }
+
+  /// The paint offset that puts the child's bottom-right corner at its pin.
+  Offset _pinShift() {
+    final stack = _stack;
+    if (stack == null || !stack.hasSize) return Offset.zero;
+    final toLocal = Matrix4.tryInvert(getTransformTo(stack));
+    if (toLocal == null) return Offset.zero;
+    final pin = MatrixUtils.transformPoint(toLocal, stack.size.bottomRight(Offset(-_right, -_bottom)));
+    return pin - size.bottomRight(Offset.zero);
+  }
+
+  /// After every frame (none scheduled for it): repaint if the slot moved.
+  void _watch() {
+    if (_watching) return;
+    _watching = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _watching = false;
+      if (!attached) return;
+      _watch();
+      if (!hasSize || (_pinShift() - _shift).distance < 0.01) return;
+      _moved();
+      _follow();
+    });
+  }
+
+  /// Repaints before layout on every frame for [_followFor], so a moving
+  /// slot is matched in the same frame.
+  void _follow() {
+    _followEnd = null;
+    if (_following) return;
+    _following = true;
+    SchedulerBinding.instance.scheduleFrameCallback(_onFollowFrame);
+  }
+
+  void _onFollowFrame(Duration timeStamp) {
+    _following = false;
+    if (!attached) return;
+    final end = _followEnd ??= timeStamp + _followFor;
+    _moved();
+    if (timeStamp < end) {
+      _following = true;
+      SchedulerBinding.instance.scheduleFrameCallback(_onFollowFrame);
+    }
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
     final child = this.child;
     if (child == null) return;
-    _shift = _bottomRight - localToGlobal(size.bottomRight(Offset.zero));
+    _shift = _pinShift();
     context.paintChild(child, offset + _shift);
   }
 

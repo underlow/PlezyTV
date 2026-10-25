@@ -156,6 +156,69 @@ void main() {
       await stand.unmount(tester);
     });
 
+    testWidgets('R11a: a prompt arriving while the button is shown keeps it at the hidden-panel spot', (tester) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
+      await hide(tester);
+      await enterIntro(tester);
+      expect(focused(), 'SkipMarkerButton');
+      final button = find.descendant(of: skip, matching: find.byType(Container)).first;
+      // Design spot with the panel hidden: right 96, bottom 54.
+      void atHiddenSpot(String when) {
+        final rect = tester.getRect(button);
+        expect(rect.bottom, closeTo(1026, 1), reason: when);
+        expect(rect.right, closeTo(1824, 1), reason: when);
+      }
+
+      atHiddenSpot('before the prompt');
+      // The still-watching prompt opens and takes focus; its hold raises the
+      // chrome, so Plezy's slot moves up while the panel stays invisible.
+      await tester.pumpWidget(stand.host(stand.controls(markers: tvStandMarkers(), playbackPromptOpen: true)));
+      stand.playNextFocusNode.requestFocus();
+      stand.chrome.hold(PlayerChromeHold.promptInteraction);
+      await tester.pump();
+      expect(stand.chrome.controlsVisible, isTrue);
+      for (var ms = 20; ms <= 300; ms += 20) {
+        await tester.pump(const Duration(milliseconds: 20));
+        atHiddenSpot('at $ms ms');
+      }
+      await tester.pumpAndSettle();
+      atHiddenSpot('settled');
+      expect(skipText, findsOneWidget);
+      stand.chrome.release(PlayerChromeHold.promptInteraction);
+      await stand.unmount(tester);
+    });
+
+    testWidgets('under Apple TV\'s 2× surface scale the button is at its design spot, hidden and shown', (
+      tester,
+    ) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()), scale: 2);
+      await hide(tester);
+      await enterIntro(tester);
+      expect(skipText, findsOneWidget);
+      final button = find.descendant(of: skip, matching: find.byType(Container)).first;
+      // Design spots (right 96; bottom 54 hidden, 264 shown) in the 1920 ×
+      // 1080 layout, drawn 2× on the 3840 × 2160 surface.
+      var rect = tester.getRect(button);
+      expect(rect.right, closeTo(1824 * 2, 2), reason: 'panel hidden');
+      expect(rect.bottom, closeTo(1026 * 2, 2), reason: 'panel hidden');
+      expect(focused(), 'SkipMarkerButton');
+      final hit = tester.hitTestOnBinding(rect.center);
+      expect(
+        hit.path.any((entry) => entry.target == tester.renderObject(button)),
+        isTrue,
+        reason: 'hit testing where it is drawn',
+      );
+
+      stand.chrome.show();
+      await tester.pumpAndSettle();
+      rect = tester.getRect(button);
+      expect(rect.right, closeTo(1824 * 2, 2), reason: 'panel up');
+      expect(rect.bottom, closeTo(816 * 2, 2), reason: 'panel up');
+      await stand.unmount(tester);
+    });
+
     testWidgets('showing the panel moves the button smoothly (Plezy\'s 200 ms motion)', (tester) async {
       await setUpAt();
       await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
