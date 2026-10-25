@@ -406,6 +406,42 @@ void main() {
     expect(harness.aggregation.calls, hasLength(2), reason: 'every server answered, so the hit is kept');
   });
 
+  test(
+    'refreshIncomplete re-asks an incomplete cached wave, keeping its copies; a complete one stays cached',
+    () async {
+      final now = DateTime.utc(2026, 10, 25, 12);
+      final harness = _Harness(now: () => now);
+      addTearDown(harness.dispose);
+      final fastCopy = testMediaItem(id: 'fast-copy', serverId: 'fast');
+      final slowCopy = testMediaItem(id: 'slow-copy', serverId: 'slow');
+      harness.aggregation.responses.addAll([
+        libraryLookupResult([fastCopy], succeeded: {'fast'}, unqueried: {'slow'}),
+        libraryLookupResult([slowCopy], succeeded: {'slow'}, failed: {'fast'}),
+        libraryLookupResult([fastCopy, slowCopy], succeeded: {'fast', 'slow'}),
+      ]);
+      const item = CatalogItem(
+        source: CatalogSourceId.trakt,
+        kind: MediaKind.movie,
+        title: 'Refresh Movie',
+        ids: CatalogItemIds(trakt: 10, tmdb: 78),
+      );
+
+      final first = await harness.matcher.match(item);
+      expect(await harness.matcher.match(item), same(first), reason: 'without the flag, TTL still applies');
+      expect(harness.aggregation.calls, hasLength(1));
+
+      final second = await harness.matcher.match(item, refreshIncomplete: true);
+      expect(harness.aggregation.calls, hasLength(2));
+      expect(second.items, unorderedEquals([fastCopy, slowCopy]), reason: 'fast sat out, its copy is kept');
+
+      final third = await harness.matcher.match(item, refreshIncomplete: true);
+      expect(harness.aggregation.calls, hasLength(3));
+      expect(third.items, unorderedEquals([fastCopy, slowCopy]));
+      expect(await harness.matcher.match(item, refreshIncomplete: true), same(third));
+      expect(harness.aggregation.calls, hasLength(3), reason: 'a complete wave is served from the cache');
+    },
+  );
+
   test('a server that sits out the retry keeps its last-known copies until it answers itself', () async {
     // Wave 1: A holds a copy, B is unreachable. After negativeTtl, wave 2:
     // A is unreachable, B answers empty. A's copy is verified and nothing
