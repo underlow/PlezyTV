@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -88,15 +89,9 @@ class _TvSkipButtonState extends State<TvSkipButton> {
   TvPlayerSession get _session => TvPlayerSession.of(widget.player);
   PlayerChromeController get _chrome => widget.chromeController;
 
-  // Where Plezy places the button (video_controls.dart, the skip button's
-  // AnimatedPositioned on a non-mobile layout): right 24 and these bottoms.
-  static const _plezyRight = 24.0;
-  static const _plezyBottomHidden = 24.0;
-  static const _plezyBottomShown = 115.0;
-  static const _plezyBottomStrip = 180.0;
-  // Plezy's AnimatedPositioned motion; our offset follows it so the sum moves smoothly.
-  static const _plezyMove = Duration(milliseconds: 200);
-  static const _plezyCurve = Curves.easeInOut;
+  // Our motion between spots, matching Plezy's AnimatedPositioned.
+  static const _move = Duration(milliseconds: 200);
+  static const _moveCurve = Curves.easeInOut;
 
   // Design positions (1920 × 1080): right edge on the icons' right edge,
   // 24 above the icons (y = 840, and 400 higher over the queue row).
@@ -190,15 +185,9 @@ class _TvSkipButtonState extends State<TvSkipButton> {
         if (_session.sidePanelOpen.value) return const SizedBox.shrink();
         final dismissed = _dismissed;
         if (dismissed != null && _sameMarker(dismissed, widget.plezy.marker)) return const SizedBox.shrink();
-        // Plezy places its button by the chrome; ours follows the panel,
-        // which a prompt keeps invisible under the chrome hold (G).
-        final plezyShown = _chrome.controlsVisible;
-        final plezyBottom = !plezyShown
-            ? _plezyBottomHidden
-            : _chrome.contentStripVisible
-            ? _plezyBottomStrip
-            : _plezyBottomShown;
-        final shown = plezyShown && !widget.promptOpen;
+        // Ours follows the panel, which a prompt keeps invisible under the
+        // chrome hold (G).
+        final shown = _chrome.controlsVisible && !widget.promptOpen;
         final strip = shown && _chrome.contentStripVisible;
         return TvTheme(
           child: Builder(
@@ -211,11 +200,19 @@ class _TvSkipButtonState extends State<TvSkipButton> {
                     ? _bottomOverQueue
                     : _bottomShown,
               );
-              return TweenAnimationBuilder<Offset>(
-                tween: Tween(end: Offset(-(px(_right) - _plezyRight), -(bottom - plezyBottom))),
-                duration: _plezyMove,
-                curve: _plezyCurve,
-                builder: (context, offset, child) => Transform.translate(offset: offset, child: child),
+              // Plezy's slot moves by its own state (and not on every chrome
+              // change), so the button is pinned on screen instead of offset
+              // from it: a fresh mount appears at its spot, then only our
+              // tween moves it.
+              final screen = MediaQuery.sizeOf(context);
+              return TweenAnimationBuilder<double>(
+                tween: Tween(end: bottom),
+                duration: _move,
+                curve: _moveCurve,
+                builder: (context, bottom, child) => _ScreenPinned(
+                  bottomRight: Offset(screen.width - px(_right), screen.height - bottom),
+                  child: child!,
+                ),
                 child: Focus(canRequestFocus: false, skipTraversal: true, onKeyEvent: _onKey, child: _button(context)),
               );
             },
@@ -839,6 +836,58 @@ class _TvPlaybackErrorState extends State<TvPlaybackError> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Paints [child] with its bottom-right corner at [bottomRight] in global
+/// coordinates, wherever its parent lays it out.
+class _ScreenPinned extends SingleChildRenderObjectWidget {
+  const _ScreenPinned({required this.bottomRight, required Widget super.child});
+
+  final Offset bottomRight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderScreenPinned(bottomRight);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderScreenPinned renderObject) =>
+      renderObject.bottomRight = bottomRight;
+}
+
+class _RenderScreenPinned extends RenderProxyBox {
+  _RenderScreenPinned(this._bottomRight);
+
+  Offset _bottomRight;
+  Offset _shift = Offset.zero;
+
+  set bottomRight(Offset value) {
+    if (value == _bottomRight) return;
+    _bottomRight = value;
+    markNeedsPaint();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+    _shift = _bottomRight - localToGlobal(size.bottomRight(Offset.zero));
+    context.paintChild(child, offset + _shift);
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    transform.translateByDouble(_shift.dx, _shift.dy, 0, 1);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final child = this.child;
+    if (child == null) return false;
+    return result.addWithPaintOffset(
+      offset: _shift,
+      position: position,
+      hitTest: (result, transformed) => child.hitTest(result, position: transformed),
     );
   }
 }
