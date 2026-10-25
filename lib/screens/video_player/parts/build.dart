@@ -369,6 +369,7 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                 onContinue: _onStillWatchingContinue,
               ),
               ?TvUi.playerPauseIndicator(player: player, chromeController: _chromeController, promptOpen: _episode.showPlayNextDialog || _showStillWatchingPrompt, canControl: _canControlPlayback, isLive: widget.isLive),
+              ?TvUi.playerPostPlayExit(player: player, chromeController: _chromeController, probe: TvPlayerEndProbe(watched: () => _currentMetadata, next: () => _episode.next, latched: () => _episode.completionLatch.triggered, promptOpen: () => _episode.showPlayNextDialog || _showStillWatchingPrompt, loadingNext: () => _episode.isLoadingNext, nextStatus: () => _episode.nextStatus, watchTogether: () => _watchTogetherRoom() != null, isOffline: widget.isOffline, exitPending: () => _routeExitOperation != null, exit: _handleBackButton), isLive: widget.isLive),
               // Buffering indicator (also shows during initial load, but not when exiting)
               // Hidden in PiP mode
               VideoPlayerBufferingOverlay(
