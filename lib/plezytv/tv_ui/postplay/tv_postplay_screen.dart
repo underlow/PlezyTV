@@ -178,21 +178,16 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
   }
 
   /// Route-changing actions wait until Plezy removed the old player, then run
-  /// once (spec §3). The rating is saved first, so the screen that comes
-  /// next reads it (R6, R10); from the press on, a failed save shows no
-  /// message.
+  /// once (spec §3). They do not wait for the rating: the press starts its
+  /// save in the background and the card of the item rereads when it
+  /// finishes (R6, R10); from the press on, a failed save shows no message.
   void _afterPlayer(Future<void> Function() action) {
     if (_queued) return;
     _queued = true;
+    unawaited(_c.leave());
     unawaited(() async {
       try {
         await widget.args.playerRemoved.then<void>((_) {}, onError: (Object _) {});
-        try {
-          await _c.flush();
-        } catch (error) {
-          // A failed save must not stop the user from leaving (R6).
-          appLogger.w('Post-play rating save failed before leaving', error: error);
-        }
         if (!mounted) return;
         await action();
       } finally {

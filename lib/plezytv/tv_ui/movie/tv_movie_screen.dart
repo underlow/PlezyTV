@@ -119,8 +119,32 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     _registerCard(() => TvCardEntry(itemKey: widget.metadata.globalKey));
     final top = ModalRoute.of(context)?.isCurrent == true;
     if (_refreshOnReturn && top && !_playing) _returnedToTop();
-    if (_controller != null || _connectionError != null) return;
-    _connect();
+    if (_controller == null && _connectionError == null) _connect();
+    if (top) _rereadAfterRatingSave();
+  }
+
+  bool _awaitingRating = false;
+
+  /// S14 R6, R10: a post-play rating save for this movie may still be running
+  /// when the card shows; reread once it finishes, without blocking the card.
+  void _rereadAfterRatingSave() {
+    if (_awaitingRating || _controller == null) return;
+    _awaitingRating =
+        TvPendingRatings.whenSaved(
+          widget.metadata.globalKey,
+          isCurrent: () => mounted,
+          reread: () {
+            _awaitingRating = false;
+            final c = _controller!;
+            final before = _watchFingerprint(c.movie);
+            unawaited(
+              c.refresh().then((_) {
+                if (mounted && _watchFingerprint(c.movie) != before) c.watchStateChanged = true;
+              }),
+            );
+          },
+        ) !=
+        null;
   }
 
   void _connect() {

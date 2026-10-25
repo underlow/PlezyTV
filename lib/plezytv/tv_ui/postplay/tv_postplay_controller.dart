@@ -6,6 +6,7 @@ import '../../../media/media_hub.dart';
 import '../../../media/media_item.dart';
 import '../../../media/media_server_client.dart';
 import '../../../utils/app_logger.dart';
+import '../tv_card_registry.dart';
 import 'tv_postplay_logic.dart';
 
 /// Data and rating state of the post-play screen. The screen owns focus and
@@ -68,6 +69,9 @@ class TvPostPlayController extends ChangeNotifier {
 
   Timer? _timer;
   Future<void>? _saving;
+
+  /// The value the last queued save sends.
+  int? _savingValue;
   bool _disposed = false;
 
   bool get ratingSupported => client?.capabilities.numericUserRating ?? false;
@@ -143,21 +147,36 @@ class TvPostPlayController extends ChangeNotifier {
     return _save(report: true, force: true);
   }
 
-  Future<void> _save({required bool report, bool force = false}) {
+  /// Saves run one after another, so the server ends with the latest value.
+  /// [retry] (leaving) sends [rating] only if it is still unsaved once the
+  /// saves before it have finished.
+  Future<void> _save({required bool report, bool force = false, bool retry = false}) {
     final c = client;
-    if (c == null || (!force && !_dirty)) return Future.value();
-    final save = _send(c, report: report);
+    if (c == null) return Future.value();
+    final value = rating;
+    final previous = _saving;
+    if (!force && !retry && value == (_savingValue ?? _saved)) return previous ?? Future.value();
+    if (retry && previous == null && value == _saved) return Future.value();
+    Future<void> run() async {
+      if (retry && value == _saved) return;
+      await _send(c, value, report: report);
+    }
+
+    final save = previous == null ? run() : previous.then((_) => run());
     _saving = save;
+    _savingValue = value;
+    TvPendingRatings.track(subject.globalKey, save);
     unawaited(
       save.whenComplete(() {
-        if (identical(_saving, save)) _saving = null;
+        if (!identical(_saving, save)) return;
+        _saving = null;
+        _savingValue = null;
       }),
     );
     return save;
   }
 
-  Future<void> _send(MediaServerClient c, {required bool report}) async {
-    final value = rating;
+  Future<void> _send(MediaServerClient c, int value, {required bool report}) async {
     try {
       await c.rate(subject, value > 0 ? value.toDouble() : -1);
       _saved = value;
@@ -170,28 +189,19 @@ class TvPostPlayController extends ChangeNotifier {
     }
   }
 
-  /// Before leaving the screen: waits for a save in flight and saves an
-  /// unsaved value silently, so the next screen reads the new rating (R6,
-  /// R10). Bounded by [timeout] so a hanging server cannot hold navigation.
-  Future<void> flush({Duration timeout = const Duration(seconds: 3)}) async {
+  /// Leaving the screen: sends an unsaved value silently and does not wait
+  /// for the server (R6). The save is held in [TvPendingRatings] so the
+  /// card of [subject] rereads when it finishes (R10). Returns that save.
+  Future<void> leave() {
     _timer?.cancel();
     _timer = null;
-    Future<void> run() async {
-      final inFlight = _saving;
-      if (inFlight != null) await inFlight;
-      if (_dirty) await _save(report: false);
-    }
-
-    try {
-      await run().timeout(timeout);
-    } on TimeoutException {
-      appLogger.w('Post-play rating save still pending when leaving');
-    }
+    return _save(report: false, retry: true);
   }
 
   @override
   void dispose() {
-    final pending = _timer != null || _dirty;
+    // A value already being sent (e.g. by [leave]) is not sent twice.
+    final pending = rating != (_savingValue ?? _saved);
     _timer?.cancel();
     _timer = null;
     _disposed = true;
