@@ -16,6 +16,7 @@ import 'player/tv_player_hooks.dart';
 import 'player/tv_player_overlays.dart';
 import 'player/tv_player_panel.dart';
 import 'player/tv_player_session.dart';
+import 'postplay/tv_postplay_exit.dart';
 import 'postplay/tv_postplay_logic.dart';
 import 'postplay/tv_postplay_screen.dart';
 
@@ -32,6 +33,7 @@ abstract final class TvUi {
   static void resetForTesting() {
     _enabled = PlatformDetector.isTV;
     profileHomeBuilderForTesting = null;
+    postPlayRouteForTesting = null;
     _player = _productionPlayer;
   }
 
@@ -110,6 +112,29 @@ abstract final class TvUi {
     ),
     transitionDuration: AppDurations.animMedium,
     reverseTransitionDuration: AppDurations.animMedium,
+  );
+
+  /// Replaces [postPlayRoute] in [exitToPostPlay], for player tests.
+  @visibleForTesting
+  static PageRoute<void> Function(TvPostPlayArgs args)? postPlayRouteForTesting;
+
+  /// S14 C2 — accepts Plezy's [exit] and, only when this call made the exit
+  /// accepted ([exitPending] turned true), lays the post-play screen over the
+  /// player; Plezy then removes only the player route. Nothing happens when
+  /// an exit was already accepted or [exit] declined (a prompt dismissed).
+  static void exitToPostPlay({
+    required BuildContext context,
+    required MediaItem watched,
+    MediaItem? next,
+    required bool Function() exitPending,
+    required Future<void> Function() exit,
+  }) => tvExitToPostPlay(
+    context: context,
+    watched: watched,
+    next: next,
+    exitPending: exitPending,
+    exit: exit,
+    route: postPlayRouteForTesting ?? postPlayRoute,
   );
 
   /// Pass a captured [enabled] value when the choice belongs to a session.
@@ -191,5 +216,46 @@ abstract final class TvUi {
     final builder = _player.pauseIndicator;
     if (player == null || builder == null || !_playerActive(isLive: isLive)) return null;
     return builder(player, chromeController, promptOpen: promptOpen, canControl: canControl);
+  }
+
+  // Post-play (S14). H8 and H9 keep Plezy's exit unless R1 holds on TV.
+
+  /// H9 — the post-play exit layer beside H7: binds the end state for H8 and
+  /// takes the last Back step for the post-play screen (C4).
+  static Widget? playerPostPlayExit({
+    required Player? player,
+    required PlayerChromeController chromeController,
+    required TvPlayerEndProbe probe,
+    required bool isLive,
+  }) {
+    if (player == null || !_playerActive(isLive: isLive)) return null;
+    return TvPostPlayExitLayer(
+      player: player,
+      chromeController: chromeController,
+      probe: probe,
+      exitToPostPlay: exitToPostPlay,
+      tv: () => TvUi.enabled,
+    );
+  }
+
+  /// H8, start of an accepted EOF — records an end by the sleep timer (C3).
+  static void playerVideoCompleted(
+    Player? player, {
+    required bool latched,
+    required MediaItem item,
+    required bool isLive,
+  }) {
+    if (player == null || !_playerActive(isLive: isLive)) return;
+    tvPostPlayVideoCompleted(player, latched: latched, item: item);
+  }
+
+  /// H8, Plezy's `exit` branch: true when the post-play path took the exit
+  /// (R1 case a); false keeps Plezy's `_handleBackButton`.
+  static bool playerExitAtEnd(Player? player, {required bool isLive}) {
+    if (player == null || !_playerActive(isLive: isLive)) return false;
+    final binding = TvPlayerSession.of(player).endBinding;
+    if (binding == null || !binding.allowed) return false;
+    binding.exit();
+    return true;
   }
 }

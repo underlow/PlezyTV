@@ -55,6 +55,25 @@ void main() {
   }
 
   group('skip button (H2, H3, R17)', () {
+    testWidgets('S14 C4: the button marks itself in the session while mounted; Back hides it as before (A31)', (
+      tester,
+    ) async {
+      await setUpAt();
+      await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
+      await hide(tester);
+      expect(session().skipButtonVisible, isFalse);
+      await enterIntro(tester);
+      expect(skip, findsOneWidget);
+      expect(session().skipButtonVisible, isTrue);
+
+      // Back with the panel hidden is Plezy's: it declines the marker.
+      await press(tester, LogicalKeyboardKey.gameButtonB);
+      expect(skip, findsNothing);
+      expect(session().skipButtonVisible, isFalse);
+      expect(stand.exitCalls, 0);
+      await stand.unmount(tester);
+    });
+
     testWidgets('A12: a marker with the panel hidden — our button takes focus; OK skips as Plezy does', (tester) async {
       await setUpAt();
       await stand.pumpControls(tester, stand.controls(markers: tvStandMarkers()));
