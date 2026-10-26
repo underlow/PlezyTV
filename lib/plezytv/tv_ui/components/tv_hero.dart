@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../media/media_item.dart';
+import '../../../media/media_backend.dart';
 import '../../../media/media_item_types.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/media_server_client.dart';
@@ -15,8 +18,15 @@ import 'tv_ratings.dart';
 
 /// Text follows the selected item immediately. The screen owns backdrop debounce.
 /// This component occupies the hero slot; its parent owns the content inset.
-class TvHero extends StatelessWidget {
-  const TvHero({super.key, required this.item, this.compact = false, this.hideSpoilers = false, this.client});
+class TvHero extends StatefulWidget {
+  const TvHero({
+    super.key,
+    required this.item,
+    this.compact = false,
+    this.hideSpoilers = false,
+    this.client,
+    this.loadFullRatings = false,
+  });
 
   final MediaItem? item;
   final bool compact;
@@ -25,11 +35,76 @@ class TvHero extends StatelessWidget {
   final bool hideSpoilers;
   final MediaServerClient? client;
 
+  /// Home opts in for Plex movies/shows: debounce like the backdrop, cache
+  /// metadata per item/client, and hide ratings until a successful response.
+  final bool loadFullRatings;
+
+  @override
+  State<TvHero> createState() => _TvHeroState();
+}
+
+class _TvHeroState extends State<TvHero> {
+  final _cache = <String, Future<MediaItem?>>{};
+  Timer? _timer;
+  int _generation = 0;
+  MediaItem? _ratingsItem;
+
+  bool get _needsFull =>
+      widget.loadFullRatings &&
+      widget.item?.backend == MediaBackend.plex &&
+      (widget.item?.kind == MediaKind.movie || widget.item?.kind == MediaKind.show);
+
+  @override
+  void initState() {
+    super.initState();
+    _select();
+  }
+
+  @override
+  void didUpdateWidget(TvHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.client != widget.client) _cache.clear();
+    if (oldWidget.item?.globalKey != widget.item?.globalKey ||
+        oldWidget.client != widget.client ||
+        oldWidget.loadFullRatings != widget.loadFullRatings) {
+      _select();
+    }
+  }
+
+  void _select() {
+    _timer?.cancel();
+    final generation = ++_generation;
+    _ratingsItem = null;
+    final item = widget.item;
+    final client = widget.client;
+    if (!_needsFull || item == null || client == null) return;
+    _timer = Timer(Duration(milliseconds: TvTokens.motion.heroDebounce), () async {
+      final full = await _cache.putIfAbsent(item.globalKey, () async {
+        try {
+          return await client.fetchItem(item.id);
+        } catch (_) {
+          return null;
+        }
+      });
+      if (!mounted || generation != _generation) return;
+      setState(() => _ratingsItem = full);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = TvTheme.of(context);
     final px = theme.px;
-    final media = item;
+    final media = widget.item;
+    final compact = widget.compact;
+    final client = widget.client;
+    final hideSpoilers = widget.hideSpoilers;
     final episode = media?.kind == MediaKind.episode;
     final show = media?.kind == MediaKind.show;
     final hidden = media != null && hideSpoilers && media.shouldHideSpoiler;
@@ -125,7 +200,8 @@ class TvHero extends StatelessWidget {
                         ),
                       ],
                       SizedBox(height: px(14)),
-                      if (!music) TvRatings(item: media),
+                      if (!music && (!_needsFull || _ratingsItem != null))
+                        TvRatings(item: _needsFull ? _ratingsItem! : media),
                       if (description?.isNotEmpty ?? false) ...[
                         SizedBox(height: px(compact ? 14 : 20)),
                         Text(

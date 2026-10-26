@@ -531,6 +531,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
                   return Padding(
                     padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
                     child: TvHero(
+                      loadFullRatings: true,
                       item: effective,
                       compact: compact,
                       hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
