@@ -1,3 +1,4 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,7 @@ import '../components/tv_tabs.dart';
 import '../tv_card_registry.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
+import '../tv_tokens.dart';
 import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import 'tv_show_actions.dart';
@@ -598,7 +600,14 @@ class _TvShowScreenState extends State<TvShowScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: EdgeInsets.only(left: px(200), top: px(72), right: px(96)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                      top: px(72),
+                      right: px(96),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -695,7 +704,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
                     )
                   else if (!_ready)
                     Padding(
-                      padding: EdgeInsets.only(left: px(200)),
+                      padding: EdgeInsets.only(
+                        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                          0.0,
+                          double.infinity,
+                        ),
+                      ),
                       child: _skeleton ? const TvHeroSkeleton() : SizedBox(height: px(600)),
                     )
                   else
@@ -720,7 +734,14 @@ class _TvShowScreenState extends State<TvShowScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: px(200), top: px(32), right: px(96)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+            top: px(32),
+            right: px(96),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -915,7 +936,13 @@ class _TvShowScreenState extends State<TvShowScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: px(200), top: px(32)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+            top: px(32),
+          ),
           child: SizedBox(
             height: px(340),
             width: px(900),
@@ -982,7 +1009,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
         ),
         if (c.pageErrors.containsKey(key))
           Padding(
-            padding: EdgeInsets.only(left: px(200)),
+            padding: EdgeInsets.only(
+              left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
             child: TvButton(
               label: 'Retry episodes',
               onSelect: () async {

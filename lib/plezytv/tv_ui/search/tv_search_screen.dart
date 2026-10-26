@@ -1182,7 +1182,12 @@ class TvSearchScreenState extends State<TvSearchScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: px(size.panelX)),
+            SizedBox(
+              width: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
             SizedBox(
               width: px(size.panelW),
               child: Column(

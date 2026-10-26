@@ -499,7 +499,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
         for (final row in _model.rows) ...[_rail(row), SizedBox(height: px(TvTokens.space.rowGap))],
         if (_model.hubsState == TvHomePartState.loading && !_model.rows.any((r) => r.kind == TvHomeRowKind.hub))
           Padding(
-            padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+            padding: EdgeInsets.only(
+              left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
             child: const TvRowSkeleton(),
           ),
       ];
@@ -529,7 +534,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 builder: (context, _) {
                   final effective = item == null ? null : context.withFreshWatchState(item);
                   return Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: TvHero(
                       loadFullRatings: true,
                       item: effective,
@@ -554,16 +564,31 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: const TvHeroSkeleton(),
                   ),
                   Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: const TvRowSkeleton(episode: true),
                   ),
                   SizedBox(height: px(TvTokens.space.rowGap)),
                   Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: const TvRowSkeleton(),
                   ),
                 ],

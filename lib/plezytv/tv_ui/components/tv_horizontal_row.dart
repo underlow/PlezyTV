@@ -1,3 +1,4 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -208,7 +209,11 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
   @override
   Widget build(BuildContext context) {
     final theme = TvTheme.of(context), px = TvTheme.of(context).px;
-    final left = px(widget.contentLeft ?? TvTokens.space.contentLeft);
+    final left =
+        (widget.contentLeft == null
+                ? px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)
+                : px(widget.contentLeft!))
+            .clamp(0.0, double.infinity);
     _extent = px(widget.cardWidth + TvTokens.space.cardGap);
     return FocusScope(
       node: _scope,
@@ -236,9 +241,9 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                 ],
               ),
             ),
-            SizedBox(height: px(16)),
+            SizedBox(height: px(TvTokens.space.rowHeaderToCards)),
             SizedBox(
-              height: px(widget.cardHeight + 24),
+              height: px(widget.cardHeight + TvTokens.space.cardFocusReserve),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   _viewport = constraints.maxWidth - left;
@@ -248,7 +253,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                     physics: const NeverScrollableScrollPhysics(),
                     clipBehavior: Clip.none,
                     scrollCacheExtent: ScrollCacheExtent.pixels(_viewport),
-                    padding: EdgeInsets.only(left: left, top: px(24), right: _viewport),
+                    padding: EdgeInsets.only(left: left, top: px(TvTokens.space.cardFocusReserve), right: _viewport),
                     itemExtent: _extent,
                     itemCount: widget.itemCount,
                     findChildIndexCallback: widget.itemKey == null

@@ -39,9 +39,9 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
-    expect(paintedScale(tester), allOf(greaterThan(1), lessThan(1.08)));
+    expect(paintedScale(tester), allOf(greaterThan(1), lessThan(1.05)));
     await tester.pump(const Duration(milliseconds: 60));
-    expect(paintedScale(tester), closeTo(1.08, 0.00001));
+    expect(paintedScale(tester), closeTo(1.05, 0.00001));
     expect(tester.getRect(surface), rect);
     expect(tester.getRect(find.byKey(const ValueKey('neighbor'))), neighbor);
     final ring = tester
@@ -123,15 +123,15 @@ void main() {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
-    expect(paintedScale(tester), allOf(greaterThan(1.08 * .97), lessThan(1.08)));
+    expect(paintedScale(tester), allOf(greaterThan(1.05 * .97), lessThan(1.05)));
     await tester.pump(const Duration(milliseconds: 40));
     expect(state!.pressed, isTrue);
-    expect(paintedScale(tester), closeTo(1.08 * .97, .00001));
+    expect(paintedScale(tester), closeTo(1.05 * .97, .00001));
     expect(selected, 0);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
-    expect(paintedScale(tester), closeTo(1.08, .00001));
+    expect(paintedScale(tester), closeTo(1.05, .00001));
     expect(selected, 1);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
     await tester.pump(const Duration(milliseconds: 501));
