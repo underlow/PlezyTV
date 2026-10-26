@@ -470,6 +470,41 @@ void main() {
       });
     });
 
+    test('an item removed before membership loads stays removed when stale data loads (P1, A34)', () {
+      fakeAsync((async) {
+        final src = _FakeSource(s, three());
+        final c = make([src]);
+        c.load();
+        async.flushMicrotasks();
+        c.itemRemoved(src.items[1]);
+        // Membership read before the server applied the delete still lists T2.
+        src.loadSnapshot();
+        expect(_titles(c), ['T1', 'T3']);
+        src.changes.notify();
+        expect(_titles(c), ['T1', 'T3']);
+      });
+    });
+
+    test('card removal, restore notifying before itemRemoved order also restores (N2)', () {
+      fakeAsync((async) {
+        final src = _FakeSource(s, [...three(), _item(s, 4)]);
+        final c = make([src]);
+        c.load();
+        async.flushMicrotasks();
+        src.loadSnapshot();
+        final t3 = src.items[2];
+        c.itemRemoved(t3);
+        src.members!.remove(t3.entryIdentityKey);
+        src.changes.notify();
+        expect(_titles(c), ['T1', 'T2', 'T4']);
+        src.members!.add(t3.entryIdentityKey);
+        src.changes.notify();
+        expect(_titles(c), ['T1', 'T2', 'T3', 'T4']);
+        c.itemRestored(t3);
+        expect(_titles(c), ['T1', 'T2', 'T3', 'T4']);
+      });
+    });
+
     test('a lagging re-read does not resurrect an item removed via the snapshot flip (N2)', () {
       fakeAsync((async) {
         final src = _FakeSource(s, three());

@@ -212,7 +212,11 @@ found items changes (`foundRevision`). Membership notifications drop only items
 whose `isOnWatchlist` flipped from true to false, since the membership snapshot
 may not know items added on another device; such a drop is remembered like a card
 removal (original place for «Вернуть в список», not resurrected by a lagging
-re-read). A first snapshot that misses a listed item triggers one re-read.
+re-read). A removed item comes back either through the card's `itemRestored` or
+when membership data that has already read it as not listed reads it as listed
+again; a `true` reading never preceded by `false` for that item (for example
+membership finishing its first load after a card removal) may predate the
+removal and does not restore it. A first snapshot that misses a listed item triggers one re-read.
 
 Two upstream edits support it: `CatalogLibraryMatcher.match` takes
 `refreshIncomplete` (re-queries servers that failed, were cancelled or not

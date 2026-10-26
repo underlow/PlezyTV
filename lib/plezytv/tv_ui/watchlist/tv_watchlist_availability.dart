@@ -137,7 +137,7 @@ class TvWatchlistAvailability extends ChangeNotifier {
       final existing = previous[key];
       if (existing != null) {
         _queue[key] = _Job(key, item, existing.refresh);
-      } else if (!_known.containsKey(key) && !_inFlight.containsKey(key)) {
+      } else if (!_known.containsKey(key) && !_inFlight.containsKey(key) && !_cardChecks.containsKey(key)) {
         _queue[key] = _Job(key, item, false);
       }
     }

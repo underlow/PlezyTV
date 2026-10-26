@@ -368,6 +368,26 @@ void main() {
     expect(shown.copies, unorderedEquals([a, b]));
   });
 
+  test('setItems during a card check of a never-checked item does not start a duplicate (P3)', () async {
+    final item = _item(1);
+    final enriched = CatalogItem(
+      source: CatalogSourceId.trakt,
+      kind: MediaKind.movie,
+      title: 'Movie 1',
+      ids: const CatalogItemIds(trakt: 1, tmdb: 99),
+    );
+    final b = _copy('b1', 'b');
+    final future = availability.check(item, enriched: enriched);
+    final before = matcher.calls.length;
+    availability.setItems([item]);
+    await pumpEventQueue();
+    expect(matcher.calls, hasLength(before), reason: 'no queued duplicate');
+    matcher.callFor(item).completer.complete(_complete);
+    matcher.callFor(enriched).completer.complete(_found([b]));
+    await future;
+    expect(availability.statusOf(item), isA<TvAvailabilityFound>());
+  });
+
   test('check returns a known result; retry goes with refreshIncomplete', () async {
     final item = _item(1);
     availability.setItems([item]);
