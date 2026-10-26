@@ -156,6 +156,10 @@ class _OfflineWatch extends ChangeNotifier implements OfflineWatchSyncService {
 /// Players and detail routes are recorded and closed before they build.
 class _Music extends ChangeNotifier implements MusicPlaybackService {
   @override
+  MusicPlaybackStatus get status => MusicPlaybackStatus.paused;
+  @override
+  bool get isPlaying => false;
+  @override
   MediaItem? get currentTrack => testMediaItem(id: 'track', kind: MediaKind.track);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -663,20 +667,24 @@ void main() {
     expect(history.values['a'], ['дюна', 'тьма']);
   });
 
+  testWidgets('S17 C4: paused music session suppresses result Play', (tester) async {
+    search.respond = (_) => answer(items: movies(1));
+    final observer = _Routes();
+    await pump(tester, client: _ActionClient(), observers: [observer], music: _Music());
+    await results(tester, 'movie');
+    await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focusedId(tester), 'movie0');
+    for (final key in [LogicalKeyboardKey.mediaPlay, LogicalKeyboardKey.mediaPlayPause]) {
+      await press(tester, key);
+      expect(focusedId(tester), 'movie0');
+    }
+    expect(observer.players, isEmpty);
+    expect(observer.pages, isEmpty);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(observer.pages.length, 1);
+  });
   for (final details in [false, true]) {
-    testWidgets('S17 C4: search music session suppresses result Play details=$details', (tester) async {
-      search.respond = (_) => answer(items: movies(1));
-      final observer = _Routes();
-      await pump(tester, client: _ActionClient(), observers: [observer], music: _Music());
-      await results(tester, 'movie');
-      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
-      await press(tester, LogicalKeyboardKey.arrowDown);
-      await press(tester, LogicalKeyboardKey.mediaPlayPause);
-      expect(observer.players, isEmpty);
-      expect(observer.pages, isEmpty);
-      await press(tester, LogicalKeyboardKey.enter);
-      expect(observer.pages.length, 1);
-    });
     testWidgets('A20: episode OK ${details ? "opens details" : "plays"}; Play/Pause plays', (tester) async {
       final settings = await SettingsService.getInstance();
       if (details) await settings.write(SettingsService.episodeAction, EpisodeAction.details);
