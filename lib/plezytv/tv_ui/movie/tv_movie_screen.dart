@@ -26,9 +26,9 @@ import '../components/tv_button.dart';
 import '../components/tv_cards.dart';
 import '../components/tv_chip.dart';
 import '../components/tv_horizontal_row.dart';
+import '../components/tv_person_card.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_skeletons.dart';
-import '../tv_focusable.dart';
 import '../tv_card_registry.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
@@ -642,45 +642,26 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) {
                 final role = roles[i];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TvFocusable(
-                      focusNode: node,
-                      semanticLabel: role.tag,
-                      onSelect: role.id == null || movie.serverId == null
-                          ? null
-                          : () => unawaited(
-                              navigateToPersonMedia(
-                                context,
-                                personId: role.id!,
-                                name: role.tag,
-                                thumbPath: role.thumbPath,
-                                characterName: role.role,
-                                serverId: movie.serverId!,
-                                serverName: movie.serverName,
-                                backend: movie.backend,
-                              ),
-                            ),
-                      builder: (_, _) => ClipOval(
-                        child: OptimizedMediaImage(
-                          client: c.client,
-                          imagePath: role.thumbPath,
-                          width: px(200),
-                          height: px(200),
-                          fallbackIcon: Icons.person,
+                return TvPersonCard(
+                  client: c.client,
+                  imagePath: role.thumbPath,
+                  name: role.tag,
+                  caption: role.role,
+                  focusNode: node,
+                  onSelect: role.id == null || movie.serverId == null
+                      ? null
+                      : () => unawaited(
+                          navigateToPersonMedia(
+                            context,
+                            personId: role.id!,
+                            name: role.tag,
+                            thumbPath: role.thumbPath,
+                            characterName: role.role,
+                            serverId: movie.serverId!,
+                            serverName: movie.serverName,
+                            backend: movie.backend,
+                          ),
                         ),
-                      ),
-                    ),
-                    SizedBox(height: px(20)),
-                    Text(role.tag, maxLines: 1, overflow: TextOverflow.ellipsis, style: TvTheme.of(context).body),
-                    Text(
-                      role.role ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TvTheme.of(context).caption,
-                    ),
-                  ],
                 );
               },
             );
