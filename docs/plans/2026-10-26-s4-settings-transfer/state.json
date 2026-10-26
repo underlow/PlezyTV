@@ -5,6 +5,12 @@
   "base_commit": "004e85b2dc3f06e1879807449d2b29294c561e8d",
   "profile": "small",
   "codex": [
-    "develop"
-  ]
+    "develop",
+    "code-review"
+  ],
+  "development_agent": {
+    "platform": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "low"
+  }
 }

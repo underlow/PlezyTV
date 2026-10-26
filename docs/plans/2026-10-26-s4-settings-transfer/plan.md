@@ -112,3 +112,48 @@ Checkout: `~/Projects/things`, ветка `main`; там есть чужое и�
 - Приёмка A1–A7 на телеке через adb, если телеки доступны (`devices.md` скилла `tv`); заодно проверить открытый
   вопрос R2 про `adb push` на Android 9 и 11. Что не удалось прогнать — записать в итог как непроверенное.
 - Итог в этот план, статус S4 в проекте.
+
+## 4. Пересмотр после приёмки на Xiaomi (2026-10-26)
+
+Готово и остаётся в силе: T1 (`f4613af31`), T2 (`6081e3a33`), исправления `60be5e1dd`; things `a9c9702`, `f5205ac`,
+`738f3cf`. Приёмка на Xiaomi (Android 11): ссылка экспорта пишет файл (`Settings export: 11 keys, …`), но adb не может
+ни читать, ни писать `/sdcard/Android/data/com.underlow.plezytv/files/` (`Permission denied`). Требования R2, R4, R6,
+A1, A2, A8 пересмотрены: канал adb — провайдер. Файл и его путь внутри приложения
+(`getExternalStorageDirectory()` в Dart = `Context.getExternalFilesDir(null)` в Android) не меняются.
+
+Решение 5. **Провайдер файла настроек.** Свой Kotlin `ContentProvider` рядом с кодом форка
+(`android/app/src/main/kotlin/com/edde746/plezy/plezytv/`), authority `${applicationId}.settings`, `exported="true"`,
+без `grantUriPermissions`. Один путь `settings.json` → `getExternalFilesDir(null)/plezytv-settings.json`. `openFile`
+с режимом `r` — чтение (файла нет → `FileNotFoundException`), `w`/`wt` — запись с усечением; другие режимы, пути и
+все `query/insert/update/delete` — отказ. Вызов не от uid shell (2000) или root (0) — `SecurityException` до любого
+доступа к файлу. Образец провайдера в коде — `watchnext/SystemShelfArtworkProvider.kt`.
+
+### T4. Провайдер и документация
+
+Вход: решение 5, R2, R4, A8. Checkout: `/Users/underlow/Projects/PlezyTV`, ветка `flow/s4-settings-transfer`.
+
+- Провайдер и запись в манифесте; `docs/plezytv/dev-tools.md` — команды `content read`/`content write` вместо
+  `adb pull`/`adb push` и путь файла только как справка.
+- Сохранить: Dart-сервис T1, ссылки T2, раздел на TV.
+- Тесты (Robolectric, по образцу `android/app/src/test/kotlin/com/edde746/plezy/`): чтение и запись от shell-uid
+  работают и попадают в тот же файл, что пишет Dart; чужой uid — отказ и на чтение, и на запись, файл не изменён;
+  неизвестный путь и режим — отказ; чтение отсутствующего файла — `FileNotFoundException`.
+- Проверки: `flutter analyze`, полный `flutter test`, Android unit-тесты, сборка APK; в собранном манифесте провайдер
+  с authority `com.underlow.plezytv.settings`.
+
+### T5. Скрипты скилла `tv` на провайдере
+
+Вход: решение 5, R6. Не зависит от кода T4, только от контракта. Checkout: `~/Projects/things`, `main`, только
+`.claude/skills/tv/` (чужой `libra-visibility/state.db` не трогать).
+
+- `snapshot.sh`: свежесть экспорта — по строке `Settings export: …` в логе `PlezyTV` после ссылки (каталог приложения
+  adb не читает, `stat` недоступен), затем `content read` в папку снимка; неудача — предупреждение, снимок не падает.
+- `deploy-settings.sh`: `content write` вместо push; если на устройстве нет `content write` (Android 9) — `adb push`
+  в путь приложения как запасной вариант; дальше как сейчас (ссылка импорта, ожидание итоговой строки).
+- `SKILL.md` и мок-тест `test-settings-scripts.py` под новый канал, включая запасной вариант и сбой `content read`.
+- Проверки: `bash -n`, мок-тест.
+
+### После T4, T5
+
+Ревью изменений T4/T5; повторная приёмка на Xiaomi: A1, A2, A3, A4, A5, A7 (на одном телеке), A6 — если есть файл с
+телефона.
