@@ -1,3 +1,4 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -87,7 +88,8 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   String? _launchState;
 
   bool get _isTop => ModalRoute.of(context)?.isCurrent != false;
-  double _collapseAt = 300, _barHeight = 150;
+  double _rowTopGap = TvTokens.space.cardFocusReserve.toDouble();
+  double _collapseAt = TvTokens.detail.collapseAt.toDouble(), _barHeight = TvTokens.detail.compactH.toDouble();
 
   @override
   void initState() {
@@ -172,7 +174,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   }
 
   void _scrolled() {
-    final collapsed = _page.hasClients && _page.offset >= _collapseAt;
+    final first = _rowOrder.firstOrNull?.currentContext?.findRenderObject();
+    final threshold = first == null
+        ? _collapseAt
+        : math.min(
+            _collapseAt,
+            RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
+          );
+    final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
@@ -205,7 +214,12 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           if (!mounted) return;
           final render = _rowKey('reviews').currentContext?.findRenderObject();
           if (_page.hasClients && render is RenderBox) {
-            _page.jumpTo((offset + render.size.height).clamp(0.0, _page.position.maxScrollExtent));
+            _page.jumpTo(
+              (offset + render.size.height + TvTheme.of(context).px(TvTokens.space.sectionGap)).clamp(
+                0.0,
+                _page.position.maxScrollExtent,
+              ),
+            );
           }
           // Adjacent rows restore their existing focus in post-frame callbacks.
           // Do not let those callbacks apply the normal reveal rule here.
@@ -321,20 +335,15 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     }
   }
 
-  /// Keeps the focused row fully visible under the compact title bar; any row
-  /// focus scrolls the header away, the last row also reveals the tech block.
+  /// Align every focused row below the compact bar, including the last row.
   void _revealRow(GlobalKey<TvHorizontalRowState> key) {
     if (_preservingReviewInsertion || _reviewPanelOpen) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _preservingReviewInsertion || _reviewPanelOpen || !_page.hasClients || _rowOrder.isEmpty) return;
       final render = key.currentContext?.findRenderObject();
-      final first = _rowOrder.first.currentContext?.findRenderObject();
-      if (render == null || first == null) return;
+      if (render == null) return;
       final viewport = RenderAbstractViewport.of(render);
-      final floor = viewport.getOffsetToReveal(first, 0).offset - _barHeight;
-      final start = viewport.getOffsetToReveal(render, 0).offset - _barHeight;
-      final end = key == _rowOrder.last ? _page.position.maxScrollExtent : viewport.getOffsetToReveal(render, 1).offset;
-      final target = math.max(_page.offset.clamp(math.min(start, end), start).toDouble(), floor);
+      final target = viewport.getOffsetToReveal(render, 0).offset - _barHeight - _rowTopGap;
       _scrollTo(target);
     });
   }
@@ -403,8 +412,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
 
   Widget _build(BuildContext context) {
     final theme = TvTheme.of(context), px = theme.px;
-    _collapseAt = px(300);
-    _barHeight = px(150);
+    _collapseAt = px(TvTokens.detail.collapseAt);
+    _barHeight = px(TvTokens.detail.compactH);
+    _rowTopGap = px(TvTokens.space.cardFocusReserve);
     final c = _controller;
     final movie = c?.movie ?? widget.metadata;
     return PopScope<bool>(
@@ -417,6 +427,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           canRequestFocus: false,
           onKeyEvent: (_, event) => _exitable ? KeyEventResult.ignored : handleBackKeyAction(event, _pop),
           child: TvTintedBackground(
+            scrollController: _page,
             source: TvArtworkSource(item: movie, client: c?.client),
             child: _connectionError != null || _unavailable
                 ? _message(context, _unavailable ? TvStrings.movieUnavailable : TvStrings.noConnection)
@@ -435,16 +446,28 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Padding(
-                                    padding: EdgeInsets.only(left: px(188), right: px(96)),
+                                    padding: EdgeInsets.only(
+                                      left:
+                                          (px(TvTokens.space.contentLeft) -
+                                                  MainScreenFocusScope.foregroundLeftOf(context))
+                                              .clamp(0.0, double.infinity),
+                                      right: px(96),
+                                    ),
                                     child: FocusScope(node: _actionScope, child: _actions(context, c)),
                                   ),
-                                  SizedBox(height: px(80)),
+                                  SizedBox(height: px(TvTokens.space.sectionGap)),
                                   ..._lowerRows(context, c),
                                 ],
                               ),
                             ),
                             _techInfo(context, c),
-                            SizedBox(height: px(54)),
+                            SizedBox(
+                              height: _rowOrder.isEmpty
+                                  ? px(54)
+                                  : MediaQuery.sizeOf(context).height -
+                                        _barHeight -
+                                        px(TvTokens.space.cardFocusReserve),
+                            ),
                           ],
                         ),
                       ),
@@ -460,7 +483,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   Widget _message(BuildContext context, String text) {
     final theme = TvTheme.of(context), px = theme.px;
     return Padding(
-      padding: EdgeInsets.only(left: px(200), top: px(200), right: px(96)),
+      padding: EdgeInsets.only(
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: px(200),
+        right: px(96),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -491,15 +521,16 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
       top: 0,
       height: _barHeight,
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xF20E0F12), Color(0x000E0F12)],
-          ),
-        ),
+        decoration: BoxDecoration(color: TvTokens.color.bg.base),
         child: Padding(
-          padding: EdgeInsets.only(left: px(200), top: px(48), right: px(96)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+            top: px(48),
+            right: px(96),
+          ),
           child: Align(
             alignment: Alignment.topLeft,
             child: Text.rich(
@@ -539,7 +570,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
         ClearLogoImage(
           client: c.client,
           logoPath: movie.clearLogoPath,
-          fallbackWidth: px(900),
+          fallbackWidth: px(TvTokens.detail.textMaxW),
           width: px(560),
           height: px(120),
           alignment: Alignment.centerLeft,
@@ -547,42 +578,30 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               Text(movie.displayTitle, style: theme.display, maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ),
+      if (meta.isNotEmpty || genres.isNotEmpty)
+        (
+          TvTokens.detail.metadataGap.toDouble(),
+          Text(
+            [if (meta.isNotEmpty) meta, ...genres].join(' · '),
+            key: const ValueKey('movie-meta'),
+            style: theme.body,
+          ),
+        ),
+      if (director != null) (TvTokens.detail.metadataGap.toDouble(), Text(director, style: theme.body)),
       if (edition != null && edition.isNotEmpty)
         (
-          8,
+          TvTokens.detail.metadataGap.toDouble(),
           Text(
             edition.toUpperCase(),
             key: const ValueKey('movie-edition'),
             style: theme.title.copyWith(color: TvTokens.color.text.secondary, letterSpacing: px(3)),
           ),
         ),
-      if (meta.isNotEmpty) (24, Text(meta, key: const ValueKey('movie-meta'), style: theme.body)),
-      if (genres.isNotEmpty || director != null)
-        (
-          20,
-          SingleChildScrollView(
-            key: const ValueKey('movie-genres'),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final genre in genres)
-                  Padding(
-                    padding: EdgeInsets.only(right: px(12)),
-                    child: TvChip.genre(label: genre),
-                  ),
-                if (director != null)
-                  Padding(
-                    padding: EdgeInsets.only(left: px(8)),
-                    child: Text(director, style: theme.body),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      if (ratings.isNotEmpty) (20, TvRatings(item: movie.copyWith(ratings: ratings))),
+      if (ratings.isNotEmpty)
+        (TvTokens.detail.metadataGap.toDouble(), TvRatings(item: movie.copyWith(ratings: ratings))),
       if (chips.isNotEmpty)
         (
-          20,
+          TvTokens.detail.summaryGap.toDouble(),
           Wrap(
             key: const ValueKey('movie-chips'),
             spacing: px(16),
@@ -592,9 +611,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
         ),
       if (summary != null && summary.isNotEmpty)
         (
-          24,
+          TvTokens.detail.summaryGap.toDouble(),
           SizedBox(
-            width: px(900),
+            width: px(TvTokens.detail.textMaxW),
             child: Text(
               summary,
               key: const ValueKey('movie-summary'),
@@ -606,12 +625,23 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
         ),
     ];
     return Padding(
-      padding: EdgeInsets.only(left: px(200), top: px(72), right: px(96), bottom: px(48)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
-        ],
+      padding: EdgeInsets.only(
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: px(TvTokens.space.safeY),
+        right: px(96),
+        bottom: px(TvTokens.detail.actionsGap),
+      ),
+      child: SizedBox(
+        width: px(TvTokens.detail.textMaxW),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
+          ],
+        ),
       ),
     );
   }
@@ -658,7 +688,12 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
       _rowOrder = [];
       return [
         Padding(
-          padding: EdgeInsets.only(left: px(200)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+          ),
           child: const TvRowSkeleton(key: ValueKey('movie-rows-skeleton')),
         ),
       ];
@@ -677,7 +712,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               title: t.discover.cast,
               itemCount: roles.length,
               cardWidth: 200,
-              cardHeight: 290,
+              cardHeight: tvCardHeight(context, TvPersonCard.photoSize),
               itemKey: (i) => '${roles[i].id}/${roles[i].tag}',
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) {
@@ -730,7 +765,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               title: t.discover.extras,
               itemCount: c.extras.length,
               cardWidth: 400,
-              cardHeight: 315,
+              cardHeight: tvCardHeight(context, TvTokens.size.episode.h),
               itemKey: (i) => c.extras[i].globalKey,
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) => TvEpisode(
@@ -751,7 +786,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               title: hub.title.isEmpty ? t.discover.moreLikeThis : hub.title,
               itemCount: hub.items.length,
               cardWidth: 216,
-              cardHeight: 414,
+              cardHeight: tvCardHeight(context, TvTokens.size.poster.h),
               itemKey: (i) => hub.items[i].globalKey,
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) {
@@ -788,7 +823,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
       if (c.extras.isNotEmpty) _rowKey('extras'),
       for (final hub in hubs) _rowKey('related/${hub.id}'),
     ];
-    return rows;
+    return [
+      for (var i = 0; i < rows.length; i++) ...[if (i > 0) SizedBox(height: px(TvTokens.space.sectionGap)), rows[i]],
+    ];
   }
 
   Widget _techInfo(BuildContext context, TvMovieController c) {
@@ -797,7 +834,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final theme = TvTheme.of(context), px = theme.px;
     return Padding(
       key: const ValueKey('movie-tech-info'),
-      padding: EdgeInsets.only(left: px(200), top: px(8), right: px(96)),
+      padding: EdgeInsets.only(
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: _rowOrder.isEmpty ? 0 : px(TvTokens.space.sectionGap),
+        right: px(96),
+      ),
       child: Wrap(
         spacing: px(64),
         runSpacing: px(24),

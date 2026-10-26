@@ -1,3 +1,4 @@
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -264,11 +265,20 @@ void main() {
     );
     await mount(tester, fixture(movie: movie));
     expect(find.text('PART TWO'), findsOneWidget);
-    expect(find.text('2024 · ${formatDurationTextual(9960000)} · 12+'), findsOneWidget);
-    expect(find.widgetWithText(TvChip, 'Drama'), findsOneWidget);
+    expect(find.text('2024 · ${formatDurationTextual(9960000)} · 12+ · Drama · Action'), findsOneWidget);
+    expect(find.widgetWithText(TvChip, 'Drama'), findsNothing);
     expect(find.text('Director: Denis'), findsOneWidget);
     expect(find.byType(TvRatings), findsOneWidget);
     expect(find.text('Story'), findsOneWidget);
+    final meta = tester.getRect(find.byKey(const ValueKey('movie-meta')));
+    final director = tester.getRect(find.text('Director: Denis'));
+    final edition = tester.getRect(find.byKey(const ValueKey('movie-edition')));
+    final ratings = tester.getRect(find.byType(TvRatings));
+    expect(meta.width, lessThanOrEqualTo(900));
+    expect(director.top, greaterThan(meta.bottom));
+    expect(edition.top, greaterThan(director.bottom));
+    expect(ratings.top, greaterThan(edition.bottom));
+    expect(tester.getRect(find.byKey(const ValueKey('movie-summary'))).width, lessThanOrEqualTo(900));
   });
 
   testWidgets('A19 spoiler rule follows Plezy shouldHideSpoiler (movies stay visible)', (tester) async {
@@ -511,6 +521,15 @@ void main() {
     expect(cast.focusNode!.hasFocus, true);
     expect(scrollable.position.pixels, greaterThan(midway), reason: 'scroll is animated');
     expect(find.byKey(const ValueKey('movie-compact-header')), findsOneWidget);
+    final headerBox = tester.widget<DecoratedBox>(
+      find
+          .descendant(of: find.byKey(const ValueKey('movie-compact-header')), matching: find.byType(DecoratedBox))
+          .first,
+    );
+    final decoration = headerBox.decoration as BoxDecoration;
+    expect(decoration.color, TvTokens.color.bg.base);
+    expect(decoration.gradient, isNull);
+
     final box = cast.focusNode!.context!.findRenderObject()! as RenderBox;
     expect(box.localToGlobal(Offset(0, box.size.height)).dy, lessThanOrEqualTo(1080));
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);

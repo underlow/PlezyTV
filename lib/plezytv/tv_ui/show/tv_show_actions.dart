@@ -10,7 +10,6 @@ import '../../../models/download_models.dart';
 import '../../../providers/download_provider.dart';
 import '../../../screens/downloads/downloads_screen.dart';
 import '../../../services/catalog/library_watchlist_candidates.dart';
-import '../../../services/device_performance.dart';
 import '../../../services/media_list_playback_launcher.dart';
 import '../../../services/watch_actions.dart';
 import '../../../utils/dialogs.dart';
@@ -22,7 +21,7 @@ import '../../../widgets/media_context_menu.dart';
 import '../../../widgets/watchlist_source_chooser.dart';
 import '../components/tv_button.dart';
 import '../tv_strings.dart';
-import '../tv_theme.dart';
+import '../components/tv_action_row.dart';
 import 'tv_show_controller.dart';
 
 /// Public Plezy actions; private detail-screen handlers are intentionally not copied.
@@ -211,10 +210,7 @@ class _TvShowActionsState extends State<TvShowActions> {
     Widget action(IconData icon, String caption, Future<void> Function() run, {bool disabled = false}) =>
         TvIconButton(icon: icon, caption: caption, disabled: _busy || disabled, onSelect: () => unawaited(_run(run)));
     final buttons = <Widget>[
-      Padding(
-        padding: EdgeInsets.only(bottom: TvTheme.of(context).px(34)),
-        child: widget.primary,
-      ),
+      widget.primary,
       if (c.trailer != null) action(Icons.theaters, t.tooltips.playTrailer, () => widget.playExtra(c.trailer!)),
       action(Icons.shuffle, t.tooltips.shufflePlay, () async {
         await MediaListPlaybackLauncher.forItem(context, c.show).launchShuffledShow(metadata: c.show);
@@ -250,37 +246,6 @@ class _TvShowActionsState extends State<TvShowActions> {
         }),
       ),
     ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        key: const ValueKey('show-actions'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) SizedBox(width: TvTheme.of(context).px(24)),
-            Focus(
-              canRequestFocus: false,
-              onFocusChange: (inside) {
-                if (!inside) return;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  final anchor = FocusManager.instance.primaryFocus?.context;
-                  if (anchor != null) {
-                    unawaited(
-                      Scrollable.ensureVisible(
-                        anchor,
-                        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-                        duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : 150),
-                      ),
-                    );
-                  }
-                });
-              },
-              child: buttons[i],
-            ),
-          ],
-        ],
-      ),
-    );
+    return TvActionRow(rowKey: const ValueKey('show-actions'), buttons: buttons);
   }
 }

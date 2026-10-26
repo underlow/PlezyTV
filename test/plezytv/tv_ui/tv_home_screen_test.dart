@@ -398,6 +398,49 @@ void main() {
     });
   }
 
+  testWidgets('S24 R4/R11: Home episode labels and second poster row are visible', (tester) async {
+    provider.onDeck = [
+      testMediaItem(
+        id: 'ep',
+        kind: MediaKind.episode,
+        title: 'Part III',
+        grandparentTitle: 'Example series',
+        parentIndex: 1,
+        index: 3,
+        durationMs: 3600000,
+        viewOffsetMs: 1200000,
+      ),
+    ];
+    provider.hubs = [hub('movies')];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    final card = find.byType(TvEpisode).first;
+    expect(find.descendant(of: card, matching: find.text('Example series')), findsOneWidget);
+    expect(find.descendant(of: card, matching: find.text('S1 E3 · Part III')), findsOneWidget);
+    expect(tester.getBottomRight(card).dy, lessThan(1080));
+    final second = find.byType(TvHorizontalRow).at(1);
+    expect(tester.getTopLeft(second).dy, lessThan(1080));
+    final poster = find.descendant(of: second, matching: find.byType(TvPoster)).first;
+    final top = tester.getTopLeft(poster).dy;
+    expect(top, lessThan(1080));
+    expect(1080 - top, greaterThan(324 / 4));
+    expect(hero(tester).compact, isFalse);
+    // Episode hubs also use the series/episode labels in poster form.
+    final episode = provider.onDeck.single;
+    provider.onDeck = [];
+    provider.hubs = [
+      MediaHub(id: 'episodes', title: 'Episodes', type: 'episode', items: [episode]),
+      hub('movies'),
+    ];
+    provider.emit();
+    await tester.pumpAndSettle();
+    final firstPoster = find.byType(TvPoster).first;
+    expect(find.descendant(of: firstPoster, matching: find.text('Example series')), findsOneWidget);
+    expect(find.descendant(of: firstPoster, matching: find.text('S1 E3 · Part III')), findsOneWidget);
+    final nextPoster = find.descendant(of: find.byType(TvHorizontalRow).at(1), matching: find.byType(TvPoster)).first;
+    expect(1080 - tester.getTopLeft(nextPoster).dy, greaterThan(324 / 4));
+  });
+
   testWidgets('A1/A2/A3: first card, hero, vertical row memory and compact geometry', (tester) async {
     content();
     await pump(tester);
@@ -414,12 +457,12 @@ void main() {
     expect(hero(tester).item!.id, 'movies4');
     await key(tester, LogicalKeyboardKey.arrowDown);
     expect(hero(tester).compact, isTrue);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 420);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 254);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).compact, isFalse);
     expect(hero(tester).item!.id, 'movies4');
     expect(row(tester, 1).focusedIndex, 4);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 600);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 394);
   });
 
   testWidgets('R1: hide-spoilers preference updates the hero', (tester) async {
@@ -524,7 +567,7 @@ void main() {
     for (var frame = 0; frame < 24; frame++) {
       await tester.pump(const Duration(milliseconds: 16));
       if (frame == 0) {
-        expect(tester.getSize(find.byType(TvHero)).height, inExclusiveRange(420, 600));
+        expect(tester.getSize(find.byType(TvHero)).height, inExclusiveRange(200, 340));
       }
       expect(railBuilds, 0, reason: 'hero animation frame $frame');
       expect(cardBuilds, 0, reason: 'hero animation frame $frame');
@@ -536,11 +579,11 @@ void main() {
     expect(hero(tester).item!.id, 'shows1');
     expect(row(tester, 2).focusInside.value, isTrue);
     expect(row(tester, 2).focusedIndex, 1);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 420);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 254);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).compact, isFalse);
     expect(row(tester, 1).focusInside.value, isTrue);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 600);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 394);
   });
 
   testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
@@ -1098,7 +1141,7 @@ void main() {
         navigator.pop();
         await tester.pumpAndSettle();
         final afterIndex = scenario.hubIndex + (scenario.hadContinue ? 0 : 1);
-        final expectedHeight = afterIndex > 1 ? 420.0 : 600.0;
+        final expectedHeight = afterIndex > 1 ? 254.0 : 394.0;
         expect(row(tester, afterIndex).focusInside.value, isTrue);
         expect(hero(tester).item!.globalKey, target);
         expect(hero(tester).compact, afterIndex > 1);

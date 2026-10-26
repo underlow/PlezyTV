@@ -1,7 +1,16 @@
+import '../../i18n/app_locale_utils.dart';
+import 'package:intl/intl.dart';
+import '../../i18n/strings.g.dart';
 import '../../utils/formatters.dart';
 
 /// Fork-owned English templates for TV components and screens.
 abstract final class TvStrings {
+  static String sortBy(String field) => 'Sort: $field';
+  static String date(String value) {
+    final parsed = DateTime.tryParse(value);
+    return parsed == null ? value : DateFormat('d MMM y', LocaleSettings.currentLocale.intlLocaleName).format(parsed);
+  }
+
   static const transferBackup = 'Backup';
   static const transferExport = 'Export settings';
   static const transferImport = 'Import settings';

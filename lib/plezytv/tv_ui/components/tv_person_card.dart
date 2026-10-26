@@ -61,13 +61,14 @@ class TvPersonCard extends StatelessWidget {
             ),
             kind: TvFocusKind.ring,
             focusedScale: TvTokens.focus.cardScale,
-            alignment: Alignment.center,
+            alignment: Alignment.bottomCenter,
             radius: photoSize / 2,
             builder: photo,
           )
         else
           TvFocusable(
             focusNode: focusNode,
+            scaleAlignment: Alignment.bottomCenter,
             semanticLabel: name,
             onSelect: onSelect,
             radius: photoSize / 2,

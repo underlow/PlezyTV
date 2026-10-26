@@ -133,7 +133,10 @@ void main() {
   }
 
   TvButton button(WidgetTester tester, String key) => tester.widget<TvButton>(find.byKey(ValueKey(key)));
-  bool focused(WidgetTester tester, String key) => button(tester, key).focusNode!.hasFocus;
+  bool focused(WidgetTester tester, String key) {
+    final widget = tester.widget(find.byKey(ValueKey(key)));
+    return (widget is TvButton ? widget.focusNode : (widget as TvIconButton).focusNode)!.hasFocus;
+  }
 
   Future<void> answer(WidgetTester tester, LibraryLookupResult result) async {
     matcher.calls.last.completer.complete(result);
@@ -166,13 +169,16 @@ void main() {
 
     expect(source.removeCalls, 1);
     expect(removed, [item]);
-    expect(button(tester, 'catalog-watchlist').label, 'Add to Watchlist');
+    expect(tester.widget<TvIconButton>(find.byKey(const ValueKey('catalog-watchlist'))).caption, 'Add to Watchlist');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(source.addCalls, 1);
     expect(restored, [item]);
-    expect(button(tester, 'catalog-watchlist').label, 'Remove from Watchlist');
+    expect(
+      tester.widget<TvIconButton>(find.byKey(const ValueKey('catalog-watchlist'))).caption,
+      'Remove from Watchlist',
+    );
   });
 
   testWidgets('A34: Remove works before membership data has loaded', (tester) async {
@@ -181,7 +187,10 @@ void main() {
     await pumpCard(tester, item: item, source: source);
     await answer(tester, _notFound);
 
-    expect(button(tester, 'catalog-watchlist').label, 'Remove from Watchlist');
+    expect(
+      tester.widget<TvIconButton>(find.byKey(const ValueKey('catalog-watchlist'))).caption,
+      'Remove from Watchlist',
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(removed, [item]);
@@ -199,7 +208,10 @@ void main() {
     expect(source.removeCalls, 1);
     expect(removed, isEmpty);
     expect(find.text('Couldn\'t update watchlist'), findsOneWidget);
-    expect(button(tester, 'catalog-watchlist').label, 'Remove from Watchlist');
+    expect(
+      tester.widget<TvIconButton>(find.byKey(const ValueKey('catalog-watchlist'))).caption,
+      'Remove from Watchlist',
+    );
   });
 
   testWidgets('A9: a running check shows progress; the result does not move buttons or focus', (tester) async {

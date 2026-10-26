@@ -24,6 +24,13 @@ MediaItem item(String id, MediaKind kind, {int? number, int? season, int? watche
   durationMs: 3600000,
 ).copyWith(parentIndex: season, viewCount: watched, viewOffsetMs: offset);
 void main() {
+  test('R9 season title uses raw custom title or localized season number', () {
+    final show = item('Slow Horses', MediaKind.show);
+    final season = item('Slow Horses', MediaKind.season, number: 6);
+    expect(tvShowSeasonTitle(season, show), 'Season 6');
+    expect(tvShowSeasonTitle(season.copyWith(title: '  '), show), 'Season 6');
+    expect(tvShowSeasonTitle(season.copyWith(title: 'Spooks', parentTitle: 'Slow Horses'), show), 'Spooks');
+  });
   tearDown(TvUi.resetForTesting);
   test('primary action prioritizes on-deck and resumes with remaining time', () {
     final episode = item('e3', MediaKind.episode, number: 3, season: 1, offset: 1500000);

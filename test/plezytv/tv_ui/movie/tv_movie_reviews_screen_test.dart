@@ -1,3 +1,4 @@
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -48,6 +49,7 @@ Future<Completer<List<TvMovieReview>>> mountReviews(
 }) async {
   final client = (relatedGate == null ? ReviewPlex() : DelayedRelatedPlex(relatedGate))
     ..show = movieItem().copyWith(
+      studio: 'Studio',
       roles: cast ? [const MediaRole(id: 'actor', tag: 'Actor')] : [],
     );
   if (extras) client.extras = [client.show.copyWith(id: 'trailer', kind: MediaKind.clip)];
@@ -88,6 +90,74 @@ const review = TvMovieReview(
 );
 
 void main() {
+  for (final reviewsFirst in [true, false]) {
+    testWidgets('R3b R2b exact alignment and section gaps with late reviews/related reviewsFirst=$reviewsFirst', (
+      tester,
+    ) async {
+      final related = Completer<List<MediaHub>>();
+      final reviews = await mountReviews(tester, cast: true, extras: true, relatedGate: related);
+      final bar = find.byKey(const ValueKey('movie-compact-header'));
+      Future<void> check() async {
+        final rows = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList();
+        for (var i = 0; i < rows.length; i++) {
+          final row = rows[i];
+          final finder = find.byKey(row.key!);
+          if (i > 0) {
+            expect(
+              tester.getTopLeft(finder).dy - tester.getBottomLeft(find.byKey(rows[i - 1].key!)).dy,
+              closeTo(48, .01),
+              reason: 'gap before ${row.title}',
+            );
+          }
+          (row.key! as GlobalKey<TvHorizontalRowState>).currentState!.requestFocus();
+          await tester.pumpAndSettle();
+          expect(
+            tester.getTopLeft(find.text(row.title)).dy,
+            closeTo(tester.getBottomLeft(bar).dy + 24, .01),
+            reason: row.title,
+          );
+        }
+        final tech = find.byKey(const ValueKey('movie-tech-info'));
+        final content = find.descendant(of: tech, matching: find.byType(Wrap));
+        expect(tester.getTopLeft(content).dy - tester.getBottomLeft(find.byKey(rows.last.key!)).dy, closeTo(48, .01));
+        for (final row in rows.reversed) {
+          (row.key! as GlobalKey<TvHorizontalRowState>).currentState!.requestFocus();
+          await tester.pumpAndSettle();
+          expect(
+            tester.getTopLeft(find.text(row.title)).dy,
+            closeTo(tester.getBottomLeft(bar).dy + 24, .01),
+            reason: row.title,
+          );
+        }
+      }
+
+      await check();
+      void completeRelated() => related.complete([
+        MediaHub(
+          id: 'similar',
+          title: 'Similar',
+          type: 'movie',
+          items: [movieItem(id: 'other')],
+        ),
+      ]);
+      if (reviewsFirst) {
+        reviews.complete([review]);
+      } else {
+        completeRelated();
+      }
+      await tester.pumpAndSettle();
+      await check();
+      if (reviewsFirst) {
+        completeRelated();
+      } else {
+        reviews.complete([review]);
+      }
+      await tester.pumpAndSettle();
+      await check();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('A1 A7 A11 A12 server order, field fallbacks, icons and filtering', (tester) async {
     final gate = await mountReviews(tester, cast: true, extras: true, related: true);
     final reviews = parseTvMovieReviews(
@@ -173,7 +243,7 @@ void main() {
       final after = (focus.context!.findRenderObject()! as RenderBox).localToGlobal(Offset.zero);
       expect(after.dy, closeTo(before.dy, 0.01));
       final row = find.byWidgetPredicate((w) => w is TvHorizontalRow && w.title == 'Reviews');
-      expect(page(tester).pixels - oldOffset, closeTo(tester.getSize(row).height, 0.01));
+      expect(page(tester).pixels - oldOffset, closeTo(tester.getSize(row).height + TvTokens.space.sectionGap, 0.01));
       await key(tester, LogicalKeyboardKey.arrowUp);
       expect(focusedRow(), 'Reviews');
     });

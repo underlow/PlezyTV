@@ -1,3 +1,4 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -20,7 +21,7 @@ import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/snackbar_helper.dart';
 import '../../../widgets/optimized_media_image.dart';
 import '../components/tv_button.dart';
-import '../components/tv_chip.dart';
+import '../components/tv_action_row.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_right_panel.dart';
 import '../components/tv_settings_item.dart';
@@ -150,8 +151,11 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _focusInitial());
   }
 
+  final _page = ScrollController();
+
   @override
   void dispose() {
+    _page.dispose();
     _openNode.dispose();
     _listNode.dispose();
     _trailerNode.dispose();
@@ -285,14 +289,24 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
         onKeyEvent: (_, event) => handleBackKeyAction(event, () => Navigator.of(context).maybePop()),
         child: TvTintedBackground(
           source: TvArtworkSource(item: _item.toMediaItem()),
+          scrollController: _page,
           child: SingleChildScrollView(
+            controller: _page,
             child: Padding(
-              padding: EdgeInsets.only(left: px(200), top: px(72), right: px(96), bottom: px(48)),
+              padding: EdgeInsets.only(
+                left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                  0.0,
+                  double.infinity,
+                ),
+                top: px(TvTokens.space.safeY),
+                right: px(96),
+                bottom: px(48),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _header(context),
-                  SizedBox(height: px(48)),
+                  SizedBox(height: px(TvTokens.detail.actionsGap)),
                   _actions(context),
                 ],
               ),
@@ -327,7 +341,7 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
         ClearLogoImage(
           client: null,
           logoPath: item.logoUrl,
-          fallbackWidth: px(900),
+          fallbackWidth: px(TvTokens.detail.textMaxW),
           width: px(560),
           height: px(120),
           alignment: Alignment.centerLeft,
@@ -340,29 +354,21 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           ),
         ),
       ),
-      if (meta.isNotEmpty) (24, Text(meta, key: const ValueKey('catalog-meta'), style: theme.body)),
-      if (genres.isNotEmpty)
+      if (meta.isNotEmpty || genres.isNotEmpty)
         (
-          20,
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final genre in genres)
-                  Padding(
-                    padding: EdgeInsets.only(right: px(12)),
-                    child: TvChip.genre(label: genre),
-                  ),
-              ],
-            ),
+          TvTokens.detail.metadataGap.toDouble(),
+          Text(
+            [if (meta.isNotEmpty) meta, ...genres].join(' · '),
+            key: const ValueKey('catalog-meta'),
+            style: theme.body,
           ),
         ),
-      (20, TvRatings(item: media)),
+      (TvTokens.detail.metadataGap.toDouble(), TvRatings(item: media)),
       if (summary != null && summary.isNotEmpty)
         (
-          24,
+          TvTokens.detail.summaryGap.toDouble(),
           SizedBox(
-            width: px(900),
+            width: px(TvTokens.detail.textMaxW),
             child: Text(
               summary,
               key: const ValueKey('catalog-summary'),
@@ -373,11 +379,14 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           ),
         ),
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
-      ],
+    return SizedBox(
+      width: px(TvTokens.detail.textMaxW),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
+        ],
+      ),
     );
   }
 
@@ -404,10 +413,8 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           ? Icon(Icons.hourglass_empty, size: px(TvTokens.size.button.iconSize), color: TvTokens.color.disabled.text)
           : CircularProgressIndicator(strokeWidth: px(3), color: TvTokens.color.disabled.text),
     );
-    return Wrap(
-      spacing: px(24),
-      runSpacing: px(24),
-      children: [
+    return TvActionRow(
+      buttons: [
         Stack(
           alignment: Alignment.centerLeft,
           children: [
@@ -429,22 +436,20 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
               ),
           ],
         ),
-        TvButton(
+        TvIconButton(
           key: const ValueKey('catalog-watchlist'),
-          label: _onList ? t.explore.removeFromWatchlist : t.explore.addToWatchlist,
+          caption: _onList ? t.explore.removeFromWatchlist : t.explore.addToWatchlist,
           icon: _onList ? Icons.bookmark_remove : Icons.bookmark_add,
-          variant: TvButtonVariant.secondary,
           focusNode: _listNode,
           onSelect: () => unawaited(_toggleList()),
           onNavigateLeft: _step(_listNode, -1),
           onNavigateRight: _step(_listNode, 1),
         ),
         if (_hasTrailer)
-          TvButton(
+          TvIconButton(
             key: const ValueKey('catalog-trailer'),
-            label: t.explore.detail.watchTrailer,
+            caption: t.explore.detail.watchTrailer,
             icon: Icons.movie_outlined,
-            variant: TvButtonVariant.secondary,
             focusNode: _trailerNode,
             onSelect: () => unawaited(_openTrailer()),
             onNavigateLeft: _step(_trailerNode, -1),

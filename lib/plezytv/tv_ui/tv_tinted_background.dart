@@ -27,12 +27,14 @@ class TvTintedBackground extends StatefulWidget {
     required this.source,
     this.service,
     this.showBackdrop = true,
+    this.scrollController,
     this.timer = Timer.new,
     this.child,
   });
   final TvArtworkSource source;
   final TvTintService? service;
   final bool showBackdrop;
+  final ScrollController? scrollController;
   final TvBackgroundTimer timer;
   final Widget? child;
 
@@ -59,16 +61,37 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
   ui.Image? _pendingBackdrop;
   Timer? _debounce;
   int _generation = 0;
+  final _backdropOpacity = ValueNotifier<double>(1);
+  double _scale = 1;
+
+  void _updateBackdropOpacity() {
+    final page = widget.scrollController;
+    final offset = page != null && page.hasClients ? page.offset / _scale : 0.0;
+    _backdropOpacity.value = (1 - offset / TvTokens.detail.collapseAt).clamp(0.0, 1.0);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scale = TvTheme.of(context).scale;
+    _updateBackdropOpacity();
+  }
 
   @override
   void initState() {
     super.initState();
+    widget.scrollController?.addListener(_updateBackdropOpacity);
     _request(first: true);
   }
 
   @override
   void didUpdateWidget(TvTintedBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController?.removeListener(_updateBackdropOpacity);
+      widget.scrollController?.addListener(_updateBackdropOpacity);
+      _updateBackdropOpacity();
+    }
     if (oldWidget.source.cacheKey == widget.source.cacheKey &&
         oldWidget.service == widget.service &&
         oldWidget.showBackdrop == widget.showBackdrop) {
@@ -102,7 +125,7 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
           }
           if (tintApplied) {
             setState(() {
-              _target = _BackgroundLook(tint: readyTint, backdrop: image);
+              _target = _BackgroundLook(tint: readyTint, backdrop: image, backdropOpacity: _backdropOpacity);
               if (_fade.isCompleted) _previous = [(_target, 1)];
             });
           }
@@ -118,7 +141,7 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     if (readyBackdrop != null) _images.add(readyBackdrop);
     readyTint = tint;
     tintApplied = true;
-    final next = _BackgroundLook(tint: tint, backdrop: readyBackdrop);
+    final next = _BackgroundLook(tint: tint, backdrop: readyBackdrop, backdropOpacity: _backdropOpacity);
     setState(() {
       if (first || DevicePerformance.isReduced) {
         _fade.stop();
@@ -164,20 +187,31 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     _images.removeWhere((image) => !retained.contains(image));
   }
 
-  Widget _currentLook() => _fade.value == 1
-      ? _target
-      : Stack(
-          fit: StackFit.expand,
-          children: [
-            for (final (look, opacity) in _previous)
-              if (opacity == 1) look else Opacity(opacity: opacity, child: look),
-            Opacity(opacity: _fade.value, child: _target),
-          ],
-        );
+  Widget _currentLook() {
+    final previous = [
+      for (final (look, opacity) in _previous)
+        if (opacity == 1) look else Opacity(opacity: opacity, child: look),
+    ];
+    return AnimatedBuilder(
+      animation: _fade,
+      child: _target,
+      builder: (context, child) => _fade.value == 1
+          ? child!
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                ...previous,
+                Opacity(opacity: _fade.value, child: child),
+              ],
+            ),
+    );
+  }
 
   @override
   void dispose() {
     _generation++;
+    widget.scrollController?.removeListener(_updateBackdropOpacity);
+    _backdropOpacity.dispose();
     _releasePendingBackdrop();
     _debounce?.cancel();
     _fade.dispose();
@@ -188,19 +222,14 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    fit: StackFit.expand,
-    children: [
-      AnimatedBuilder(animation: _fade, builder: (context, _) => _currentLook()),
-      ?widget.child,
-    ],
-  );
+  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [_currentLook(), ?widget.child]);
 }
 
 class _BackgroundLook extends StatelessWidget {
-  const _BackgroundLook({this.tint, this.backdrop, this.child});
+  const _BackgroundLook({this.tint, this.backdrop, this.child, this.backdropOpacity});
   final Color? tint;
   final ui.Image? backdrop;
+  final ValueNotifier<double>? backdropOpacity;
   final Widget? child;
 
   @override
@@ -223,33 +252,48 @@ class _BackgroundLook extends StatelessWidget {
             Positioned(
               top: 0,
               right: 0,
-              width: theme.px(1300),
-              height: theme.px(780),
-              child: ShaderMask(
-                blendMode: BlendMode.dstIn,
-                shaderCallback: (rect) => const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [0, .55, 1],
-                  colors: [Colors.white, Colors.white, Colors.transparent],
-                ).createShader(rect),
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => const LinearGradient(
-                    stops: [0, .55, 1],
-                    colors: [Colors.transparent, Colors.white, Colors.white],
-                  ).createShader(rect),
-                  child: RawImage(image: backdrop, fit: BoxFit.cover),
+              width: theme.px(TvTokens.backdrop.width),
+              height: theme.px(TvTokens.backdrop.height),
+              child: ValueListenableBuilder<double>(
+                valueListenable: backdropOpacity ?? const AlwaysStoppedAnimation(1.0),
+                builder: (context, value, child) =>
+                    FadeTransition(opacity: AlwaysStoppedAnimation(value), child: child),
+                child: RepaintBoundary(
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [
+                        0,
+                        TvTokens.backdrop.fadeOutStart / TvTokens.backdrop.height,
+                        TvTokens.backdrop.fadeOutEnd / TvTokens.backdrop.height,
+                        1,
+                      ],
+                      colors: [Colors.white, Colors.white, Colors.transparent, Colors.transparent],
+                    ).createShader(rect),
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => LinearGradient(
+                        stops: [
+                          0,
+                          (TvTokens.backdrop.fadeInStart - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                          (TvTokens.backdrop.fadeInEnd - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                          1,
+                        ],
+                        colors: [Colors.transparent, Colors.transparent, Colors.white, Colors.white],
+                      ).createShader(rect),
+                      child: ColoredBox(
+                        color: base,
+                        child: RawImage(
+                          image: backdrop,
+                          fit: BoxFit.cover,
+                          opacity: AlwaysStoppedAnimation(TvTokens.backdrop.opacity),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              bottom: 0,
-              left: 0,
-              width: theme.px(1100),
-              child: DecoratedBox(
-                decoration: BoxDecoration(gradient: LinearGradient(colors: [base, base.withValues(alpha: 0)])),
               ),
             ),
           ],
