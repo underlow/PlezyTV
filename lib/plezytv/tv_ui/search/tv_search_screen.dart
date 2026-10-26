@@ -159,8 +159,10 @@ class TvSearchScreenState extends State<TvSearchScreen>
   final _recentNodes = <FocusNode>[];
   int _activeHub = 0;
 
-  /// Up to two Home hubs (no Continue Watching), with Home's item filter.
-  List<TvHomeRow> get _hubs => [...?_homeModel?.rows.where((row) => row.kind == TvHomeRowKind.hub).take(2)];
+  /// Up to two poster Home hubs (no Continue Watching or music).
+  List<TvHomeRow> get _hubs => [
+    ...?_homeModel?.rows.where((row) => row.kind == TvHomeRowKind.hub && row.layout == TvHomeRowLayout.posters).take(2),
+  ];
 
   bool get _hubsLoading {
     final discover = _discover;
