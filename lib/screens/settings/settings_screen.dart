@@ -240,7 +240,7 @@ class _SettingsScreenState extends State<SettingsScreen> with FocusableTab, Moun
                   ?TvSettings.settingsTile(context),
                   if (UpdateService.isUpdateCheckAvailable) ...[_buildUpdateSection()],
 
-                  TvSettings.backupSection(context) ?? _buildBackupSection(),
+                  if (TvSettings.showsBackup) TvSettings.backupSection(context) ?? _buildBackupSection(),
 
                   const SizedBox(height: 24),
                   SettingsGroup(

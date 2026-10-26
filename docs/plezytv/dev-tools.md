@@ -79,6 +79,11 @@ Back returns to the previous screen; shell selection stays unchanged.
 
 ## Settings transfer over adb
 
+The fixed-file Backup section is available on Android with the TV UI enabled.
+Desktop force-TV keeps Plezy’s file picker; tvOS keeps Backup hidden. Importing
+also updates an existing Search keyboard immediately, including while Search is
+retained behind another section.
+
 Choose/sign in to a profile first, or send the link while the profile picker is
 open: it waits until selection finishes. Only the newest pending screen/settings
 link is kept. Import applies immediately without a confirmation dialog or restart.
