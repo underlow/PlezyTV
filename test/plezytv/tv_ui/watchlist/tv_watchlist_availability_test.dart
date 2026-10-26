@@ -205,6 +205,66 @@ void main() {
     expect(matcher.calls.last.refresh, isTrue);
   });
 
+  test('a card check superseding a running first check inherits the server-online re-check (N3)', () async {
+    final item = _item(1);
+    final enriched = CatalogItem(
+      source: CatalogSourceId.trakt,
+      kind: MediaKind.movie,
+      title: 'Movie 1',
+      ids: const CatalogItemIds(trakt: 1, tmdb: 99),
+    );
+    availability.setItems([item]);
+    final queued = matcher.open.single;
+    servers.set(online: ['a', 'b']);
+    final future = availability.check(item, enriched: enriched);
+    queued.completer.complete(_emptyIncomplete);
+    await pumpEventQueue();
+    expect(matcher.calls, hasLength(3), reason: 'superseded check does not re-check by itself');
+    matcher.callFor(item).completer.complete(_emptyIncomplete);
+    matcher.callFor(enriched).completer.complete(_emptyIncomplete);
+    await future;
+    await pumpEventQueue();
+    expect(matcher.calls, hasLength(4));
+    expect(matcher.calls.last.item, item);
+    expect(matcher.calls.last.refresh, isTrue);
+    await answer(item, _emptyIncomplete);
+    expect(matcher.calls, hasLength(4), reason: 'flags consumed, no spurious re-check');
+  });
+
+  test('a server coming online during a card check re-runs it if it ends incomplete (N3)', () async {
+    final item = _item(1);
+    availability.setItems([item]);
+    await answer(item, _complete);
+    final future = availability.check(item, retry: true);
+    servers.set(online: ['a', 'b']);
+    await pumpEventQueue();
+    expect(matcher.calls, hasLength(2), reason: 'no duplicate while the card check runs');
+    matcher.calls.last.completer.complete(_emptyIncomplete);
+    await future;
+    await pumpEventQueue();
+    expect(matcher.calls, hasLength(3));
+    expect(matcher.calls.last.refresh, isTrue);
+  });
+
+  test('a card check replacing a queued refresh job asks with refreshIncomplete (N3)', () async {
+    final items = List.generate(4, _item);
+    availability.setItems(items);
+    await answerAll((_) => _emptyIncomplete);
+    servers.set(online: ['a', 'b']);
+    await pumpEventQueue();
+    expect(matcher.open, hasLength(3));
+    final waiting = items.firstWhere((i) => !matcher.open.any((c) => c.item == i));
+    final enriched = CatalogItem(
+      source: CatalogSourceId.trakt,
+      kind: MediaKind.movie,
+      title: waiting.title,
+      ids: CatalogItemIds(trakt: waiting.ids.trakt, tmdb: 99),
+    );
+    unawaited(availability.check(waiting, enriched: enriched));
+    expect(matcher.callFor(waiting).refresh, isTrue);
+    expect(matcher.callFor(enriched).refresh, isTrue);
+  });
+
   test('changed expectedServerIds rechecks every item; the old result shows until replaced', () async {
     final items = List.generate(3, _item);
     final gone = _copy('g', 'b');
