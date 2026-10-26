@@ -10,9 +10,13 @@ enum TvHomePartState { loading, ready }
 
 enum TvHomeRowKind { continueWatching, hub }
 
+/// Determines which card family and item kinds a row contains.
+enum TvHomeRowLayout { posters, music }
+
 /// Immutable row data; [hub] retains the source needed by Plezy's full list.
 class TvHomeRow {
   final TvHomeRowKind kind;
+  final TvHomeRowLayout layout;
   final String title;
   final List<MediaItem> items;
   final bool hasMore;
@@ -21,6 +25,7 @@ class TvHomeRow {
 
   const TvHomeRow._({
     required this.kind,
+    required this.layout,
     required this.title,
     required this.items,
     required this.hasMore,
@@ -79,6 +84,7 @@ class TvHomeModelBuilder {
         if (onDeck.isNotEmpty)
           TvHomeRow._(
             kind: TvHomeRowKind.continueWatching,
+            layout: TvHomeRowLayout.posters,
             title: TvStrings.continueWatching,
             items: onDeck,
             hasMore: provider.hasMoreContinueWatching,
@@ -88,11 +94,13 @@ class TvHomeModelBuilder {
       final rows = <TvHomeRow>[..._continueRows];
       for (final hub in provider.hubs) {
         if (hub.isContinueWatchingHub) continue;
-        final items = _videoItems(hub.items);
-        if (items.isEmpty) continue;
+        final layout = hub.items.map((item) => _layout(item.kind)).whereType<TvHomeRowLayout>().firstOrNull;
+        if (layout == null) continue;
+        final items = List<MediaItem>.unmodifiable(hub.items.where((item) => _layout(item.kind) == layout));
         rows.add(
           TvHomeRow._(
             kind: TvHomeRowKind.hub,
+            layout: layout,
             title: hub.title,
             items: items,
             hasMore: hub.more,
@@ -127,15 +135,16 @@ class TvHomeModelBuilder {
     return model;
   }
 
-  static List<MediaItem> _videoItems(List<MediaItem> items) => List.unmodifiable(
-    items.where(
-      (item) => const {
-        MediaKind.movie,
-        MediaKind.show,
-        MediaKind.season,
-        MediaKind.episode,
-        MediaKind.collection,
-      }.contains(item.kind),
-    ),
-  );
+  static TvHomeRowLayout? _layout(MediaKind kind) => switch (kind) {
+    MediaKind.movie ||
+    MediaKind.show ||
+    MediaKind.season ||
+    MediaKind.episode ||
+    MediaKind.collection => TvHomeRowLayout.posters,
+    MediaKind.artist || MediaKind.album || MediaKind.track => TvHomeRowLayout.music,
+    _ => null,
+  };
+
+  static List<MediaItem> _videoItems(List<MediaItem> items) =>
+      List.unmodifiable(items.where((item) => _layout(item.kind) == TvHomeRowLayout.posters));
 }

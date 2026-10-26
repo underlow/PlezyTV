@@ -415,6 +415,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   Widget _rail(TvHomeRow row) {
     final wide = row.kind == TvHomeRowKind.continueWatching;
+    final music = row.layout == TvHomeRowLayout.music;
     final key = _rowKey(row);
     return TvHorizontalRow(
       key: _rows.putIfAbsent(key, () => GlobalKey<TvHorizontalRowState>()),
@@ -424,14 +425,18 @@ class TvHomeScreenState extends State<TvHomeScreen>
       itemKey: (index) => index == row.items.length ? 'all' : TvHomeRow.itemKey(row.items[index]),
       cardWidth: (wide ? TvTokens.size.episode.w : TvTokens.size.poster.w).toDouble(),
       cardHeight:
-          (wide ? TvTokens.size.episode.h : TvTokens.size.poster.h) +
+          (wide
+              ? TvTokens.size.episode.h
+              : music
+              ? TvTokens.size.poster.w
+              : TvTokens.size.poster.h) +
           20 +
           TvTokens.type.body.lineHeight +
           TvTokens.type.caption.lineHeight.toDouble(),
       onItemFocused: (index) => _focused(row, index),
       cardBuilder: (context, index, node) {
         if (index == row.items.length) {
-          return TvAllCard(episode: wide, focusNode: node, onSelect: () => unawaited(_openAll(row)));
+          return TvAllCard(episode: wide, square: music, focusNode: node, onSelect: () => unawaited(_openAll(row)));
         }
         return TvHomeHubCard(
           item: row.items[index],

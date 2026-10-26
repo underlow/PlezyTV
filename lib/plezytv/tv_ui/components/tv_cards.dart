@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../focus/input_mode_tracker.dart';
 import '../../../media/media_item.dart';
+import '../../../media/media_kind.dart';
 import '../../../media/media_server_client.dart';
 import '../../../utils/formatters.dart';
 import '../../../widgets/optimized_media_image.dart';
@@ -65,6 +66,54 @@ class TvPoster extends StatelessWidget {
     localFilePath: localFilePath,
     onServer: onServer,
     disabled: disabled,
+    focusNode: focusNode,
+    autofocus: autofocus,
+    onSelect: onSelect,
+    onLongPress: onLongPress,
+    onFocusChange: onFocusChange,
+    externalFocus: externalFocus,
+  );
+}
+
+/// Square music artwork with Plezy's artist/album captions and no watch state.
+class TvMusicCard extends StatelessWidget {
+  const TvMusicCard({
+    super.key,
+    required this.item,
+    this.client,
+    this.focusNode,
+    this.autofocus = false,
+    this.onSelect,
+    this.onLongPress,
+    this.onFocusChange,
+    this.externalFocus,
+  });
+
+  final MediaItem item;
+  final MediaServerClient? client;
+  final FocusNode? focusNode;
+  final bool autofocus;
+  final VoidCallback? onSelect, onLongPress;
+  final ValueChanged<bool>? onFocusChange;
+  final bool? externalFocus;
+
+  @override
+  Widget build(BuildContext context) => _MediaCard(
+    item: item,
+    dimensions: Size.square(TvTokens.size.poster.w.toDouble()),
+    title: item.displayTitle,
+    caption: switch (item.kind) {
+      MediaKind.album => item.albumArtistTitle ?? '',
+      MediaKind.track => [
+        item.trackArtistTitle,
+        item.albumTitle,
+      ].whereType<String>().where((part) => part.isNotEmpty).join(' · '),
+      _ => '',
+    },
+    music: true,
+    client: client,
+    onServer: false,
+    disabled: false,
     focusNode: focusNode,
     autofocus: autofocus,
     onSelect: onSelect,
@@ -152,6 +201,7 @@ class _MediaCard extends StatefulWidget {
     required this.title,
     required this.caption,
     this.episode = false,
+    this.music = false,
     this.progress,
     this.blurThumbnail = false,
     this.client,
@@ -171,7 +221,7 @@ class _MediaCard extends StatefulWidget {
   final MediaItem item;
   final Size dimensions;
   final String title, caption;
-  final bool episode, onServer, disabled, autofocus, blurThumbnail;
+  final bool episode, music, onServer, disabled, autofocus, blurThumbnail;
   final double? progress;
   final MediaServerClient? client;
   final String? localFilePath;
@@ -191,7 +241,8 @@ class _MediaCardState extends State<_MediaCard> {
     final width = px(widget.dimensions.width), height = px(widget.dimensions.height);
     final focused = (widget.externalFocus ?? _focused) && !widget.disabled && InputModeTracker.isKeyboardMode(context);
     final count = widget.item.unwatchedCount;
-    final showCount = !widget.episode && focused && count != null && count > 0;
+    final radius = widget.music && widget.item.kind == MediaKind.artist ? widget.dimensions.width / 2 : null;
+    final showCount = !widget.music && !widget.episode && focused && count != null && count > 0;
     Widget placeholder(BuildContext context, String path) => ColoredBox(color: TvTokens.color.surface.level2);
     final image = widget.episode
         ? OptimizedMediaImage.thumb(
@@ -206,7 +257,7 @@ class _MediaCardState extends State<_MediaCard> {
           )
         : OptimizedMediaImage.poster(
             client: widget.client,
-            imagePath: widget.item.thumbPath,
+            imagePath: widget.music ? widget.item.thumbPath ?? widget.item.parentThumbPath : widget.item.thumbPath,
             localFilePath: widget.localFilePath,
             width: width,
             height: height,
@@ -219,14 +270,14 @@ class _MediaCardState extends State<_MediaCard> {
         width: width,
         height: height,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(px(TvTokens.radius.card)),
+          borderRadius: BorderRadius.circular(px(radius ?? TvTokens.radius.card)),
           child: Stack(
             fit: StackFit.expand,
             children: [
               ColoredBox(color: TvTokens.color.surface.level2),
               TvSpoilerBlur(blur: widget.blurThumbnail, child: image),
-              TvMediaBadges(item: widget.item, onServer: widget.onServer),
-              if (widget.progress != null || widget.item.hasActiveProgress)
+              if (!widget.music) TvMediaBadges(item: widget.item, onServer: widget.onServer),
+              if (!widget.music && (widget.progress != null || widget.item.hasActiveProgress))
                 Positioned(
                   left: 0,
                   right: 0,
@@ -250,7 +301,7 @@ class _MediaCardState extends State<_MediaCard> {
               kind: TvFocusKind.ring,
               focusedScale: widget.episode ? TvTokens.focus.episodeScale : TvTokens.focus.cardScale,
               alignment: Alignment.bottomCenter,
-              radius: null,
+              radius: radius,
               builder: (_, _) => artwork,
             )
           else
@@ -258,6 +309,7 @@ class _MediaCardState extends State<_MediaCard> {
               focusNode: widget.focusNode,
               autofocus: widget.autofocus,
               disabled: widget.disabled,
+              radius: radius,
               scaleAlignment: Alignment.bottomCenter,
               focusedScale: widget.episode ? TvTokens.focus.episodeScale : TvTokens.focus.cardScale,
               onSelect: widget.onSelect,
