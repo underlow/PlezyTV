@@ -497,26 +497,33 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   KeyEventResult _contentKeys(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent || event is KeyRepeatEvent) _revealContent();
+    if (_tab == 0 &&
+        (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown)) {
+      // Each rail owns a focus scope; cross scopes explicitly in display order.
+      final c = _controller!;
+      final rows = [
+        if (!c.flattened && c.seasons.isNotEmpty) _seasons,
+        if (c.show.roles?.isNotEmpty ?? false) _lowerKeys['cast'],
+        if (c.extras.isNotEmpty) _lowerKeys['extras'],
+        for (final hub in c.relatedHubs.where((h) => h.items.isNotEmpty)) _lowerKeys['related/${hub.id}'],
+      ].whereType<GlobalKey<TvHorizontalRowState>>().toList();
+      final index = rows.indexWhere((key) => key.currentState?.focusInside.value == true);
+      if (index >= 0 || _actionScope.hasFocus && event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        if (event is KeyDownEvent || event is KeyRepeatEvent) {
+          final next = index + (event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1);
+          if (next < 0) {
+            _actionScope.requestFocus();
+          } else if (next < rows.length) {
+            rows[next].currentState?.requestFocus();
+          }
+        }
+        return KeyEventResult.handled;
+      }
+    }
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       if (event is KeyDownEvent || event is KeyRepeatEvent) {
         _tabs.currentState?.requestFocus();
         _scrollTop();
-      }
-      return KeyEventResult.handled;
-    }
-    if (_actionScope.hasFocus && event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      if (event is KeyDownEvent || event is KeyRepeatEvent) {
-        final c = _controller!;
-        if (!c.flattened && c.seasons.isNotEmpty) {
-          _seasons.currentState?.requestFocus();
-        } else {
-          for (final key in _lowerKeys.values) {
-            if (key.currentState != null) {
-              key.currentState!.requestFocus();
-              break;
-            }
-          }
-        }
       }
       return KeyEventResult.handled;
     }
@@ -792,12 +799,19 @@ class _TvShowScreenState extends State<TvShowScreen> {
   void _revealContent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_tab == 0 && _actionScope.hasFocus) {
+        _scrollTop();
+        return;
+      }
       final anchor = FocusManager.instance.primaryFocus?.context;
       if (anchor == null || _tabScope.hasFocus) return;
       unawaited(
         Scrollable.ensureVisible(
           anchor,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          alignment: 0.1,
+          alignmentPolicy: _tab == 0
+              ? ScrollPositionAlignmentPolicy.explicit
+              : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
           duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : 150),
         ),
       );
@@ -914,7 +928,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
                       : TvStrings.episode(
                           season: episode.parentIndex ?? 1,
                           episode: episode.index ?? 1,
-                          title: episode.displayTitle,
+                          title: episode.title ?? '',
                         ),
                   style: theme.headline,
                   maxLines: 1,
