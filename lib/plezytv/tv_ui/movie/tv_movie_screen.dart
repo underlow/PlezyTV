@@ -38,6 +38,8 @@ import '../tv_tokens.dart';
 import 'tv_movie_actions.dart';
 import 'tv_movie_controller.dart';
 import 'tv_movie_logic.dart';
+import 'tv_movie_review_card.dart';
+import 'tv_movie_reviews.dart';
 
 /// PlezyTV movie page (S8). The route pops with `true` when watch state changed.
 class TvMovieScreen extends StatefulWidget {
@@ -174,6 +176,8 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
+  bool _reviewsVisible = false, _preservingReviewInsertion = false, _reviewPanelOpen = false;
+
   void _changed() {
     if (!mounted) return;
     final c = _controller!;
@@ -190,6 +194,24 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           ).showSnackBar(const SnackBar(content: Text('Unable to refresh. Check your connection.')));
         }
       });
+    }
+    if (!_reviewsVisible && c.reviews.isNotEmpty && _page.hasClients) {
+      final focused = _rowOrder.indexWhere(_focusIn);
+      final cast = _rowOrder.indexOf(_rowKey('cast'));
+      if (focused >= 0 && focused > cast) {
+        final offset = _page.offset;
+        _preservingReviewInsertion = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final render = _rowKey('reviews').currentContext?.findRenderObject();
+          if (_page.hasClients && render is RenderBox) {
+            _page.jumpTo((offset + render.size.height).clamp(0.0, _page.position.maxScrollExtent));
+          }
+          // Adjacent rows restore their existing focus in post-frame callbacks.
+          // Do not let those callbacks apply the normal reveal rule here.
+          WidgetsBinding.instance.addPostFrameCallback((_) => _preservingReviewInsertion = false);
+        });
+      }
     }
     setState(() {});
   }
@@ -302,8 +324,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   /// Keeps the focused row fully visible under the compact title bar; any row
   /// focus scrolls the header away, the last row also reveals the tech block.
   void _revealRow(GlobalKey<TvHorizontalRowState> key) {
+    if (_preservingReviewInsertion || _reviewPanelOpen) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_page.hasClients || _rowOrder.isEmpty) return;
+      if (!mounted || _preservingReviewInsertion || _reviewPanelOpen || !_page.hasClients || _rowOrder.isEmpty) return;
       final render = key.currentContext?.findRenderObject();
       final first = _rowOrder.first.currentContext?.findRenderObject();
       if (render == null || first == null) return;
@@ -610,6 +633,22 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     );
   }
 
+  Future<void> _openReview(BuildContext context, TvMovieReview review, FocusNode anchor) async {
+    final offset = _page.hasClients ? _page.offset : 0.0;
+    _reviewPanelOpen = true;
+    try {
+      await TvMovieReviewCard.showPanel(context, review, anchor);
+    } finally {
+      // Restoring the anchor is not row navigation. In particular, rows that
+      // loaded behind the panel must not change the invoking card's position.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_page.hasClients) _page.jumpTo(offset.clamp(0.0, _page.position.maxScrollExtent));
+        _reviewPanelOpen = false;
+      });
+    }
+  }
+
   GlobalKey<TvHorizontalRowState> _rowKey(String id) =>
       _rowKeys.putIfAbsent(id, () => GlobalKey<TvHorizontalRowState>());
 
@@ -627,6 +666,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final movie = c.movie;
     final roles = movie.roles ?? [];
     final hubs = c.relatedHubs.where((h) => h.items.isNotEmpty).toList();
+    _reviewsVisible = c.reviews.isNotEmpty;
     final rows = <Widget>[
       if (roles.isNotEmpty)
         Builder(
@@ -666,6 +706,20 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               },
             );
           },
+        ),
+      if (c.reviews.isNotEmpty)
+        TvHorizontalRow(
+          key: _rowKey('reviews'),
+          title: TvStrings.reviews,
+          itemCount: c.reviews.length,
+          cardWidth: 512,
+          cardHeight: 256,
+          onItemFocused: (_) => _revealRow(_rowKey('reviews')),
+          cardBuilder: (context, i, node) => TvMovieReviewCard(
+            review: c.reviews[i],
+            focusNode: node,
+            onSelect: () => unawaited(_openReview(context, c.reviews[i], node)),
+          ),
         ),
       if (c.extras.isNotEmpty)
         Builder(
@@ -730,6 +784,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     // Row order for Down/Up between the buttons and the first row.
     _rowOrder = [
       if (roles.isNotEmpty) _rowKey('cast'),
+      if (c.reviews.isNotEmpty) _rowKey('reviews'),
       if (c.extras.isNotEmpty) _rowKey('extras'),
       for (final hub in hubs) _rowKey('related/${hub.id}'),
     ];

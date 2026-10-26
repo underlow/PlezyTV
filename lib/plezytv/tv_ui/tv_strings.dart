@@ -76,6 +76,7 @@ abstract final class TvStrings {
   static const audio = 'Audio';
   static const subtitles = 'Subtitles';
   static const file = 'File';
+  static const reviews = 'Reviews';
   static const movieUnavailable = 'This movie is no longer available';
   static String left(int milliseconds) => '${formatDurationTextual(milliseconds)} left';
   static String unwatched(int count) => '$count unwatched';

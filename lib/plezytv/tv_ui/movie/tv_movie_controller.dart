@@ -7,6 +7,8 @@ import '../../../media/media_server_client.dart';
 import '../../../media/media_version.dart';
 import '../../../media/media_version_preference.dart';
 import '../../../providers/catalog_sources_provider.dart';
+import '../../../services/plex_client.dart';
+import '../../../utils/media_server_http_client.dart';
 import '../../../services/catalog/community_ratings.dart';
 import '../../../services/catalog/library_watchlist_candidates.dart';
 import '../../../utils/deletion_notifier.dart';
@@ -15,6 +17,7 @@ import '../../../utils/watch_state_notifier.dart';
 import '../../../widgets/media_rating_badge.dart';
 import '../show/tv_show_logic.dart';
 import 'tv_movie_logic.dart';
+import 'tv_movie_reviews.dart';
 
 /// Screen-owned data for the TV movie page. The client/provider stay owned by
 /// the session; the screen owns focus, scroll and actions.
@@ -23,6 +26,7 @@ class TvMovieController extends ChangeNotifier {
     required this.client,
     required MediaItem metadata,
     this.catalogSources,
+    this.reviewsLoader,
     Future<MediaVersionPreference?> Function(MediaItem movie)? versionPreference,
     Stream<WatchStateEvent>? watchEvents,
     Stream<DeletionEvent>? deletionEvents,
@@ -37,6 +41,12 @@ class TvMovieController extends ChangeNotifier {
   final CatalogSourcesProvider? catalogSources;
   final Future<MediaVersionPreference?> Function(MediaItem movie) _versionPreference;
   final MediaItem _initial;
+  final TvMovieReviewsLoader? reviewsLoader;
+  final AbortController _reviewsAbort = AbortController();
+  bool _reviewsStarted = false;
+  List<TvMovieReview> _reviews = const [];
+
+  List<TvMovieReview> get reviews => _reviews;
 
   /// Passed metadata until the full item arrives, then the server item.
   MediaItem movie;
@@ -176,6 +186,26 @@ class TvMovieController extends ChangeNotifier {
     movie = next;
     metadataLoaded = true;
     notifyListeners();
+    _startReviews();
+  }
+
+  void _startReviews() {
+    if (_disposed || _reviewsStarted) return;
+    _reviewsStarted = true;
+    final plex = client;
+    if (plex is! PlexClient || plex.isOfflineMode) return;
+    unawaited(_loadReviews(reviewsLoader ?? (id, abort) => loadTvMovieReviews(plex, id, abort)));
+  }
+
+  Future<void> _loadReviews(TvMovieReviewsLoader loader) async {
+    try {
+      final value = await loader(movie.id, _reviewsAbort);
+      if (_disposed || _reviewsAbort.isAborted || value.isEmpty) return;
+      _reviews = List.unmodifiable(value);
+      notifyListeners();
+    } catch (_) {
+      // Reviews are optional; failures leave the page unchanged.
+    }
   }
 
   bool _matches(String serverId, String itemId) => itemId == movie.id && serverId == movie.serverId;
@@ -211,6 +241,7 @@ class TvMovieController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _reviewsAbort.abort();
     ++_generation;
     unawaited(_watchSubscription?.cancel());
     unawaited(_deletionSubscription?.cancel());

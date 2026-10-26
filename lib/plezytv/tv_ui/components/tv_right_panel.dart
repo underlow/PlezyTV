@@ -7,10 +7,18 @@ import '../tv_tokens.dart';
 /// A page of settings rows. Use stable keys for rows whose values can change.
 /// [changes] rebuilds the open page without replacing its focus or scroll state.
 class TvRightPanelPage {
-  const TvRightPanelPage({required this.title, this.itemsBuilder, this.bodyBuilder, this.changes})
-    : assert((itemsBuilder == null) != (bodyBuilder == null));
+  const TvRightPanelPage({
+    required this.title,
+    this.itemsBuilder,
+    this.bodyBuilder,
+    this.changes,
+    this.singleLineTitle = false,
+  }) : assert((itemsBuilder == null) != (bodyBuilder == null));
 
   final String title;
+
+  /// Opt in for titles that must stay on one line; existing pages keep wrapping.
+  final bool singleLineTitle;
   final List<Widget> Function(BuildContext context)? itemsBuilder;
 
   /// A bounded body for pages that own their lazy scrolling viewport.
@@ -131,7 +139,12 @@ class TvRightPanelState extends State<TvRightPanel> {
                         children: [
                           Padding(
                             padding: EdgeInsets.fromLTRB(px(48), px(60), px(48), px(24)),
-                            child: Text('${i > 0 ? '‹ ' : ''}${_pages[i].title}', style: theme.title),
+                            child: Text(
+                              '${i > 0 ? '‹ ' : ''}${_pages[i].title}',
+                              style: theme.title,
+                              maxLines: _pages[i].singleLineTitle ? 1 : null,
+                              overflow: _pages[i].singleLineTitle ? TextOverflow.ellipsis : null,
+                            ),
                           ),
                           Expanded(
                             child: ListenableBuilder(
