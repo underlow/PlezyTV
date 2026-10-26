@@ -112,6 +112,17 @@ void main() {
           await tester.pumpAndSettle();
         }
 
+        final page = tester
+            .widgetList<SingleChildScrollView>(find.byType(SingleChildScrollView))
+            .firstWhere((view) => view.controller != null)
+            .controller!;
+        expect(page.offset, 0);
+        await key(LogicalKeyboardKey.arrowRight);
+        expect(FocusManager.instance.primaryFocus!.debugLabel, isNot('Show primary'));
+        expect(page.offset, 0, reason: 'Moving between actions must retain the show header');
+        await key(LogicalKeyboardKey.arrowLeft);
+        expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+
         void focused(TvHorizontalRowState row) {
           expect(row.focusInside.value, true);
           final box = FocusManager.instance.primaryFocus!.context!.findRenderObject()! as RenderBox;
@@ -131,6 +142,7 @@ void main() {
         }
         await key(LogicalKeyboardKey.arrowUp);
         expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+        expect(page.offset, 0, reason: 'Returning from the first lower row must restore the show header');
         await key(LogicalKeyboardKey.arrowUp);
         expect(FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvTabs>(), isNotNull);
       });

@@ -799,6 +799,10 @@ class _TvShowScreenState extends State<TvShowScreen> {
   void _revealContent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_tab == 0 && _actionScope.hasFocus) {
+        _scrollTop();
+        return;
+      }
       final anchor = FocusManager.instance.primaryFocus?.context;
       if (anchor == null || _tabScope.hasFocus) return;
       unawaited(
