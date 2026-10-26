@@ -69,6 +69,21 @@ Future<void> _goTo(WidgetTester tester, int row, int col) async {
 }
 
 void main() {
+  for (final layout in [TvSearchKeyboardLayout.ru, TvSearchKeyboardLayout.en]) {
+    testWidgets('${layout.name}: digits fills the rest of the last row', (tester) async {
+      await _pump(tester, layout: layout);
+      final dash = tester.getRect(_key('char:-'));
+      final digits = tester.getRect(_key('toDigits'));
+      final first = tester.getRect(_key(layout == TvSearchKeyboardLayout.ru ? 'char:а' : 'char:a'));
+      final last = tester.getRect(_key(layout == TvSearchKeyboardLayout.ru ? 'char:е' : 'char:f'));
+      expect(digits.left - dash.right, closeTo(12, .01));
+      expect(digits.right, closeTo(last.right, .01));
+      expect(digits.width, closeTo(layout == TvSearchKeyboardLayout.ru ? 140 : 216, .01));
+      expect(dash.top, digits.top);
+      expect(first.left, 0);
+    });
+  }
+
   testWidgets('RU layout: 33 letters, dash, 0–9, service keys and switcher', (tester) async {
     await _pump(tester);
     const letters = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
@@ -90,7 +105,7 @@ void main() {
     await _press(tester, LogicalKeyboardKey.select);
     expect(log.inputs, ['д']);
 
-    await _goTo(tester, 5, 4); // Э Ю Я - [empty] 0–9: the empty cell is skipped.
+    await _goTo(tester, 5, 4); // Э Ю Я - 0–9: the digits key spans the last two cells.
     expect(_focused(tester, 'toDigits'), isTrue);
     await _press(tester, LogicalKeyboardKey.select);
     expect(log.layouts, [TvSearchKeyboardLayout.digits]);
@@ -117,7 +132,7 @@ void main() {
     expect(log.exitsRight, 2);
   });
 
-  testWidgets('empty cells are skipped in ENG layout', (tester) async {
+  testWidgets('ENG wide digits key supports horizontal and vertical traversal', (tester) async {
     await _pump(tester, layout: TvSearchKeyboardLayout.en);
     await _goTo(tester, 4, 2);
     expect(_focused(tester, 'char:-'), isTrue);
@@ -125,8 +140,10 @@ void main() {
     expect(_focused(tester, 'toDigits'), isTrue);
     await _press(tester, LogicalKeyboardKey.arrowLeft);
     expect(_focused(tester, 'char:-'), isTrue);
-    // Down from W (col 4) skips the empty cell of the last letter row.
+    // Down from W (col 4) enters the wide digits key, then Clear.
     await _goTo(tester, 3, 4);
+    await _press(tester, LogicalKeyboardKey.arrowDown);
+    expect(_focused(tester, 'toDigits'), isTrue);
     await _press(tester, LogicalKeyboardKey.arrowDown);
     expect(_focused(tester, 'clear'), isTrue);
   });

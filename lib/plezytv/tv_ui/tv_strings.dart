@@ -5,6 +5,7 @@ import '../../utils/formatters.dart';
 
 /// Fork-owned English templates for TV components and screens.
 abstract final class TvStrings {
+  static String sortBy(String field) => 'Sort: $field';
   static String date(String value) {
     final parsed = DateTime.tryParse(value);
     return parsed == null ? value : DateFormat('d MMM y', LocaleSettings.currentLocale.intlLocaleName).format(parsed);
