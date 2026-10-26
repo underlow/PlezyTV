@@ -95,11 +95,16 @@ return a stateful lightweight section using that key and implement the upstream
 mounts sections lazily and keeps one Libraries section for all library identities.
 `TvSectionShell.sessionControllerFactoryForTesting(context, onContentIntent)`
 can supply a fake session controller, or return null to avoid starting services.
-Reset both hooks to null in teardown. The former
+`TvSectionShell.watchlistBuilderForTesting(context, key, onOpenSearch)` supplies
+the «Список» probe while `sectionBuilderForTesting` is set (otherwise the slot is
+an empty box). Reset these hooks to null in teardown. The former
 `TvShell.mainScreenBuilderForTesting` hook has been removed.
 
-`TvShellSection.tab(NavigationTabId)` and `TvShellSection.library(globalKey)`
-are the shared section identities. `TvSectionShellState` exposes `currentSection`,
+`TvShellSection.tab(NavigationTabId)`, `TvShellSection.library(globalKey)` and
+`TvShellSection.watchlist()` are the shared section identities. `tab` is null for
+the watchlist and No connection; mounted screens, keys and visibility hooks use
+`TvShellSection.slot` (the tab, or `TvShellSection.watchlistSlot`), so code that
+compares `tab` with Home never mistakes either for Home. `TvSectionShellState` exposes `currentSection`,
 `selectionCommand`, `isSectionAvailable`, `selectSection`, `selectLibrary` and
 `focusMenu` for the remaining shell integration. Every accepted selection
 increments the command counter, including a repeated selection, so deferred
@@ -177,6 +182,53 @@ existence. Remote Libraries opens the general Libraries section; Home selects
 Home online or No connection offline. Section replacement stages must preserve
 these scopes, callbacks, readiness and Back behavior. Initial profile prompting
 continues to respect the profile session’s `initialPromptHandled` flag.
+
+### S10 watchlist section
+
+«Список» (`lib/plezytv/tv_ui/watchlist/`) is a fork-owned section with no upstream
+tab. Its menu entry (bookmark icon) follows the library entries directly, before
+More, Live TV and Explore; the companion remote's next/previous step visits it after
+Libraries. It is available while online with a non-empty
+`CatalogSourcesProvider.watchlistCapableSources`; losing every source leaves for
+Home, and a soft connection loss restores it like other sections.
+`TvWatchlistScreen` is mounted lazily and owns its controller and availability
+service. The shell calls `onTabShown`/`onTabHidden` only on section changes,
+never for a covering route (that would cancel playback started from the list);
+`handleContentIntent` maps resume to `refresh` (`backgroundRefresh`), the
+cold-start/reconnect prime to `primeRefresh` (also `backgroundRefresh`: a silent
+re-read when ready, retry after an error, nothing while loading, so focus and
+scroll survive), and profile reset to `fullRefresh` (`fullReset`, which also
+forgets every availability result and the check queue). «Go to search» selects
+Search.
+
+`TvWatchlistAvailability` re-checks every item when `expectedServerIds` changes
+(the old result shows until the new one replaces it) and incomplete items when a
+server comes online; checks running at that moment are queued again once after
+they finish (incomplete ones only, for a server coming online); this includes
+card checks, and a card check that supersedes a queued one inherits its
+re-check and `refreshIncomplete` requirements. Posters listen to
+their own item (`watch`); the «Есть на сервере» tab rebuilds only when the set of
+found items changes (`foundRevision`). Membership notifications drop only items
+whose `isOnWatchlist` flipped from true to false, since the membership snapshot
+may not know items added on another device; such a drop is remembered like a card
+removal (original place for «Вернуть в список», not resurrected by a lagging
+re-read). A removed item comes back either through the card's `itemRestored` or
+when membership data that has already read it as not listed reads it as listed
+again; a `true` reading never preceded by `false` for that item (for example
+membership finishing its first load after a card removal) may predate the
+removal and does not restore it. A first snapshot that misses a listed item triggers one re-read.
+
+Two upstream edits support it: `CatalogLibraryMatcher.match` takes
+`refreshIncomplete` (re-queries servers that failed, were cancelled or not
+queried, folding results into cached copies), and `plex_catalog_source.dart`
+parses Plex `watchlistedAt` into `CatalogItem.addedAt` for the date-added sort.
+`TvPagedSource.replaceAll(items, keepFocus:)` replaces in-memory content in one
+notification; `TvPagedGrid` gained optional `onVisibleRangeChanged`,
+`onPlayPause` and `keyOf` (focus kept by key with scroll compensation; a second
+keep-focus replacement before the next frame corrects from the pending offset).
+With `onVisibleRangeChanged`, the range is reported again after every
+`replaceAll`. Without
+them the S16 grid behaves as before.
 
 ### S16 library section hookup
 

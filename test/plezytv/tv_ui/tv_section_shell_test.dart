@@ -14,6 +14,8 @@ import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/providers/catalog_sources_provider.dart';
+import 'package:plezy/services/catalog/catalog_source.dart';
+import 'package:plezy/services/companion_remote/companion_remote_receiver.dart';
 import 'package:plezy/services/music/music_playback_service.dart';
 import 'package:plezy/media/media_library.dart';
 import 'package:plezy/mixins/refreshable.dart';
@@ -122,6 +124,8 @@ class _Servers extends ChangeNotifier implements MultiServerProvider {
 class _Sources extends ChangeNotifier implements CatalogSourcesProvider {
   @override
   bool hasAnySource = false;
+  @override
+  List<CatalogSource> watchlistCapableSources = [];
   void emit() => notifyListeners();
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -224,6 +228,42 @@ class _ProbeState extends State<_Probe>
   }
 }
 
+class _CatalogSource implements CatalogSource {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _WatchlistProbe extends StatefulWidget {
+  const _WatchlistProbe({required super.key, required this.onOpenSearch});
+  final VoidCallback onOpenSearch;
+  @override
+  State<_WatchlistProbe> createState() => _WatchlistProbeState();
+}
+
+class _WatchlistProbeState extends State<_WatchlistProbe>
+    with Refreshable, FullRefreshable, FocusableTab, TabVisibilityAware {
+  final first = FocusNode();
+  int refreshes = 0, resets = 0, shown = 0, hidden = 0;
+  @override
+  void refresh() => refreshes++;
+  @override
+  void fullRefresh() => resets++;
+  @override
+  void focusActiveTabIfReady() => first.requestFocus();
+  @override
+  void onTabShown() => shown++;
+  @override
+  void onTabHidden() => hidden++;
+  @override
+  Widget build(BuildContext context) =>
+      TextButton(focusNode: first, onPressed: widget.onOpenSearch, child: const Text('watchlist first'));
+  @override
+  void dispose() {
+    first.dispose();
+    super.dispose();
+  }
+}
+
 class _ExitBinding extends AutomatedTestWidgetsFlutterBinding {
   int exits = 0;
   @override
@@ -236,6 +276,7 @@ class _ExitBinding extends AutomatedTestWidgetsFlutterBinding {
 const home = TvShellSection.tab(NavigationTabId.discover);
 const search = TvShellSection.tab(NavigationTabId.search);
 const movies = MediaLibrary(id: '1', backend: MediaBackend.plex, title: 'Movies', serverId: 's1', serverName: 'One');
+const watchlist = TvShellSection.watchlist();
 const series = MediaLibrary(id: '2', backend: MediaBackend.plex, title: 'Series', serverId: 's1');
 
 void main() {
@@ -254,6 +295,8 @@ void main() {
   late RouteObserver<PageRoute<dynamic>> observer;
   final probes = <NavigationTabId, GlobalKey>{};
   _ProbeState probe(NavigationTabId tab) => probes[tab]!.currentState! as _ProbeState;
+  GlobalKey? watchlistKey;
+  _WatchlistProbeState watchlistProbe() => watchlistKey!.currentState! as _WatchlistProbeState;
   TvSideMenu menu(WidgetTester tester) => tester.widget(find.byType(TvSideMenu));
 
   Future<void> pump(WidgetTester tester) async {
@@ -302,6 +345,11 @@ void main() {
     navigator = GlobalKey<NavigatorState>();
     observer = RouteObserver<PageRoute<dynamic>>();
     probes.clear();
+    watchlistKey = null;
+    TvSectionShell.watchlistBuilderForTesting = (_, key, onOpenSearch) {
+      watchlistKey = key;
+      return _WatchlistProbe(key: key, onOpenSearch: onOpenSearch);
+    };
     TvSectionShell.sessionControllerFactoryForTesting = (_, emit) =>
         session = (_Session(emit)..isOffline = offlineStart);
     TvSectionShell.sectionBuilderForTesting = (_, tab, key) {
@@ -312,6 +360,7 @@ void main() {
   });
   tearDown(() {
     TvSectionShell.sectionBuilderForTesting = null;
+    TvSectionShell.watchlistBuilderForTesting = null;
     TvSectionShell.sessionControllerFactoryForTesting = null;
     BackKeyCoordinator.clear();
     BackKeyUpSuppressor.clearSuppression();
@@ -880,5 +929,148 @@ void main() {
     expect(probe(NavigationTabId.discover).refreshes, 1);
     expect(probe(NavigationTabId.discover).shown, 2);
     expect(find.text(t.common.home), findsNothing);
+  });
+
+  group('S10 watchlist section', () {
+    void connectWatchlist() {
+      sources.hasAnySource = true;
+      sources.watchlistCapableSources = [_CatalogSource()];
+      sources.emit();
+    }
+
+    List<String> labels(WidgetTester tester) => menu(tester).items.map((item) => item.label).toList();
+
+    testWidgets('A1 item sits right after libraries, before More, Live TV and Explore; absent without source', (
+      tester,
+    ) async {
+      servers.totalServerCount = 2;
+      servers.hasLiveTv = true;
+      await pump(tester);
+      expect(labels(tester), isNot(contains(TvStrings.watchlist)));
+      connectWatchlist();
+      await tester.pumpAndSettle();
+      expect(labels(tester), [
+        t.common.search,
+        t.common.home,
+        'Movies',
+        'Series',
+        TvStrings.watchlist,
+        'More',
+        t.navigation.liveTv,
+        t.navigation.explore,
+        t.common.settings,
+      ]);
+      expect(watchlistKey, isNull, reason: 'mounted lazily');
+      menu(tester).items.singleWhere((item) => item.label == TvStrings.watchlist).onSelect!();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, watchlist);
+      expect(menu(tester).currentIndex, labels(tester).indexOf(TvStrings.watchlist));
+      expect(watchlistProbe().shown, 1);
+      expect(watchlistProbe().first.hasFocus, isTrue);
+    });
+
+    testWidgets('A2 offline menu has no watchlist', (tester) async {
+      offlineStart = true;
+      connectWatchlist();
+      await pump(tester);
+      expect(labels(tester), isNot(contains(TvStrings.watchlist)));
+      expect(shell.currentState!.isSectionAvailable(watchlist), isFalse);
+    });
+
+    testWidgets('A29 losing every watchlist source leaves for Home', (tester) async {
+      connectWatchlist();
+      await pump(tester);
+      shell.currentState!.selectSection(watchlist);
+      await tester.pumpAndSettle();
+      sources.watchlistCapableSources = [];
+      sources.emit();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, home);
+      expect(labels(tester), isNot(contains(TvStrings.watchlist)));
+      expect(watchlistProbe().hidden, 1);
+    });
+
+    testWidgets('A30 connection loss shows No connection, return restores watchlist', (tester) async {
+      connectWatchlist();
+      await pump(tester);
+      shell.currentState!.selectSection(watchlist);
+      await tester.pumpAndSettle();
+      final state = watchlistProbe();
+      session.offline(true);
+      await tester.pumpAndSettle();
+      expect(labels(tester), isNot(contains(TvStrings.watchlist)));
+      await key(tester, LogicalKeyboardKey.escape);
+      await key(tester, LogicalKeyboardKey.escape);
+      expect(shell.currentState!.currentSection, const TvShellSection.noConnection());
+      expect(state.hidden, 1);
+      session.offline(false);
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, watchlist);
+      expect(state.shown, 2);
+    });
+
+    testWidgets('companion step passes through watchlist after libraries', (tester) async {
+      connectWatchlist();
+      await pump(tester);
+      final receiver = CompanionRemoteReceiver.instance;
+      shell.currentState!.selectSection(const TvShellSection.tab(NavigationTabId.libraries));
+      await tester.pumpAndSettle();
+      receiver.onTabNext!();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, watchlist);
+      receiver.onTabNext!();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection.tab, isNot(NavigationTabId.libraries));
+      expect(shell.currentState!.currentSection, isNot(watchlist));
+      receiver.onTabPrevious!();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, watchlist);
+      receiver.onTabPrevious!();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection.tab, NavigationTabId.libraries);
+    });
+
+    testWidgets('go to search selects Search', (tester) async {
+      connectWatchlist();
+      await pump(tester);
+      shell.currentState!.selectSection(watchlist);
+      await tester.pumpAndSettle();
+      watchlistProbe().widget.onOpenSearch();
+      await tester.pumpAndSettle();
+      expect(shell.currentState!.currentSection, search);
+      expect(watchlistProbe().hidden, 1);
+    });
+
+    testWidgets('selecting and returning to watchlist leaves Home hooks alone; shell drives watchlist hooks', (
+      tester,
+    ) async {
+      connectWatchlist();
+      await pump(tester);
+      final homeProbe = probe(NavigationTabId.discover);
+      shell.currentState!.selectSection(watchlist);
+      await tester.pumpAndSettle();
+      final hiddenAfterLeave = homeProbe.hidden, shownBefore = homeProbe.shown, refreshesBefore = homeProbe.refreshes;
+      expect(hiddenAfterLeave, 1);
+      final list = watchlistProbe();
+      // A route over the list must not hide it (a started player would be cancelled).
+      navigator.currentState!.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Details'))));
+      await tester.pumpAndSettle();
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(list.hidden, 0);
+      expect(shell.currentState!.currentSection, watchlist);
+      shell.currentState!.selectSection(watchlist);
+      await tester.pumpAndSettle();
+      session.emitIntent(TvShellContentIntent.refreshAfterResume);
+      session.emitIntent(TvShellContentIntent.fullReset);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+      await tester.pumpAndSettle();
+      expect(homeProbe.hidden, hiddenAfterLeave);
+      expect(homeProbe.shown, shownBefore);
+      expect(homeProbe.refreshes, refreshesBefore + 1, reason: 'resume intent only');
+      expect(list.shown, 1);
+      expect(list.refreshes, 1);
+      expect(list.resets, 1);
+    });
   });
 }
