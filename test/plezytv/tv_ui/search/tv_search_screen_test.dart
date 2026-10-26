@@ -1038,6 +1038,24 @@ void main() {
 
     String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
 
+    testWidgets('S17 A13: music before and between hubs does not consume poster slots', (tester) async {
+      final discover = _Discover()
+        ..hubs = [
+          continueHub,
+          MediaHub(id: 'albums', title: 'Albums', type: 'album', items: [media('album', MediaKind.album)], size: 1),
+          hub('trending'),
+          MediaHub(id: 'tracks', title: 'Tracks', type: 'track', items: [media('track', MediaKind.track)], size: 1),
+          hub('recent'),
+          hub('third'),
+        ];
+      await pump(tester, discover: discover);
+      expect(screen.currentState!.hubTitles, ['trending', 'recent']);
+      expect(find.text('Albums'), findsNothing);
+      expect(find.text('Tracks'), findsNothing);
+      expect(find.text('Continue Watching'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('A1: history and two Home hubs (no Continue Watching); → ↓ ↑ ← focus', (tester) async {
       history.values['a'] = ['Тьма', 'Дюна'];
       await pump(tester, discover: discover);
