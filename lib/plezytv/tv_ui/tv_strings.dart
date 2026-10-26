@@ -2,6 +2,17 @@ import '../../utils/formatters.dart';
 
 /// Fork-owned English templates for TV components and screens.
 abstract final class TvStrings {
+  static const transferBackup = 'Backup';
+  static const transferExport = 'Export settings';
+  static const transferImport = 'Import settings';
+  static const transferConfirm = 'Replace settings from plezytv-settings.json? This cannot be undone.';
+  static const transferNoUser = 'Sign in before transferring settings.';
+  static const transferFileMissing = 'Settings file not found: plezytv-settings.json';
+  static const transferInvalidFile = 'Invalid or unsupported settings file.';
+  static const transferStorageUnavailable = 'External app storage is unavailable.';
+  static const transferFailed = 'Could not transfer settings. Check the settings file and storage.';
+  static String transferExported(String path) => 'Settings exported to $path';
+  static String transferImported(int count) => 'Imported $count settings';
   static const noConnection = 'No connection to server';
   static const noConnectionHelp = 'Check that your server is on and your TV is connected to the same network.';
   static const retry = 'Retry';

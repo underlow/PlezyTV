@@ -85,6 +85,11 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="plezytv" android:host="screen"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:scheme="plezytv" android:host="settings"/>
+            </intent-filter>
         </activity>
         <!-- The default icon. Keep this component name forever: it was the launcher activity before
              app icons became switchable, so every existing home-screen shortcut, TV favourite and
@@ -555,6 +560,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
+        <!-- Fixed settings file: the provider enforces shell/root callers itself. -->
+        <provider
+            android:name=".plezytv.SettingsFileProvider"
+            android:authorities="${applicationId}.settings"
+            android:exported="true" />
         <!-- Launcher shelf artwork. Not exported: readers reach it only through the
              per-URI read grants issued to CATEGORY_HOME packages by WatchNextProvider. -->
         <provider

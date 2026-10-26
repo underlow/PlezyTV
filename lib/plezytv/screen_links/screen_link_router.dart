@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import '../../services/settings_export_service.dart';
+import '../settings_transfer/settings_transfer_service.dart';
 import '../../media/library_query.dart';
 import '../../media/media_filter.dart';
 import '../../services/plex_client.dart';
@@ -37,6 +41,8 @@ class ScreenLinkRouter {
       warn: (link, reason) => appLogger.w('Screen link $link: $reason'),
     );
     handlers = {
+      ScreenTarget.settingsExport: _transfer,
+      ScreenTarget.settingsImport: _transfer,
       ScreenTarget.home: (link, current) => _tab(link, _receiver.onHome),
       ScreenTarget.libraries: (link, current) => _tab(link, _receiver.onTabLibraries, NavigationTabId.libraries),
       ScreenTarget.search: (link, current) => _tab(
@@ -58,6 +64,34 @@ class ScreenLinkRouter {
 
   @visibleForTesting
   PlezyTvUpdater? updaterOverride;
+
+  @visibleForTesting
+  SettingsTransferService? transferOverride;
+
+  Future<void> _transfer(ScreenLink link, bool Function() isCurrent) async {
+    final context = _context!;
+    final service = transferOverride ?? const SettingsTransferService();
+    final action = link.target == ScreenTarget.settingsExport ? 'export' : 'import';
+    String message;
+    try {
+      if (action == 'export') {
+        final path = await service.exportToFile();
+        final data = jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
+        message = 'Settings export: ${(data['prefs'] as Map).length} keys, $path';
+      } else {
+        final result = await service.importAndApply(context);
+        message = 'Settings import: ${result.keysImported} keys imported, ${result.keysSkipped} skipped';
+      }
+      appLogger.i(message);
+    } catch (error) {
+      message = 'Settings $action failed: ${error is SettingsExportException ? error.message : error}';
+      appLogger.w(message);
+    }
+    final currentContext = _context;
+    if (isCurrent() && currentContext != null && currentContext.mounted) {
+      ScaffoldMessenger.maybeOf(currentContext)?.showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
 
   final _resolutions = Expando<_Resolution>();
   UpdateStartupTrigger? _updateTrigger;

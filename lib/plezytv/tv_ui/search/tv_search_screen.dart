@@ -126,6 +126,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
   final _sourceLists = <TvSearchKind, List<Object>>{};
 
   late TvSearchKeyboardLayout _layout;
+  ValueNotifier<String>? _layoutPreference;
   late TvHomePlayback _playback;
   List<String>? _history;
   int _historyGeneration = 0;
@@ -217,6 +218,8 @@ class TvSearchScreenState extends State<TvSearchScreen>
     // load() may notify synchronously; never during this build.
     _afterFrame(_ensureDiscoverLoaded);
     _layout = TvSearchKeyboardLayout.fromPref(SettingsService.instanceOrNull?.read(TvSettings.searchKeyboardLayout));
+    _layoutPreference = SettingsService.instanceOrNull?.listenable(TvSettings.searchKeyboardLayout);
+    _layoutPreference?.addListener(_layoutChanged);
     final shell = context.findAncestorStateOfType<TvSectionShellState>();
     _playback = TvHomePlayback.forContext(
       context,
@@ -319,6 +322,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
 
   @override
   void dispose() {
+    _layoutPreference?.removeListener(_layoutChanged);
     _observer?.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _hidden?.removeListener(_hiddenChanged);
@@ -435,6 +439,11 @@ class TvSearchScreenState extends State<TvSearchScreen>
   void _clear() {
     _typed();
     controller.clear();
+  }
+
+  void _layoutChanged() {
+    final layout = TvSearchKeyboardLayout.fromPref(_layoutPreference?.value);
+    if (mounted && layout != _layout) setState(() => _layout = layout);
   }
 
   void _setLayout(TvSearchKeyboardLayout layout) {
