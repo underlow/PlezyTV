@@ -94,7 +94,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
             _collapseAt,
             RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
           );
-    final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
+    final collapsed = _tab == 0 && _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
@@ -768,7 +768,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
                     ],
                   ),
                 ),
-                if (_collapsed)
+                if (_tab == 0 && _collapsed)
                   Positioned(
                     key: const ValueKey('show-compact-header'),
                     top: 0,
@@ -900,8 +900,8 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   void _revealContent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_tab == 0 && _actionScope.hasFocus) {
+      if (!mounted || _tab != 0) return;
+      if (_actionScope.hasFocus) {
         _scrollTop();
         return;
       }
@@ -1067,7 +1067,6 @@ class _TvShowScreenState extends State<TvShowScreen> {
           ),
         ),
         _episodeRow(context, key, title),
-        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
       ],
     );
   }

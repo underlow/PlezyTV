@@ -501,6 +501,39 @@ void main() {
     expect(focusedEpisode(tester), 'e4');
   });
 
+  testWidgets('N7 season navigation preserves the full episode header and hides the compact bar', (tester) async {
+    await mount(tester, fixture());
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(tabs(tester).selectedIndex, 1);
+
+    void expectSeasonLayout() {
+      final header = find.byWidgetPredicate(
+        (widget) => widget is SizedBox && widget.height == 340 && widget.width == 900,
+      );
+      expect(find.descendant(of: header, matching: find.textContaining(RegExp(r'S1 E[34] · e[34]'))), findsOneWidget);
+      expect(header, findsOneWidget);
+      expect(tester.getRect(header), const Rect.fromLTWH(200, 324, 900, 340));
+      expect(find.byKey(const ValueKey('show-compact-header')), findsNothing);
+      final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
+      expect(scrollable.position.maxScrollExtent, 0);
+    }
+
+    expectSeasonLayout();
+    for (final key in [
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowUp,
+      LogicalKeyboardKey.arrowDown,
+    ]) {
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+      expectSeasonLayout();
+    }
+  });
+
   testWidgets('A7 tabs debounce content for 300ms; A9 Back returns to main action', (tester) async {
     await mount(tester, fixture());
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
