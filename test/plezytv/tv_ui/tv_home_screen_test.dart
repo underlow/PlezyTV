@@ -398,6 +398,49 @@ void main() {
     });
   }
 
+  testWidgets('S24 R4/R11: Home episode labels and second poster row are visible', (tester) async {
+    provider.onDeck = [
+      testMediaItem(
+        id: 'ep',
+        kind: MediaKind.episode,
+        title: 'Part III',
+        grandparentTitle: 'Example series',
+        parentIndex: 1,
+        index: 3,
+        durationMs: 3600000,
+        viewOffsetMs: 1200000,
+      ),
+    ];
+    provider.hubs = [hub('movies')];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    final card = find.byType(TvEpisode).first;
+    expect(find.descendant(of: card, matching: find.text('Example series')), findsOneWidget);
+    expect(find.descendant(of: card, matching: find.text('S1 E3 · Part III')), findsOneWidget);
+    expect(tester.getBottomRight(card).dy, lessThan(1080));
+    final second = find.byType(TvHorizontalRow).at(1);
+    expect(tester.getTopLeft(second).dy, lessThan(1080));
+    final poster = find.descendant(of: second, matching: find.byType(TvPoster)).first;
+    final top = tester.getTopLeft(poster).dy;
+    expect(top, lessThan(1080));
+    expect(1080 - top, greaterThan(324 / 4));
+    expect(hero(tester).compact, isFalse);
+    // Episode hubs also use the series/episode labels in poster form.
+    final episode = provider.onDeck.single;
+    provider.onDeck = [];
+    provider.hubs = [
+      MediaHub(id: 'episodes', title: 'Episodes', type: 'episode', items: [episode]),
+      hub('movies'),
+    ];
+    provider.emit();
+    await tester.pumpAndSettle();
+    final firstPoster = find.byType(TvPoster).first;
+    expect(find.descendant(of: firstPoster, matching: find.text('Example series')), findsOneWidget);
+    expect(find.descendant(of: firstPoster, matching: find.text('S1 E3 · Part III')), findsOneWidget);
+    final nextPoster = find.descendant(of: find.byType(TvHorizontalRow).at(1), matching: find.byType(TvPoster)).first;
+    expect(1080 - tester.getTopLeft(nextPoster).dy, greaterThan(324 / 4));
+  });
+
   testWidgets('A1/A2/A3: first card, hero, vertical row memory and compact geometry', (tester) async {
     content();
     await pump(tester);

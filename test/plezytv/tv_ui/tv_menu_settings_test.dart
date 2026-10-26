@@ -20,6 +20,62 @@ double scale(WidgetTester tester, Finder parent) {
 }
 
 void main() {
+  for (final count in [17, 24]) {
+    testWidgets('R10: $count items fit or pin Settings and reveal current section', (tester) async {
+      final nodes = List.generate(count, (_) => FocusNode());
+      for (final node in nodes) {
+        addTearDown(node.dispose);
+      }
+      await pumpTvWidget(
+        tester,
+        TvSideMenu(
+          items: List.generate(
+            count,
+            (i) => TvSideMenuItem(
+              key: ValueKey(i),
+              icon: Icons.home,
+              label: i == count - 1 ? 'Settings' : 'Item $i',
+              focusNode: nodes[i],
+            ),
+          ),
+          currentIndex: count - 2,
+          dividerBeforeIndex: count - 1,
+          child: const SizedBox.expand(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      void visible(int i) {
+        final rect = tester.getRect(find.byKey(ValueKey(i)));
+        expect(rect.top, greaterThanOrEqualTo(-1e-9));
+        expect(rect.bottom, lessThanOrEqualTo(1080 + 1e-9));
+      }
+
+      if (count == 17) {
+        for (var i = 0; i < count; i++) {
+          visible(i);
+        }
+        expect(tester.getSize(find.byKey(const ValueKey(0))).height, closeTo((1080 - 33) / 17, .001));
+      } else {
+        expect(tester.getSize(find.byKey(const ValueKey(0))).height, 48);
+        visible(count - 2);
+      }
+      visible(count - 1);
+      await enter(tester, nodes.first);
+      await tester.pumpAndSettle();
+      visible(0);
+      visible(count - 1);
+      for (var i = 1; i < count; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(nodes[i].hasFocus, isTrue);
+        visible(i);
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(nodes.last.hasFocus, isTrue);
+    });
+  }
+
   for (final reduced in [false, true]) {
     testWidgets('A12 width clip, fixed icon geometry, marker, scrim and collapse reduced=$reduced', (tester) async {
       final inside = FocusNode();

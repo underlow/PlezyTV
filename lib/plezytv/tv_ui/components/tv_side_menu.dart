@@ -61,6 +61,7 @@ class _TvSideMenuState extends State<TvSideMenu> {
   void initState() {
     super.initState();
     widget.focusNode?.addListener(_handleEntryFocus);
+    _showCurrent();
   }
 
   LocalKey _key(TvSideMenuItem item) => item.key ?? ValueKey(item.label);
@@ -84,6 +85,7 @@ class _TvSideMenuState extends State<TvSideMenu> {
       oldWidget.focusNode?.removeListener(_handleEntryFocus);
       widget.focusNode?.addListener(_handleEntryFocus);
     }
+    _showCurrent();
     final keys = widget.items.map(_key).toSet();
     assert(keys.length == widget.items.length, 'Menu item keys must be unique');
     final removedFocus = oldWidget.items.any((item) => !keys.contains(_key(item)) && _node(item).hasFocus);
@@ -113,13 +115,22 @@ class _TvSideMenuState extends State<TvSideMenu> {
     super.dispose();
   }
 
+  void _showCurrent() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _expanded || widget.currentIndex == null) return;
+      final context = _node(widget.items[widget.currentIndex!]).context;
+      if (context != null) Scrollable.ensureVisible(context);
+    });
+  }
+
   void _showFocused(LocalKey key) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final item = widget.items.where((item) => _key(item) == key).firstOrNull;
       final context = item == null ? null : _node(item).context;
       if (context == null || !_node(item!).hasFocus) return;
-      final scrollable = Scrollable.of(context);
+      final scrollable = Scrollable.maybeOf(context);
+      if (scrollable == null) return;
       final viewport = scrollable.context.findRenderObject()! as RenderBox;
       final itemBox = context.findRenderObject()! as RenderBox;
       final above = itemBox.localToGlobal(Offset.zero, ancestor: viewport).dy < 0;
@@ -150,6 +161,7 @@ class _TvSideMenuState extends State<TvSideMenu> {
             canRequestFocus: widget.focusNode != null,
             onFocusChange: (value) {
               setState(() => _expanded = value);
+              if (!value && widget.currentIndex != null) _showCurrent();
             },
             child: AnimatedContainer(
               duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : TvTokens.motion.sidebarExpand),
@@ -162,48 +174,68 @@ class _TvSideMenuState extends State<TvSideMenu> {
                 minWidth: px(sizes.expandedW),
                 maxWidth: px(sizes.expandedW),
                 child: LayoutBuilder(
-                  builder: (context, constraints) => SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                  builder: (context, constraints) {
+                    final dividerHeight = widget.dividerBeforeIndex == null ? 0.0 : px(33);
+                    final itemHeight = widget.items.isEmpty
+                        ? px(sizes.itemH)
+                        : ((constraints.maxHeight - dividerHeight) / widget.items.length).clamp(
+                            px(sizes.minItemH),
+                            px(sizes.itemH),
+                          );
+                    final overflow = itemHeight * widget.items.length + dividerHeight > constraints.maxHeight;
+                    Widget item(int i) => SizedBox(
+                      key: _key(widget.items[i]),
+                      height: itemHeight,
+                      child: Stack(
                         children: [
-                          for (var i = 0; i < widget.items.length; i++) ...[
-                            if (widget.dividerBeforeIndex == i)
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: px(32), vertical: px(16)),
-                                child: Divider(height: px(1), thickness: px(1), color: TvTokens.color.surface.level3),
-                              ),
-                            SizedBox(
-                              key: _key(widget.items[i]),
-                              height: px(sizes.itemH),
-                              child: Stack(
-                                children: [
-                                  if (widget.currentIndex == i)
-                                    Positioned(
-                                      left: 0,
-                                      top: px((sizes.itemH - sizes.currentMarker[1]) / 2),
-                                      child: SizedBox(
-                                        width: px(sizes.currentMarker[0]),
-                                        height: px(sizes.currentMarker[1]),
-                                        child: ColoredBox(color: TvTokens.color.accent.normal),
-                                      ),
-                                    ),
-                                  Positioned(
-                                    left: px(sizes.padLeft),
-                                    top: 0,
-                                    bottom: 0,
-                                    width: px(_expanded ? sizes.expandedW - sizes.padLeft * 2 : sizes.itemW),
-                                    child: _item(context, widget.items[i]),
-                                  ),
-                                ],
+                          if (widget.currentIndex == i)
+                            Positioned(
+                              left: 0,
+                              top: (itemHeight - px(sizes.currentMarker[1])) / 2,
+                              child: SizedBox(
+                                width: px(sizes.currentMarker[0]),
+                                height: px(sizes.currentMarker[1]),
+                                child: ColoredBox(color: TvTokens.color.accent.normal),
                               ),
                             ),
-                          ],
+                          Positioned(
+                            left: px(sizes.padLeft),
+                            top: 0,
+                            bottom: 0,
+                            width: px(_expanded ? sizes.expandedW - sizes.padLeft * 2 : sizes.itemW),
+                            child: _item(context, widget.items[i]),
+                          ),
                         ],
                       ),
-                    ),
-                  ),
+                    );
+                    Widget divider() => Padding(
+                      padding: EdgeInsets.symmetric(horizontal: px(32), vertical: px(16)),
+                      child: Divider(height: px(1), thickness: px(1), color: TvTokens.color.surface.level3),
+                    );
+                    // The shell places Settings last. Keep it outside the scroll
+                    // viewport when the minimum row height cannot fit the list.
+                    final pinLast = overflow && widget.items.isNotEmpty;
+                    final count = widget.items.length - (pinLast ? 1 : 0);
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (var i = 0; i < count; i++) ...[
+                                  if (widget.dividerBeforeIndex == i) divider(),
+                                  item(i),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (pinLast) ...[if (widget.dividerBeforeIndex == count) divider(), item(count)],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

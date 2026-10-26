@@ -849,9 +849,6 @@ class TvSearchScreenState extends State<TvSearchScreen>
     return [if (base.isNotEmpty) base, ?server].join(' · ');
   }
 
-  String? _episodeCaption(MediaItem item, {required bool multiServer}) =>
-      multiServer && item.serverName != null ? item.serverName : null;
-
   static String? _credit(MediaPerson person) => switch (person.credit) {
     PersonCredit.actor => t.explore.creditRole.actor,
     PersonCredit.director => t.explore.creditRole.director,
@@ -938,7 +935,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
                     ? TvEpisode(
                         item: item,
                         client: client,
-                        caption: _episodeCaption(item, multiServer: multiServer),
+                        showSeriesTitle: true,
                         focusNode: node,
                         onSelect: () => unawaited(_open(item)),
                         onLongPress: menu,
@@ -1017,12 +1014,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
           return _mediaMenu(
             item,
             (_, _) => kind == TvSearchKind.episodes
-                ? TvEpisode(
-                    item: item,
-                    client: client,
-                    caption: _episodeCaption(item, multiServer: multiServer),
-                    externalFocus: isFocused,
-                  )
+                ? TvEpisode(item: item, client: client, showSeriesTitle: true, externalFocus: isFocused)
                 : TvPoster(
                     item: item,
                     client: client,

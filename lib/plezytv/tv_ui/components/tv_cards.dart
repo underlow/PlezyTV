@@ -13,6 +13,11 @@ import '../tv_strings.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 
+String _episodeCaption(MediaItem item) {
+  final label = formatSeasonEpisodeLabel(item.parentIndex, item.index);
+  return [?label, if (item.title?.isNotEmpty ?? false) item.title!].join(' · ');
+}
+
 enum TvPosterSize {
   row,
   grid,
@@ -32,6 +37,7 @@ class TvPoster extends StatelessWidget {
     super.key,
     required this.item,
     this.size = TvPosterSize.row,
+    this.showSeriesTitle = false,
     this.caption,
     this.client,
     this.localFilePath,
@@ -49,6 +55,7 @@ class TvPoster extends StatelessWidget {
   final bool? externalFocus;
   final MediaItem item;
   final TvPosterSize size;
+  final bool showSeriesTitle;
   final String? caption, localFilePath;
   final MediaServerClient? client;
   final bool onServer, disabled, autofocus;
@@ -60,8 +67,8 @@ class TvPoster extends StatelessWidget {
   Widget build(BuildContext context) => _MediaCard(
     item: item,
     dimensions: size.dimensions,
-    title: item.displayTitle,
-    caption: caption ?? item.year?.toString() ?? '',
+    title: showSeriesTitle ? item.grandparentTitle ?? item.title ?? '' : item.displayTitle,
+    caption: caption ?? (showSeriesTitle ? _episodeCaption(item) : item.year?.toString() ?? ''),
     client: client,
     localFilePath: localFilePath,
     onServer: onServer,
@@ -138,6 +145,7 @@ class TvEpisode extends StatelessWidget {
     this.onFocusChange,
     this.externalFocus,
     this.caption,
+    this.showSeriesTitle = false,
     this.progress,
     this.blurThumbnail = false,
   });
@@ -150,6 +158,9 @@ class TvEpisode extends StatelessWidget {
 
   /// Replaces the progress or duration line (the player queue's current item).
   final String? caption;
+
+  /// Home and search identify the series first, then the episode.
+  final bool showSeriesTitle;
 
   /// Replaces the stored progress on the bar (0–1; the playing item).
   final double? progress;
@@ -167,12 +178,16 @@ class TvEpisode extends StatelessWidget {
     return _MediaCard(
       item: item,
       dimensions: Size(TvTokens.size.episode.w.toDouble(), TvTokens.size.episode.h.toDouble()),
-      title: label == null
+      title: showSeriesTitle
+          ? item.grandparentTitle ?? item.title ?? ''
+          : label == null
           ? item.title ?? ''
           : TvStrings.episode(season: item.parentIndex!, episode: item.index!, title: item.title ?? ''),
       caption:
           caption ??
-          (item.hasActiveProgress
+          (showSeriesTitle
+              ? _episodeCaption(item)
+              : item.hasActiveProgress
               ? TvStrings.left(item.durationMs! - item.viewOffsetMs!)
               : item.durationMs == null
               ? ''
