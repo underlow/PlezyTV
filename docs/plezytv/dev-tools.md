@@ -91,11 +91,11 @@ link is kept. Import applies immediately without a confirmation dialog or restar
 ```sh
 adb shell am start -a android.intent.action.VIEW -d 'plezytv://settings/export' -p com.underlow.plezytv
 adb logcat -s PlezyTV
-# Wait for "Settings export: <count> keys" before pulling the file:
-adb pull /sdcard/Android/data/com.underlow.plezytv/files/plezytv-settings.json ./plezytv-settings.json
+# Wait for "Settings export: <count> keys" before reading the file:
+adb shell content read --uri content://com.underlow.plezytv.settings/settings.json > ./plezytv-settings.json
 
 # On the destination TV (use adb -s <serial> with multiple connected devices):
-adb push ./plezytv-settings.json /sdcard/Android/data/com.underlow.plezytv/files/plezytv-settings.json
+adb shell 'content write --uri content://com.underlow.plezytv.settings/settings.json' < ./plezytv-settings.json
 adb shell am start -a android.intent.action.VIEW -d 'plezytv://settings/import' -p com.underlow.plezytv
 adb logcat -s PlezyTV
 ```
@@ -108,5 +108,12 @@ parameters are accepted. The `settings` intent filter has no `BROWSABLE` categor
 these commands are intended for adb rather than browser links. Existing `screen`,
 `play` and `live` links retain their handling.
 
-Local tests/build checks do not establish `adb push` access on Android 9/11 or
-cold/warm intent behavior on a real TV; those remain device acceptance checks.
+The provider accepts only shell (adb) and root callers. It exposes only
+`settings.json`, with read or truncating write access; it does not apply settings
+until the import link is sent. The underlying file remains
+`/sdcard/Android/data/com.underlow.plezytv/files/plezytv-settings.json`
+(`getExternalFilesDir(null)`), for reference only: direct adb access is denied on
+the tested Xiaomi Android 11 device. No root or debug build is needed.
+
+Local tests/build checks do not establish provider commands or cold/warm intent
+behavior on a real TV. Android 9 availability of `content write` remains unverified.
