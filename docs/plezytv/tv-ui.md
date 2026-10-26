@@ -230,6 +230,39 @@ With `onVisibleRangeChanged`, the range is reported again after every
 `replaceAll`. Without
 them the S16 grid behaves as before.
 
+### S11 search section
+
+On TV the shell mounts `TvSearchScreen` (`lib/plezytv/tv_ui/search/`) for
+`NavigationTabId.search`; phones keep upstream `SearchScreen`. No upstream edits.
+The screen implements `SearchInputFocusable`, `Refreshable`, `FullRefreshable`,
+`FocusableTab` and `TabVisibilityAware`, so companion search, `search?q=` links and
+`handleContentIntent` reach it unchanged. `submitSearchQuery` searches at once and
+focuses the first result (the first key when nothing is found); after such a
+query, ← from results goes to the first key of the layout, otherwise to the last
+pressed key. `primeRefresh` repeats the current query instead of clearing it
+(reconnect keeps «дюн»); `fullRefresh` (profile reset) clears the query and
+re-reads the profile's history.
+
+`TvSearchController` (one per screen) owns the query, a 300 ms debounce, a
+generation guard against stale answers and `AbortController` cancellation. It
+calls `aggregationService.searchAcrossServers` with hidden library keys, as
+`SearchScreen` does, and repeats `DebouncedMediaSearch`'s stale-response logic
+and `SearchScreen.updateItem`'s item refresh; keep them aligned with the three
+paths in the S11 warning in `plezytv-upstream.yml`. Results show tabs (All,
+Movies, Shows, Episodes, People) and stacked rows in All; music, photos,
+collections, seasons and clips are not shown.
+
+`TvSearchKeyboard` is fork-owned (РУС/ENG/123, no microphone); the last layout is
+a TV setting. Hardware text input types into the field. `TvSearchHistory` is
+profile-scoped through `StorageService` and records only queries with results,
+on opening a result, Back, `onTabHidden`, a covering route (`didPushNext`, which
+includes item links) and `AppLifecycleState.paused`. The idle screen shows the
+history and up to two Home hubs (Continue Watching excluded) selected by
+`TvHomeModelBuilder`; their titles are server hub names, not the mockup's.
+Card actions follow `TvHomeScreen`: `navigateToMediaItem` (episodes by Plezy's
+episode setting), `MediaContextMenu`, Play/Pause through `TvHomePlayback`.
+The round person card shared with S7/S8 cast rows is `TvPersonCard`.
+
 ### S16 library section hookup
 
 The shell's libraries section mounts `TvLibrariesSwitch` under its stable section key.

@@ -137,6 +137,12 @@ jobs:
             printf '\nWarning: upstream changes S8 movie dependencies. Review copied action visibility, watchlist/download handlers and missing-item handling in lib/plezytv/tv_ui/movie/ against docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
           fi
           if ! git diff --quiet origin/main HEAD -- \
+            lib/screens/search_screen.dart \
+            lib/mixins/debounced_media_search.dart \
+            lib/services/data_aggregation_service.dart; then
+            printf '\nWarning: upstream changes S11 search dependencies. Review the repeated search, stale-response, ranking and item-refresh logic in lib/plezytv/tv_ui/search/ against docs/plezytv/tv-ui.md.\n' >> "$RUNNER_TEMP/upstream-pr.md"
+          fi
+          if ! git diff --quiet origin/main HEAD -- \
             lib/widgets/video_controls/desktop_video_controls.dart \
             lib/widgets/video_controls/video_controls.dart \
             lib/widgets/video_controls/parts/markers.dart \
