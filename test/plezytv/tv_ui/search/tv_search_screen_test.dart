@@ -24,19 +24,23 @@ import 'package:plezy/plezytv/tv_ui/search/tv_search_controller.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_history.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_keyboard.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_screen.dart';
+import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
 import 'package:plezy/plezytv/tv_ui/tv_settings.dart';
 import 'package:plezy/profiles/active_profile_provider.dart';
 import 'package:plezy/providers/discover_provider.dart';
 import 'package:plezy/providers/download_provider.dart';
+import 'package:plezy/providers/hidden_libraries_provider.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/providers/offline_mode_provider.dart';
 import 'package:plezy/providers/watch_state_store.dart';
 import 'package:plezy/services/data_aggregation_service.dart';
 import 'package:plezy/services/offline_watch_sync_service.dart';
+import 'package:plezy/screens/video_player_screen.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/utils/video_player_navigation.dart';
+import 'package:plezy/utils/watch_state_notifier.dart';
 import 'package:provider/provider.dart';
 
 import '../../../test_helpers/media_items.dart';
@@ -89,9 +93,11 @@ class _ScopedHistory implements TvSearchHistoryStore {
 }
 
 class _ActionClient implements MediaServerClient {
+  _ActionClient([this.id = 'server']);
+  final String id;
   final watched = <MediaItem>[];
   @override
-  ServerId get serverId => ServerId('server');
+  ServerId get serverId => ServerId(id);
   @override
   void close() {}
   @override
@@ -101,6 +107,22 @@ class _ActionClient implements MediaServerClient {
       const ServerCapabilities(videoTranscoding: false, continueWatchingRemoval: true);
   @override
   Future<void> markWatched(MediaItem item) async => watched.add(item);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Hidden libraries whose keys the test changes (R4).
+class _Hidden extends ChangeNotifier implements HiddenLibrariesProvider {
+  Set<String> keys = {};
+  @override
+  Set<String> get hiddenLibraryKeys => Set.unmodifiable(keys);
+  @override
+  Future<void> ensureInitialized() async {}
+  void hide(String key) {
+    keys = {...keys, key};
+    notifyListeners();
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -219,8 +241,10 @@ void main() {
     ActiveProfileProvider? profile,
     WatchStateStore? watchState,
     _Discover? discover,
+    _Hidden? hidden,
+    List<_ActionClient> moreClients = const [],
   }) async {
-    final servers = client == null ? null : testMultiServer(clients: [client]);
+    final servers = client == null ? null : testMultiServer(clients: [client, ...moreClients]);
     final downloads = _NoDownloads();
     final offlineWatch = _OfflineWatch();
     final offline = servers == null ? null : OfflineModeProvider(servers.manager);
@@ -239,6 +263,7 @@ void main() {
           if (profile != null) ChangeNotifierProvider<ActiveProfileProvider>.value(value: profile),
           if (watchState != null) ChangeNotifierProvider<WatchStateStore>.value(value: watchState),
           if (discover != null) ChangeNotifierProvider<DiscoverProvider>.value(value: discover),
+          if (hidden != null) ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hidden),
         ],
         child: ProfileNavigationScope(
           navigatorKey: GlobalKey<NavigatorState>(),
@@ -360,6 +385,17 @@ void main() {
     expect(controller().selectedTab, TvSearchTab.people);
     await press(tester, LogicalKeyboardKey.arrowDown);
     expect(focusedId(tester), 'Person 1');
+    // Focus is on the grid slot: the card has no node of its own and shows the
+    // token ring through its external-focus mode (CQ1).
+    expect(FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvPersonCard>(), isNull);
+    expect(find.descendant(of: find.byType(TvPersonCard), matching: find.byType(TvFocusable)), findsNothing);
+    final cards = tester.widgetList<TvPersonCard>(find.byType(TvPersonCard)).toList();
+    expect([for (final card in cards) card.externalFocus], [true, false, false]);
+    final ring = tester.widget<TvFocusVisual>(
+      find.descendant(of: find.widgetWithText(TvPersonCard, 'Person 1'), matching: find.byType(TvFocusVisual)),
+    );
+    expect(ring.state.focused, isTrue);
+    expect(ring.kind, TvFocusKind.ring);
     expect(find.text(t.explore.creditRole.actor), findsOneWidget);
     expect(find.text(t.explore.creditRole.director), findsOneWidget);
     expect(find.byType(TvPersonCard), findsNWidgets(3));
@@ -625,6 +661,263 @@ void main() {
     await pump(tester);
     expect(_key('char:a'), findsOneWidget);
     expect(_key('char:а'), findsNothing);
+  });
+
+  group('R4/A24 hidden libraries', () {
+    late _Hidden hidden;
+    late List<MediaItem> all;
+    setUp(() {
+      hidden = _Hidden();
+      all = movies(5);
+      // movie2 lives in library «kids».
+      search.respond = (_) => answer(
+        items: [
+          for (final item in all)
+            if (!(item.id == 'movie2' && hidden.keys.contains('kids'))) item,
+        ],
+      );
+    });
+
+    Future<void> focusMovie(WidgetTester tester, int index) async {
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      await press(tester, LogicalKeyboardKey.arrowRight, times: index);
+      expect(focusedId(tester), 'movie$index');
+    }
+
+    testWidgets('hiding another library while shown searches again and keeps the item', (tester) async {
+      await pump(tester, hidden: hidden);
+      await results(tester, 'дюн');
+      await focusMovie(tester, 3);
+      final before = search.calls.length;
+      hidden.hide('other');
+      await tester.pumpAndSettle();
+      expect(search.calls.length, before + 1);
+      expect(focusedId(tester), 'movie3');
+      hidden.hide('other'); // same key set: no search
+      await tester.pumpAndSettle();
+      expect(search.calls.length, before + 1);
+    });
+
+    testWidgets('F1: hiding the focused item\'s library from another section — first card on return', (tester) async {
+      await pump(tester, hidden: hidden);
+      await results(tester, 'дюн');
+      await focusMovie(tester, 2);
+      screen.currentState!.onTabHidden();
+      menu.requestFocus();
+      await tester.pumpAndSettle();
+      final before = search.calls.length;
+      hidden.hide('kids');
+      await tester.pumpAndSettle();
+      expect(search.calls.length, before + 1);
+      expect(find.byType(TvPoster), findsNWidgets(4));
+      screen.currentState!.onTabShown();
+      screen.currentState!.focusActiveTabIfReady();
+      await tester.pumpAndSettle();
+      expect(focusedId(tester), 'movie0');
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(tester.state<TvSearchKeyboardState>(find.byType(TvSearchKeyboard)).hasFocus, isTrue);
+    });
+
+    testWidgets('F1: a re-search under a covering route keeps a surviving item after pop', (tester) async {
+      await pump(tester, hidden: hidden);
+      await results(tester, 'дюн');
+      await focusMovie(tester, 3);
+      unawaited(
+        Navigator.of(
+          screen.currentContext!,
+        ).push(MaterialPageRoute<void>(builder: (_) => const Focus(autofocus: true, child: SizedBox()))),
+      );
+      await tester.pumpAndSettle();
+      hidden.hide('kids');
+      await tester.pumpAndSettle();
+      Navigator.of(screen.currentContext!).pop();
+      await tester.pumpAndSettle();
+      expect(focusedId(tester), 'movie3');
+    });
+
+    testWidgets('F1: a re-search that leaves nothing focuses the keyboard on return', (tester) async {
+      await pump(tester, hidden: hidden);
+      all = [all[2]];
+      await results(tester, 'дюн');
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusedId(tester), 'movie2');
+      screen.currentState!.onTabHidden();
+      menu.requestFocus();
+      hidden.hide('kids');
+      await tester.pumpAndSettle();
+      expect(find.text(TvSearchStrings.nothingFound), findsOneWidget);
+      screen.currentState!.onTabShown();
+      screen.currentState!.focusActiveTabIfReady();
+      await tester.pumpAndSettle();
+      expect(tester.state<TvSearchKeyboardState>(find.byType(TvSearchKeyboard)).hasFocus, isTrue);
+    });
+  });
+
+  testWidgets('F3: a submitted query answered while hidden focuses the first card on return, once', (tester) async {
+    search.respond = (_) => answer(items: movies(3));
+    await pump(tester);
+    screen.currentState!.onTabHidden();
+    menu.requestFocus();
+    screen.currentState!.submitSearchQuery('matrix');
+    menu.requestFocus();
+    await tester.pumpAndSettle();
+    expect(find.byType(TvPoster), findsNWidgets(3));
+    screen.currentState!.onTabShown();
+    screen.currentState!.focusActiveTabIfReady();
+    await tester.pumpAndSettle();
+    expect(focusedId(tester), 'movie0');
+    await press(tester, LogicalKeyboardKey.arrowLeft);
+    expect(keyFocused(tester, 'char:а'), isTrue);
+    screen.currentState!.primeRefresh();
+    await tester.pumpAndSettle();
+    expect(keyFocused(tester, 'char:а'), isTrue);
+  });
+
+  testWidgets('F2: Retry keeps a usable focus while loading; a second failure focuses Retry again', (tester) async {
+    search.error = const TvSearchUnavailable();
+    await pump(tester);
+    await results(tester, 'аа');
+    await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'TV Search retry');
+
+    search.hold = Completer();
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(controller().state, TvSearchState.loading);
+    search.hold!.completeError(const TvSearchUnavailable());
+    search.hold = null;
+    await tester.pumpAndSettle();
+    expect(find.text(TvSearchStrings.unavailable), findsOneWidget);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'TV Search retry');
+
+    search.hold = Completer();
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(controller().state, TvSearchState.loading);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
+    expect(tester.state<TvSearchKeyboardState>(find.byType(TvSearchKeyboard)).hasFocus, isTrue);
+    search.hold!.complete(answer(items: movies(1)));
+    search.hold = null;
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('F2: a successful retry focuses the first card', (tester) async {
+    search.error = const TvSearchUnavailable();
+    await pump(tester);
+    await results(tester, 'аа');
+    await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+    search
+      ..error = null
+      ..respond = (_) => answer(items: movies(2));
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(focusedId(tester), 'movie0');
+  });
+
+  group('A21 fresh watch state after a round-trip', () {
+    Future<WatchStateStore> setup(WidgetTester tester, _Routes observer) async {
+      final stack = await ProfileStack.create(withStorage: false);
+      addTearDown(stack.dispose);
+      final store = WatchStateStore();
+      addTearDown(store.dispose);
+      search.respond = (_) => answer(items: movies(2));
+      await pump(tester, client: _ActionClient(), profile: stack.active, watchState: store, observers: [observer]);
+      await results(tester, 'movie');
+      return store;
+    }
+
+    MediaItem poster(WidgetTester tester, String id) =>
+        tester.widgetList<TvPoster>(find.byType(TvPoster)).firstWhere((p) => p.item.id == id).item;
+
+    testWidgets('rows: the card shows the new status after details', (tester) async {
+      final observer = _Routes();
+      await setup(tester, observer);
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(observer.details, 1);
+      WatchStateNotifier().notifyWatched(item: movies(2).first, isNowWatched: true);
+      await tester.pumpAndSettle();
+      expect(poster(tester, 'movie0').isWatched, isTrue);
+      expect(focusedId(tester), 'movie0');
+    });
+
+    testWidgets('grid: the card and Play/Pause use the new status after playing', (tester) async {
+      final observer = _Routes();
+      await setup(tester, observer);
+      controller().selectTab(TvSearchTab.movies);
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusedId(tester), 'movie0');
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(observer.players.length, 1);
+      WatchStateNotifier().notifyProgress(item: movies(2).first, viewOffset: 1800000, duration: 3600000);
+      await tester.pumpAndSettle();
+      expect(poster(tester, 'movie0').viewOffsetMs, 1800000);
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(observer.players.length, 2);
+      final page = observer.players.last.buildPage(
+        screen.currentContext!,
+        kAlwaysCompleteAnimation,
+        kAlwaysCompleteAnimation,
+      );
+      expect((page as VideoPlayerScreen).metadata.viewOffsetMs, 1800000);
+    });
+  });
+
+  testWidgets('partial results: the snackbar shows once per revision', (tester) async {
+    var failed = true;
+    search.respond = (_) => (
+      hits: const [],
+      candidates: movies(2),
+      people: const <MediaPerson>[],
+      succeededServerIds: const {'server'},
+      cancelledServerIds: const <String>{},
+      failedServerIds: failed ? const {'other'} : const <String>{},
+    );
+    await pump(tester);
+    await results(tester, 'дюн');
+    expect(find.text(t.messages.searchPartialResults), findsOneWidget);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+    expect(find.text(t.messages.searchPartialResults), findsNothing);
+    controller().selectTab(TvSearchTab.movies);
+    await tester.pumpAndSettle();
+    expect(find.text(t.messages.searchPartialResults), findsNothing);
+    failed = false;
+    screen.currentState!.refresh();
+    await tester.pumpAndSettle();
+    expect(find.text(t.messages.searchPartialResults), findsNothing);
+    failed = true;
+    screen.currentState!.refresh();
+    await tester.pumpAndSettle();
+    expect(find.text(t.messages.searchPartialResults), findsOneWidget);
+  });
+
+  testWidgets('A7/R6: OK opens movie details and person media; both record history', (tester) async {
+    final observer = _Routes();
+    search.respond = (_) => answer(items: movies(1), people: [person('1', PersonCredit.actor)]);
+    await pump(tester, client: _ActionClient(), observers: [observer]);
+    await results(tester, 'дюн');
+    await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+    expect(focusedId(tester), 'movie0');
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(observer.details, 1);
+    expect(history.values['a'], ['дюн']);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focusedId(tester), 'Person 1');
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(observer.details, 2);
+  });
+
+  testWidgets('R6: with several servers, captions name the server', (tester) async {
+    MediaItem on(String id, MediaKind kind) => testMediaItem(
+      id: id,
+      kind: kind,
+      title: id,
+      serverId: 'server',
+      durationMs: 1,
+    ).copyWith(serverName: 'Living room', year: 2021);
+    search.respond = (_) => answer(items: [on('m', MediaKind.movie)]);
+    await pump(tester, client: _ActionClient(), moreClients: [_ActionClient('second')]);
+    await results(tester, 'm');
+    expect(find.text('2021 · Living room'), findsOneWidget);
   });
 
   group('T5 idle screen', () {

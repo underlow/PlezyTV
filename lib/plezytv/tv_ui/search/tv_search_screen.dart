@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../../../focus/dpad_navigator.dart';
 import '../../../focus/key_event_utils.dart';
-import '../../../focus/transport_keys.dart';
 import '../../../i18n/strings.g.dart';
 import '../../../media/ids.dart';
 import '../../../media/media_item.dart';
@@ -24,7 +23,6 @@ import '../../../providers/multi_server_provider.dart';
 import '../../../providers/watch_state_store.dart';
 import '../../../services/data_aggregation_service.dart';
 import '../../../services/settings_service.dart';
-import '../../../screens/hub_detail_screen.dart';
 import '../../../services/storage_service.dart';
 import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/media_server_http_client.dart';
@@ -40,6 +38,7 @@ import '../components/tv_paged_source.dart';
 import '../components/tv_person_card.dart';
 import '../components/tv_skeletons.dart';
 import '../components/tv_tabs.dart';
+import '../home/tv_home_card.dart';
 import '../home/tv_home_model.dart';
 import '../home/tv_home_playback.dart';
 import '../shell/tv_section_shell.dart';
@@ -50,6 +49,8 @@ import '../tv_tokens.dart';
 import 'tv_search_controller.dart';
 import 'tv_search_history.dart';
 import 'tv_search_keyboard.dart';
+
+enum _FocusRepair { arrival, replaced }
 
 abstract final class TvSearchStrings {
   static const placeholder = 'Search';
@@ -143,6 +144,10 @@ class TvSearchScreenState extends State<TvSearchScreen>
 
   /// Focus the first result once the submitted query answers (R10).
   bool _focusOnArrival = false;
+
+  /// A focus repair whose answer arrived while search was not current.
+  _FocusRepair? _pendingRepair;
+  ({TvSearchKind kind, String key})? _pendingActive;
   ({TvSearchKind kind, String key})? _active;
 
   // ---------- Idle discover rows (R7) ----------
@@ -310,6 +315,9 @@ class TvSearchScreenState extends State<TvSearchScreen>
   void didPushNext() => _recordHistory();
 
   @override
+  void didPopNext() => _afterFrame(_resumeFocus);
+
+  @override
   void dispose() {
     _observer?.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
@@ -363,13 +371,17 @@ class TvSearchScreenState extends State<TvSearchScreen>
     controller.clear();
     _keyless = false;
     _focusOnArrival = false;
+    _pendingRepair = _pendingActive = null;
     _loadHistory();
   }
 
   @override
   void focusActiveTabIfReady() {
     if (!_current) return;
-    if (_screen.focusedChild != null) {
+    if (_pendingRepair != null) {
+      _screen.requestFocus();
+      _resumeFocus();
+    } else if (_screen.focusedChild != null) {
       _screen.requestFocus();
     } else {
       _keyboard.currentState?.focusFirstKey();
@@ -383,7 +395,10 @@ class TvSearchScreenState extends State<TvSearchScreen>
   }
 
   @override
-  void onTabShown() => _visible = true;
+  void onTabShown() {
+    _visible = true;
+    _afterFrame(_resumeFocus);
+  }
 
   // ---------- Keyboard ----------
 
@@ -400,6 +415,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
   void _typed() {
     _keyless = false;
     _focusOnArrival = false;
+    if (_pendingRepair == _FocusRepair.arrival) _pendingRepair = null;
   }
 
   void _input(String text) {
@@ -471,21 +487,6 @@ class TvSearchScreenState extends State<TvSearchScreen>
     if (_showRecent && _recentNodes.isNotEmpty) _recentNodes.first.requestFocus();
   }
 
-  Future<void> _openAllHub(TvHomeRow row) async {
-    final discover = _discover;
-    final hub = row.hub!;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => HubDetailScreen(
-          hub: hub,
-          isInContinueWatching: hub.isContinueWatchingHub,
-          usesContinueWatchingAction: hub.usesContinueWatchingAction,
-          onRemoveFromContinueWatching: discover?.refreshContinueWatching,
-        ),
-      ),
-    );
-  }
-
   Widget _hubRail(TvHomeRow row, int index) {
     final key = _hubKey(row);
     final hub = row.hub!;
@@ -506,38 +507,21 @@ class TvSearchScreenState extends State<TvSearchScreen>
       },
       cardBuilder: (context, i, node) {
         if (i == row.items.length) {
-          return TvAllCard(focusNode: node, onSelect: () => unawaited(_openAllHub(row)));
+          return TvAllCard(
+            focusNode: node,
+            onSelect: () => unawaited(
+              openTvHubDetail(context, hub, onRemoveFromContinueWatching: discover?.refreshContinueWatching),
+            ),
+          );
         }
-        return Builder(
-          builder: (context) {
-            final item = context.withFreshWatchState(row.items[i]);
-            final client = context.getMediaClientForItemOrNull(item);
-            void select() => unawaited(
-              navigateToMediaItem(
-                context,
-                item,
-                onRefresh: discover?.updateItem,
-                playDirectly: hub.usesContinueWatchingAction,
-              ),
-            );
-            return MediaContextMenu(
-              item: item,
-              onRefresh: discover?.updateItem,
-              onRemoveFromContinueWatching: discover?.refreshContinueWatching,
-              isInContinueWatching: hub.isContinueWatchingHub,
-              child: Builder(
-                builder: (menuContext) {
-                  void menu() =>
-                      menuContext.findAncestorStateOfType<MediaContextMenuState>()?.showContextMenu(menuContext);
-                  return Focus(
-                    canRequestFocus: false,
-                    onKeyEvent: (_, event) => _cardKeys(item, event, menu),
-                    child: TvPoster(item: item, client: client, focusNode: node, onSelect: select, onLongPress: menu),
-                  );
-                },
-              ),
-            );
-          },
+        return TvHomeHubCard(
+          item: row.items[i],
+          focusNode: node,
+          playback: _playback,
+          playDirectly: hub.usesContinueWatchingAction,
+          isInContinueWatching: hub.isContinueWatchingHub,
+          onRefresh: discover?.updateItem,
+          onRemoveFromContinueWatching: discover?.refreshContinueWatching,
         );
       },
     );
@@ -657,7 +641,9 @@ class TvSearchScreenState extends State<TvSearchScreen>
 
   void _changed() {
     final state = controller.state;
-    final hadContent = _content.hasFocus;
+    // While search is hidden, the scope history tells whether the results
+    // held focus when the user left.
+    final hadContent = _content.hasFocus || (!_current && _screen.focusedChild == _content);
     final active = _active;
     final listsChanged = TvSearchKind.values.any((kind) => !identical(_sourceLists[kind], controller.allOf(kind)));
     setState(_syncSources);
@@ -667,39 +653,82 @@ class TvSearchScreenState extends State<TvSearchScreen>
     }
     final answered = state != _lastState || listsChanged;
     _lastState = state;
-    if (!answered || state == TvSearchState.loading || !_current) return;
-    if (_focusOnArrival && (state != TvSearchState.idle)) {
+    if (!answered || state == TvSearchState.loading) return;
+    _FocusRepair? repair;
+    if (_focusOnArrival && state != TvSearchState.idle) {
       _focusOnArrival = false;
-      _afterFrame(() {
-        if (!_current) return;
-        if (state == TvSearchState.results) {
-          _focusFirstCard();
-        } else {
-          _keyboard.currentState?.focusFirstKey();
-        }
-      });
+      repair = _FocusRepair.arrival;
+    } else if (hadContent) {
+      repair = _FocusRepair.replaced;
+    }
+    if (repair == null) return;
+    if (!_current) {
+      // Applied once the screen is current again (R10).
+      if (_pendingRepair != _FocusRepair.arrival) {
+        // Keep the item focused before the first deferred answer.
+        if (_pendingRepair == null) _pendingActive = active;
+        _pendingRepair = repair;
+      }
       return;
     }
-    if (!hadContent) return;
-    // Components restore a surviving item themselves; repair the rest after
-    // they settle (R10).
-    _afterFrame(
-      () => _afterFrame(() {
-        if (!_current) return;
-        if (controller.state != TvSearchState.results) {
-          _focusKeyboard();
-          return;
-        }
-        if (_tabs.currentState?.focusedIndex != null) return;
-        final tabKind = _kindOfTab(controller.selectedTab);
-        final list = active == null
-            ? const <Object>[]
-            : tabKind == null
-            ? controller.rowOf(active.kind)
-            : (tabKind == active.kind ? controller.allOf(tabKind) : const <Object>[]);
-        if (active == null || !list.any((item) => _keyOf(item) == active.key)) _focusFirstCard();
-      }),
-    );
+    _pendingRepair = null;
+    if (repair == _FocusRepair.arrival) {
+      _afterFrame(() => _repairFocus(_FocusRepair.arrival, active));
+    } else {
+      // Components restore a surviving item themselves; repair the rest after
+      // they settle (R10).
+      _afterFrame(() => _afterFrame(() => _repairFocus(_FocusRepair.replaced, active)));
+    }
+  }
+
+  /// Runs a repair deferred while search was hidden or covered.
+  void _resumeFocus() {
+    final repair = _pendingRepair, active = _pendingActive;
+    if (repair == null || !_current) return;
+    _pendingRepair = _pendingActive = null;
+    _afterFrame(() => _repairFocus(repair, active, restore: true));
+  }
+
+  /// R10 after an answer: on arrival, the first card, else the first key. When
+  /// results were replaced under focus, the same item, else the first card,
+  /// else the keyboard ("Retry" when search is unavailable). [restore] also
+  /// re-focuses a surviving item, since the shell's restore may miss it.
+  void _repairFocus(_FocusRepair repair, ({TvSearchKind kind, String key})? active, {bool restore = false}) {
+    if (!_current) return;
+    final state = controller.state;
+    if (repair == _FocusRepair.arrival) {
+      if (state != TvSearchState.results || !_focusFirstCard()) _keyboard.currentState?.focusFirstKey();
+      return;
+    }
+    if (state == TvSearchState.loading) return;
+    if (state == TvSearchState.unavailable) {
+      _retry.requestFocus();
+      return;
+    }
+    if (state != TvSearchState.results) {
+      _focusKeyboard();
+      return;
+    }
+    if (_tabs.currentState?.focusedIndex != null) return;
+    final tabKind = _kindOfTab(controller.selectedTab);
+    final list = active == null
+        ? const <Object>[]
+        : tabKind == null
+        ? controller.rowOf(active.kind)
+        : (tabKind == active.kind ? controller.allOf(tabKind) : const <Object>[]);
+    final index = active == null ? -1 : list.indexWhere((item) => _keyOf(item) == active.key);
+    if (index < 0) {
+      if (!_focusFirstCard()) _focusKeyboard();
+      return;
+    }
+    // The scope node itself holds focus when the focused node unmounted.
+    if (!restore && FocusManager.instance.primaryFocus != _content) return;
+    if (tabKind == null) {
+      _rows[active!.kind]!.currentState?.requestFocus(itemKey: active.key);
+      _reveal(active.kind);
+    } else {
+      unawaited(_grids[tabKind]!.currentState?.jumpTo(index, waitForLoad: false));
+    }
   }
 
   void _reveal(TvSearchKind kind) {
@@ -815,18 +844,8 @@ class TvSearchScreenState extends State<TvSearchScreen>
     ),
   );
 
-  KeyEventResult _cardKeys(MediaItem item, KeyEvent event, VoidCallback menu) {
-    final transport = classifyTransportKey(event.logicalKey);
-    if (transport == TransportCommand.play || transport == TransportCommand.toggle) {
-      if (event is KeyDownEvent) unawaited(_playback.activate(item));
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey.isContextMenuKey) {
-      if (event is KeyDownEvent) menu();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
+  KeyEventResult _cardKeys(MediaItem item, KeyEvent event, VoidCallback menu) =>
+      tvHomeCardKeys(_playback, item, event, menu);
 
   (double, double) _cardSize(TvSearchKind kind, {bool grid = false}) {
     final captions = TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight.toDouble();
@@ -952,27 +971,12 @@ class TvSearchScreenState extends State<TvSearchScreen>
         itemBuilder: (context, index, source, isFocused) {
           if (source == null) return const SizedBox.shrink();
           if (source is MediaPerson) {
-            final photo = TvTheme.of(context).px(TvPersonCard.photoSize);
-            return Stack(
-              children: [
-                TvPersonCard(
-                  client: context.tryGetMediaClientForServer(source.serverId),
-                  imagePath: source.thumbPath,
-                  name: source.name,
-                  caption: _credit(source),
-                ),
-                if (isFocused)
-                  IgnorePointer(
-                    child: Container(
-                      width: photo,
-                      height: photo,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: TvTokens.color.focus.ring, width: TvTheme.of(context).px(4)),
-                      ),
-                    ),
-                  ),
-              ],
+            return TvPersonCard(
+              client: context.tryGetMediaClientForServer(source.serverId),
+              imagePath: source.thumbPath,
+              name: source.name,
+              caption: _credit(source),
+              externalFocus: isFocused,
             );
           }
           final item = context.withFreshWatchState(source as MediaItem);
@@ -1170,10 +1174,9 @@ class TvSearchScreenState extends State<TvSearchScreen>
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(right: px(80)),
-                child: FocusScope(
-                  node: _content,
-                  child: Focus(canRequestFocus: false, onKeyEvent: _contentKey, child: _right(multiServer)),
-                ),
+                // The handler sits on the scope node itself: focus falls back to
+                // it when the focused card or button unmounts (loading, retry).
+                child: FocusScope(node: _content, onKeyEvent: _contentKey, child: _right(multiServer)),
               ),
             ),
           ],

@@ -261,7 +261,12 @@ history and up to two Home hubs (Continue Watching excluded) selected by
 `TvHomeModelBuilder`; their titles are server hub names, not the mockup's.
 Card actions follow `TvHomeScreen`: `navigateToMediaItem` (episodes by Plezy's
 episode setting), `MediaContextMenu`, Play/Pause through `TvHomePlayback`.
-The round person card shared with S7/S8 cast rows is `TvPersonCard`.
+Home and the idle rows build hub cards with `TvHomeHubCard` and open "All" with
+`openTvHubDetail` (`home/tv_home_card.dart`); search results reuse `tvHomeCardKeys`.
+The round person card shared with S7/S8 cast rows is `TvPersonCard`; in the People
+grid it uses `externalFocus`, so the grid slot is the only focusable node.
+A focus repair (R10) whose answer arrives while search is hidden or covered is
+applied once the screen is current again (`onTabShown`, `didPopNext`).
 
 ### S16 library section hookup
 
