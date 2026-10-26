@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:plezy/utils/platform_detector.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:plezy/plezytv/settings_transfer/settings_transfer_service.dart';
@@ -129,7 +131,7 @@ void main() {
     );
   });
 
-  testWidgets('TV lookup selects its backup section and leaves non-TV fallback', (tester) async {
+  testWidgets('backup transport respects platform, force-TV and original Plezy visibility', (tester) async {
     addTearDown(TvUi.resetForTesting);
     late BuildContext context;
     await tester.pumpWidget(
@@ -142,9 +144,33 @@ void main() {
         ),
       ),
     );
-    TvUi.enabledForTesting = () => true;
-    expect(TvSettings.backupSection(context), isA<TvSettingsBackup>());
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      TvDetectionService.debugReset();
+      PlatformDetector.debugSetIsDesktopOSOverride(null);
+    });
+    final detection = await TvDetectionService.getInstance(forceTv: true);
+    for (final platform in TargetPlatform.values) {
+      debugDefaultTargetPlatformOverride = platform;
+      final desktop = [TargetPlatform.macOS, TargetPlatform.windows, TargetPlatform.linux].contains(platform);
+      PlatformDetector.debugSetIsDesktopOSOverride(desktop);
+      TvDetectionService.debugSetAppleTVOverride(null);
+      detection.setForceTv(true);
+      expect(TvUi.enabled, isTrue);
+      expect(TvSettings.backupSection(context), platform == TargetPlatform.android ? isA<TvSettingsBackup>() : isNull);
+      expect(TvSettings.showsBackup, platform == TargetPlatform.android || desktop);
+      detection.setForceTv(false);
+      expect(TvSettings.backupSection(context), isNull);
+      expect(TvSettings.showsBackup, isTrue);
+    }
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    PlatformDetector.debugSetIsDesktopOSOverride(false);
+    TvDetectionService.debugSetAppleTVOverride(true);
+    expect(TvSettings.backupSection(context), isNull);
+    expect(TvSettings.showsBackup, isFalse);
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     TvUi.enabledForTesting = () => false;
     expect(TvSettings.backupSection(context), isNull);
+    debugDefaultTargetPlatformOverride = null;
   });
 }
