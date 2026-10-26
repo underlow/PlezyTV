@@ -282,7 +282,7 @@ class _TvHeroState extends State<TvHero> {
                         SizedBox(height: px(TvTokens.space.md)),
                         Text(
                           description!,
-                          maxLines: compact ? 1 : 2,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.bodyLarge.copyWith(color: TvTokens.color.text.secondary),
                         ),

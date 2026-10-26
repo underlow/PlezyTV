@@ -88,6 +88,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   String? _launchState;
 
   bool get _isTop => ModalRoute.of(context)?.isCurrent != false;
+  double _rowTopGap = TvTokens.space.cardFocusReserve.toDouble();
   double _collapseAt = TvTokens.detail.collapseAt.toDouble(), _barHeight = TvTokens.detail.compactH.toDouble();
 
   @override
@@ -176,7 +177,10 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final first = _rowOrder.firstOrNull?.currentContext?.findRenderObject();
     final threshold = first == null
         ? _collapseAt
-        : math.min(_collapseAt, RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight);
+        : math.min(
+            _collapseAt,
+            RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
+          );
     final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
@@ -331,20 +335,15 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     }
   }
 
-  /// Keeps the focused row fully visible under the compact title bar; any row
-  /// focus scrolls the header away, the last row also reveals the tech block.
+  /// Align every focused row below the compact bar, including the last row.
   void _revealRow(GlobalKey<TvHorizontalRowState> key) {
     if (_preservingReviewInsertion || _reviewPanelOpen) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _preservingReviewInsertion || _reviewPanelOpen || !_page.hasClients || _rowOrder.isEmpty) return;
       final render = key.currentContext?.findRenderObject();
-      final first = _rowOrder.first.currentContext?.findRenderObject();
-      if (render == null || first == null) return;
+      if (render == null) return;
       final viewport = RenderAbstractViewport.of(render);
-      final floor = viewport.getOffsetToReveal(first, 0).offset - _barHeight;
-      final start = viewport.getOffsetToReveal(render, 0).offset - _barHeight;
-      final end = key == _rowOrder.last ? _page.position.maxScrollExtent : viewport.getOffsetToReveal(render, 1).offset;
-      final target = math.max(_page.offset.clamp(math.min(start, end), start).toDouble(), floor);
+      final target = viewport.getOffsetToReveal(render, 0).offset - _barHeight - _rowTopGap;
       _scrollTo(target);
     });
   }
@@ -415,6 +414,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final theme = TvTheme.of(context), px = theme.px;
     _collapseAt = px(TvTokens.detail.collapseAt);
     _barHeight = px(TvTokens.detail.compactH);
+    _rowTopGap = px(TvTokens.space.cardFocusReserve);
     final c = _controller;
     final movie = c?.movie ?? widget.metadata;
     return PopScope<bool>(
@@ -461,7 +461,13 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
                               ),
                             ),
                             _techInfo(context, c),
-                            SizedBox(height: px(54)),
+                            SizedBox(
+                              height: _rowOrder.isEmpty
+                                  ? px(54)
+                                  : MediaQuery.sizeOf(context).height -
+                                        _barHeight -
+                                        px(TvTokens.space.cardFocusReserve),
+                            ),
                           ],
                         ),
                       ),
@@ -833,7 +839,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           0.0,
           double.infinity,
         ),
-        top: px(8),
+        top: _rowOrder.isEmpty ? 0 : px(TvTokens.space.sectionGap),
         right: px(96),
       ),
       child: Wrap(
