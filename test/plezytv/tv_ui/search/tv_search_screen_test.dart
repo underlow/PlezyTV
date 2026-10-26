@@ -1,3 +1,4 @@
+import 'package:plezy/services/music/music_playback_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -153,6 +154,17 @@ class _OfflineWatch extends ChangeNotifier implements OfflineWatchSyncService {
 }
 
 /// Players and detail routes are recorded and closed before they build.
+class _Music extends ChangeNotifier implements MusicPlaybackService {
+  @override
+  MusicPlaybackStatus get status => MusicPlaybackStatus.paused;
+  @override
+  bool get isPlaying => false;
+  @override
+  MediaItem? get currentTrack => testMediaItem(id: 'track', kind: MediaKind.track);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _Routes extends NavigatorObserver {
   final players = <VideoPlayerRoute>[];
   final pages = <PageRoute<dynamic>>[];
@@ -254,6 +266,7 @@ void main() {
     List<NavigatorObserver> observers = const [],
     _ActionClient? client,
     ActiveProfileProvider? profile,
+    MusicPlaybackService? music,
     WatchStateStore? watchState,
     _Discover? discover,
     _Hidden? hidden,
@@ -272,6 +285,7 @@ void main() {
       MultiProvider(
         builder: (context, child) => Scaffold(body: child),
         providers: [
+          if (music != null) ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
           if (servers != null) ChangeNotifierProvider<MultiServerProvider>.value(value: servers.provider),
           ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
           ChangeNotifierProvider<OfflineWatchSyncService>.value(value: offlineWatch),
@@ -653,6 +667,23 @@ void main() {
     expect(history.values['a'], ['дюна', 'тьма']);
   });
 
+  testWidgets('S17 C4: paused music session suppresses result Play', (tester) async {
+    search.respond = (_) => answer(items: movies(1));
+    final observer = _Routes();
+    await pump(tester, client: _ActionClient(), observers: [observer], music: _Music());
+    await results(tester, 'movie');
+    await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focusedId(tester), 'movie0');
+    for (final key in [LogicalKeyboardKey.mediaPlay, LogicalKeyboardKey.mediaPlayPause]) {
+      await press(tester, key);
+      expect(focusedId(tester), 'movie0');
+    }
+    expect(observer.players, isEmpty);
+    expect(observer.pages, isEmpty);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(observer.pages.length, 1);
+  });
   for (final details in [false, true]) {
     testWidgets('A20: episode OK ${details ? "opens details" : "plays"}; Play/Pause plays', (tester) async {
       final settings = await SettingsService.getInstance();
@@ -1037,6 +1068,24 @@ void main() {
     setUp(() => discover = _Discover()..hubs = [continueHub, hub('trending'), hub('recent'), hub('third')]);
 
     String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
+
+    testWidgets('S17 A13: music before and between hubs does not consume poster slots', (tester) async {
+      final discover = _Discover()
+        ..hubs = [
+          continueHub,
+          MediaHub(id: 'albums', title: 'Albums', type: 'album', items: [media('album', MediaKind.album)], size: 1),
+          hub('trending'),
+          MediaHub(id: 'tracks', title: 'Tracks', type: 'track', items: [media('track', MediaKind.track)], size: 1),
+          hub('recent'),
+          hub('third'),
+        ];
+      await pump(tester, discover: discover);
+      expect(screen.currentState!.hubTitles, ['trending', 'recent']);
+      expect(find.text('Albums'), findsNothing);
+      expect(find.text('Tracks'), findsNothing);
+      expect(find.text('Continue Watching'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('A1: history and two Home hubs (no Continue Watching); → ↓ ↑ ← focus', (tester) async {
       history.values['a'] = ['Тьма', 'Дюна'];

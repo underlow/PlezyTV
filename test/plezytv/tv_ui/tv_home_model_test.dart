@@ -56,20 +56,20 @@ void main() {
       hub('last', [video]),
     ];
     final model = builder.build(provider);
-    expect(model.rows.map((row) => row.title), ['Continue Watching', 'mixed', 'last']);
+    expect(model.rows.map((row) => row.title), ['Continue Watching', 'albums', 'mixed', 'last']);
     expect(model.rows.first.kind, TvHomeRowKind.continueWatching);
     expect(model.rows.first.hasMore, isTrue);
     expect(model.rows.first.count, isNull); // Plezy TV headers show no counter.
-    expect(model.rows[1].items, supported);
-    expect(model.rows[1].hasMore, isTrue);
-    expect(model.rows[1].count, isNull);
+    expect(model.rows[2].items, supported);
+    expect(model.rows[2].hasMore, isTrue);
+    expect(model.rows[2].count, isNull);
     expect(model.rows.last.count, 20);
     expect(model.rows.last.hub, same(provider.hubs.last));
     expect(() => model.rows.clear(), throwsUnsupportedError);
-    expect(() => model.rows[1].items.clear(), throwsUnsupportedError);
+    expect(() => model.rows[2].items.clear(), throwsUnsupportedError);
   });
 
-  test('R3 applies to onDeck too; unsupported-only data is empty', () {
+  test('S17 A2/A19: unsupported-only hubs and music-only onDeck are empty', () {
     provider.onDeck = [testMediaItem(kind: MediaKind.track)];
     provider.hubs = [
       hub(
@@ -82,6 +82,9 @@ void main() {
                 MediaKind.season,
                 MediaKind.episode,
                 MediaKind.collection,
+                MediaKind.artist,
+                MediaKind.album,
+                MediaKind.track,
               }.contains(kind),
             )
             .map((kind) => testMediaItem(kind: kind))
@@ -89,6 +92,50 @@ void main() {
       ),
     ];
     expect(builder.build(provider).state, TvHomeState.empty);
+  });
+
+  test('S17 A1/A18: music keeps order, count, identity cache and content state', () {
+    final albums = [testMediaItem(id: 'a', kind: MediaKind.album), testMediaItem(id: 'b', kind: MediaKind.album)];
+    provider.hubs = [hub('albums', albums, more: true, size: 42)];
+    final model = builder.build(provider);
+    final row = model.rows.single;
+    expect(model.state, TvHomeState.content);
+    expect(row.layout, TvHomeRowLayout.music);
+    expect(row.items, albums);
+    expect(row.count, 42);
+    expect(row.hasMore, isTrue);
+    expect(row.hub, same(provider.hubs.single));
+    expect(builder.build(provider).rows, same(model.rows));
+    expect(() => row.items.clear(), throwsUnsupportedError);
+  });
+
+  test('S17 A11/A18: first displayable item selects family, ignoring hub type', () {
+    final movie = testMediaItem();
+    final album = testMediaItem(kind: MediaKind.album);
+    final artist = testMediaItem(kind: MediaKind.artist);
+    final track = testMediaItem(kind: MediaKind.track);
+    final photo = testMediaItem(kind: MediaKind.photo);
+    provider.hubs = [
+      hub('video first', [photo, movie, album]),
+      hub('music first', [photo, album, movie, artist, track]),
+    ];
+    final rows = builder.build(provider).rows;
+    expect(rows.map((row) => row.layout), [TvHomeRowLayout.posters, TvHomeRowLayout.music]);
+    expect(rows.first.items, [movie]);
+    expect(rows.last.items, [album, artist, track]);
+    expect(rows.map((row) => row.count), [null, null]);
+  });
+
+  test('S17 A12/A19: continue remains video-only and video rows retain counts', () {
+    final movie = testMediaItem();
+    provider.onDeck = [testMediaItem(kind: MediaKind.track), movie];
+    provider.hubs = [
+      hub('video', [movie], size: 17),
+    ];
+    final rows = builder.build(provider).rows;
+    expect(rows.map((row) => row.layout), everyElement(TvHomeRowLayout.posters));
+    expect(rows.first.items, [movie]);
+    expect(rows.last.count, 17);
   });
 
   test('A9: onDeck works while hubs load and after failed empty hubs', () {

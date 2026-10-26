@@ -38,17 +38,28 @@ class TvHero extends StatelessWidget {
               ? TvStrings.spoilerEpisode(season: media.parentIndex!, episode: media.index!, title: media.title ?? '')
               : null)
         : media?.summary;
-    final metadata = <String>[
-      if (episode && media!.parentIndex != null && media.index != null)
-        TvStrings.episode(season: media.parentIndex!, episode: media.index!, title: media.title ?? ''),
-      if (!episode && media?.year != null) '${media!.year}',
-      if (show && media!.childCount != null) TvStrings.seasons(media.childCount!),
-      if (show && media!.leafCount != null) TvStrings.episodes(media.leafCount!),
-      if (!show && media?.durationMs != null) formatDurationTextual(media!.durationMs!),
-      if (episode && media!.hasActiveProgress) TvStrings.left(media.durationMs! - media.viewOffsetMs!),
-      if (media?.contentRating?.isNotEmpty ?? false) formatContentRating(media!.contentRating),
-      if (!episode && (media?.genres?.isNotEmpty ?? false)) media!.genres!.join(', '),
-    ];
+    final music = media?.kind == MediaKind.artist || media?.kind == MediaKind.album || media?.kind == MediaKind.track;
+    final metadata = music
+        ? <String?>[
+            if (media!.kind == MediaKind.album) ...[media.albumArtistTitle, media.year?.toString()],
+            if (media.kind == MediaKind.track) ...[
+              media.trackArtistTitle,
+              media.albumTitle,
+              if (media.durationMs != null) formatDurationTextual(media.durationMs!),
+            ] else
+              media.genres?.where((genre) => genre.isNotEmpty).join(', '),
+          ].whereType<String>().where((part) => part.isNotEmpty).toList()
+        : <String>[
+            if (episode && media!.parentIndex != null && media.index != null)
+              TvStrings.episode(season: media.parentIndex!, episode: media.index!, title: media.title ?? ''),
+            if (!episode && media?.year != null) '${media!.year}',
+            if (show && media!.childCount != null) TvStrings.seasons(media.childCount!),
+            if (show && media!.leafCount != null) TvStrings.episodes(media.leafCount!),
+            if (!show && media?.durationMs != null) formatDurationTextual(media!.durationMs!),
+            if (episode && media!.hasActiveProgress) TvStrings.left(media.durationMs! - media.viewOffsetMs!),
+            if (media?.contentRating?.isNotEmpty ?? false) formatContentRating(media!.contentRating),
+            if (!episode && (media?.genres?.isNotEmpty ?? false)) media!.genres!.join(', '),
+          ];
     return AnimatedContainer(
       height: px(compact ? TvTokens.size.hero.compactH : TvTokens.size.hero.h),
       duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : TvTokens.motion.heroCrossfade),
@@ -114,7 +125,7 @@ class TvHero extends StatelessWidget {
                         ),
                       ],
                       SizedBox(height: px(14)),
-                      TvRatings(item: media),
+                      if (!music) TvRatings(item: media),
                       if (description?.isNotEmpty ?? false) ...[
                         SizedBox(height: px(compact ? 14 : 20)),
                         Text(
