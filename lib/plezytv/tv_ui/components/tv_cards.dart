@@ -38,6 +38,7 @@ class TvPoster extends StatelessWidget {
     required this.item,
     this.size = TvPosterSize.row,
     this.showSeriesTitle = false,
+    this.title,
     this.caption,
     this.client,
     this.localFilePath,
@@ -56,7 +57,7 @@ class TvPoster extends StatelessWidget {
   final MediaItem item;
   final TvPosterSize size;
   final bool showSeriesTitle;
-  final String? caption, localFilePath;
+  final String? title, caption, localFilePath;
   final MediaServerClient? client;
   final bool onServer, disabled, autofocus;
   final FocusNode? focusNode;
@@ -67,7 +68,7 @@ class TvPoster extends StatelessWidget {
   Widget build(BuildContext context) => _MediaCard(
     item: item,
     dimensions: size.dimensions,
-    title: showSeriesTitle ? item.grandparentTitle ?? item.title ?? '' : item.displayTitle,
+    title: title ?? (showSeriesTitle ? item.grandparentTitle ?? item.title ?? '' : item.displayTitle),
     caption: caption ?? (showSeriesTitle ? _episodeCaption(item) : item.year?.toString() ?? ''),
     client: client,
     localFilePath: localFilePath,

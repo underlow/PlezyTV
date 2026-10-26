@@ -80,6 +80,61 @@ String focusedEpisode(WidgetTester tester) =>
     tester.widgetList<TvEpisode>(find.byType(TvEpisode)).firstWhere((e) => e.focusNode!.hasFocus).item.id;
 
 void main() {
+  testWidgets('R9 multiple seasons use ordinary posters and raw season titles', (tester) async {
+    final client = fixture();
+    client.seasons[0] = client.seasons[0].copyWith(title: 'The show', parentTitle: 'The show');
+    client.seasons[1] = client.seasons[1].copyWith(title: 'Spooks', parentTitle: 'The show');
+    await mount(tester, client);
+    expect(tabs(tester).tabs.map((tab) => tab.label), ['Show', 'Season 1', 'Spooks']);
+    final posters = tester.widgetList<TvPoster>(find.byType(TvPoster)).toList();
+    expect(posters.map((poster) => poster.title), ['Season 1', 'Spooks']);
+    for (final poster in posters) {
+      expect(poster.size.dimensions, const Size(216, 324));
+    }
+  });
+
+  testWidgets('R9 single season shares episode rail and playback, keeps season tab and S22 navigation', (tester) async {
+    final client = fixture();
+    client.seasons = [client.seasons.first.copyWith(title: 'The show', index: 6)];
+    client.episodes[client.show.id] = client.episodes['Season 1']!;
+    client.show = client.show.copyWith(
+      roles: [const MediaRole(id: '1', tag: 'Actor')],
+    );
+    final played = <String>[];
+    await mount(
+      tester,
+      client,
+      play: (_, episode, _) async {
+        played.add(episode.id);
+      },
+    );
+    expect(tabs(tester).tabs.map((tab) => tab.label), ['Show', 'Season 6']);
+    expect(find.byType(TvPoster), findsNothing);
+    final showItems = tester.widgetList<TvEpisode>(find.byType(TvEpisode)).map((card) => card.item.id).toList();
+    expect(showItems, ['e1', 'e2', 'e3', 'e4']);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(focusedEpisode(tester), 'e1');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvHorizontalRow>()!.title,
+      'Cast',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(played, ['e1']);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+    tabs(tester).onSelected(1);
+    await tester.pumpAndSettle();
+    expect(tester.widgetList<TvEpisode>(find.byType(TvEpisode)).map((card) => card.item.id), showItems);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('B1 season header uses episode title rather than series title', (tester) async {
     final client = fixture();
     client.episodes['Season 1']![2] = client.episodes['Season 1']![2].copyWith(
@@ -95,7 +150,10 @@ void main() {
     for (final cast in [false, true]) {
       testWidgets('B2 overview row navigation flattened=$flattened cast=$cast', (tester) async {
         final client = fixture();
-        if (flattened) client.seasons = [client.seasons.first];
+        if (flattened) {
+          client.seasons = [client.seasons.first];
+          client.episodes[client.show.id] = client.episodes['Season 1']!;
+        }
         if (cast) {
           client.show = client.show.copyWith(
             roles: [const MediaRole(id: 'actor', tag: 'Actor')],
@@ -439,11 +497,11 @@ void main() {
     );
   });
 
-  testWidgets('A13 flattened series has Episodes tab and no season posters', (tester) async {
+  testWidgets('R9 flattened single season retains named season tab and no season posters', (tester) async {
     final client = fixture()..seasons = [media('Season 1', MediaKind.season, number: 1)];
     client.episodes[client.show.id] = client.episodes['Season 1']!;
     await mount(tester, client);
-    expect(tabs(tester).tabs.map((t) => t.label), ['Show', 'Episodes']);
+    expect(tabs(tester).tabs.map((t) => t.label), ['Show', 'Season 1']);
     expect(find.byType(TvPoster), findsNothing);
   });
 

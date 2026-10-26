@@ -173,7 +173,11 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   }
 
   void _scrolled() {
-    final collapsed = _page.hasClients && _page.offset >= _collapseAt;
+    final first = _rowOrder.firstOrNull?.currentContext?.findRenderObject();
+    final threshold = first == null
+        ? _collapseAt
+        : math.min(_collapseAt, RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight);
+    final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
@@ -206,7 +210,12 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           if (!mounted) return;
           final render = _rowKey('reviews').currentContext?.findRenderObject();
           if (_page.hasClients && render is RenderBox) {
-            _page.jumpTo((offset + render.size.height).clamp(0.0, _page.position.maxScrollExtent));
+            _page.jumpTo(
+              (offset + render.size.height + TvTheme.of(context).px(TvTokens.space.sectionGap)).clamp(
+                0.0,
+                _page.position.maxScrollExtent,
+              ),
+            );
           }
           // Adjacent rows restore their existing focus in post-frame callbacks.
           // Do not let those callbacks apply the normal reveal rule here.
@@ -445,7 +454,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
                                     ),
                                     child: FocusScope(node: _actionScope, child: _actions(context, c)),
                                   ),
-                                  SizedBox(height: px(80)),
+                                  SizedBox(height: px(TvTokens.space.sectionGap)),
                                   ..._lowerRows(context, c),
                                 ],
                               ),
@@ -554,7 +563,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
         ClearLogoImage(
           client: c.client,
           logoPath: movie.clearLogoPath,
-          fallbackWidth: px(900),
+          fallbackWidth: px(TvTokens.detail.textMaxW),
           width: px(560),
           height: px(120),
           alignment: Alignment.centerLeft,
@@ -562,42 +571,30 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               Text(movie.displayTitle, style: theme.display, maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ),
+      if (meta.isNotEmpty || genres.isNotEmpty)
+        (
+          TvTokens.detail.metadataGap.toDouble(),
+          Text(
+            [if (meta.isNotEmpty) meta, ...genres].join(' · '),
+            key: const ValueKey('movie-meta'),
+            style: theme.body,
+          ),
+        ),
+      if (director != null) (TvTokens.detail.metadataGap.toDouble(), Text(director, style: theme.body)),
       if (edition != null && edition.isNotEmpty)
         (
-          8,
+          TvTokens.detail.metadataGap.toDouble(),
           Text(
             edition.toUpperCase(),
             key: const ValueKey('movie-edition'),
             style: theme.title.copyWith(color: TvTokens.color.text.secondary, letterSpacing: px(3)),
           ),
         ),
-      if (meta.isNotEmpty) (24, Text(meta, key: const ValueKey('movie-meta'), style: theme.body)),
-      if (genres.isNotEmpty || director != null)
-        (
-          20,
-          SingleChildScrollView(
-            key: const ValueKey('movie-genres'),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final genre in genres)
-                  Padding(
-                    padding: EdgeInsets.only(right: px(12)),
-                    child: TvChip.genre(label: genre),
-                  ),
-                if (director != null)
-                  Padding(
-                    padding: EdgeInsets.only(left: px(8)),
-                    child: Text(director, style: theme.body),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      if (ratings.isNotEmpty) (20, TvRatings(item: movie.copyWith(ratings: ratings))),
+      if (ratings.isNotEmpty)
+        (TvTokens.detail.metadataGap.toDouble(), TvRatings(item: movie.copyWith(ratings: ratings))),
       if (chips.isNotEmpty)
         (
-          20,
+          TvTokens.detail.summaryGap.toDouble(),
           Wrap(
             key: const ValueKey('movie-chips'),
             spacing: px(16),
@@ -607,9 +604,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
         ),
       if (summary != null && summary.isNotEmpty)
         (
-          24,
+          TvTokens.detail.summaryGap.toDouble(),
           SizedBox(
-            width: px(900),
+            width: px(TvTokens.detail.textMaxW),
             child: Text(
               summary,
               key: const ValueKey('movie-summary'),
@@ -626,15 +623,18 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           0.0,
           double.infinity,
         ),
-        top: px(72),
+        top: px(TvTokens.space.safeY),
         right: px(96),
-        bottom: px(48),
+        bottom: px(TvTokens.detail.actionsGap),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
-        ],
+      child: SizedBox(
+        width: px(TvTokens.detail.textMaxW),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
+          ],
+        ),
       ),
     );
   }
@@ -816,7 +816,9 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
       if (c.extras.isNotEmpty) _rowKey('extras'),
       for (final hub in hubs) _rowKey('related/${hub.id}'),
     ];
-    return rows;
+    return [
+      for (var i = 0; i < rows.length; i++) ...[if (i > 0) SizedBox(height: px(TvTokens.space.sectionGap)), rows[i]],
+    ];
   }
 
   Widget _techInfo(BuildContext context, TvMovieController c) {

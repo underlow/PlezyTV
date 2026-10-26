@@ -600,3 +600,17 @@ Home and search episode cards show the series title above `S1 E3 · episode
 title`; remaining time is represented by the progress bar. Home applies this
 also to episodes in poster hubs. Season, player queue and post-play captions
 retain their existing format. Home uses the 340/200 hero and the 48 section gap.
+
+### Movie, show and catalog layout (S24 T5)
+
+Detail text columns are limited to 900 design pixels. Movie and catalog genres
+are plain metadata text; movie director and edition follow metadata, then scores,
+technical labels, up to four summary lines and actions. Sections use the shared
+48 pixel gap.
+
+On Show, a series with exactly one season displays that season's episode rail,
+using the same cards, paging, context menu and playback as its retained season
+tab. Up returns to actions and restores the header; Down visits Cast and the
+remaining rails in order. Multiple seasons use standard 216×324 posters.
+Season tabs and rail titles use the raw season title, falling back to the
+localized season number when empty or equal to the series title.
