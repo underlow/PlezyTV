@@ -11,13 +11,14 @@ class TvAllCard extends StatelessWidget {
   const TvAllCard({
     super.key,
     this.episode = false,
+    this.square = false,
     this.focusNode,
     this.autofocus = false,
     required this.onSelect,
     this.onFocusChange,
   });
 
-  final bool episode, autofocus;
+  final bool episode, square, autofocus;
   final FocusNode? focusNode;
   final VoidCallback onSelect;
   final ValueChanged<bool>? onFocusChange;
@@ -26,7 +27,9 @@ class TvAllCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = TvTheme.of(context);
     final px = theme.px;
-    final size = episode
+    final size = square
+        ? Size.square(TvTokens.size.poster.w.toDouble())
+        : episode
         ? Size(TvTokens.size.episode.w.toDouble(), TvTokens.size.episode.h.toDouble())
         : TvPosterSize.row.dimensions;
     return SizedBox(
