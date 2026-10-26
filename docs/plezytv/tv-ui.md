@@ -258,11 +258,19 @@ profile-scoped through `StorageService` and records only queries with results,
 on opening a result, Back, `onTabHidden`, a covering route (`didPushNext`, which
 includes item links) and `AppLifecycleState.paused`. The idle screen shows the
 history and up to two Home hubs (Continue Watching excluded) selected by
-`TvHomeModelBuilder`; their titles are server hub names, not the mockup's.
+`TvHomeModelBuilder` (poster rows only); their titles are server hub names, not the mockup's.
 Card actions follow `TvHomeScreen`: `navigateToMediaItem` (episodes by Plezy's
 episode setting), `MediaContextMenu`, Play/Pause through `TvHomePlayback`.
 Home and the idle rows build hub cards with `TvHomeHubCard` and open "All" with
 `openTvHubDetail` (`home/tv_home_card.dart`); search results reuse `tvHomeCardKeys`.
+Home also shows artist, album and track hubs as lazy music rows: 216×216 covers
+(round for artists), title and artist/album captions, without watch status.
+Their trailing "All" card is square. Focus updates the existing hero and tinted
+background; OK opens Plezy artist/album screens or plays a track in its album queue.
+Play/Pause on Home and search cards yields to Plezy whenever a current music track
+exists, including paused sessions. A restored parked session has no transport
+handler until music starts again: Play/Pause does nothing there; resume from
+Now Playing. Without a music session, card Play/Pause keeps its normal action.
 The round person card shared with S7/S8 cast rows is `TvPersonCard`; in the People
 grid it uses `externalFocus`, so the grid slot is the only focusable node.
 A focus repair (R10) whose answer arrives while search is hidden or covered is

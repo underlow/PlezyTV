@@ -1,3 +1,4 @@
+import 'package:plezy/services/music/music_playback_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -153,6 +154,13 @@ class _OfflineWatch extends ChangeNotifier implements OfflineWatchSyncService {
 }
 
 /// Players and detail routes are recorded and closed before they build.
+class _Music extends ChangeNotifier implements MusicPlaybackService {
+  @override
+  MediaItem? get currentTrack => testMediaItem(id: 'track', kind: MediaKind.track);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _Routes extends NavigatorObserver {
   final players = <VideoPlayerRoute>[];
   final pages = <PageRoute<dynamic>>[];
@@ -254,6 +262,7 @@ void main() {
     List<NavigatorObserver> observers = const [],
     _ActionClient? client,
     ActiveProfileProvider? profile,
+    MusicPlaybackService? music,
     WatchStateStore? watchState,
     _Discover? discover,
     _Hidden? hidden,
@@ -272,6 +281,7 @@ void main() {
       MultiProvider(
         builder: (context, child) => Scaffold(body: child),
         providers: [
+          if (music != null) ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
           if (servers != null) ChangeNotifierProvider<MultiServerProvider>.value(value: servers.provider),
           ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
           ChangeNotifierProvider<OfflineWatchSyncService>.value(value: offlineWatch),
@@ -654,6 +664,19 @@ void main() {
   });
 
   for (final details in [false, true]) {
+    testWidgets('S17 C4: search music session suppresses result Play details=$details', (tester) async {
+      search.respond = (_) => answer(items: movies(1));
+      final observer = _Routes();
+      await pump(tester, client: _ActionClient(), observers: [observer], music: _Music());
+      await results(tester, 'movie');
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await press(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(observer.players, isEmpty);
+      expect(observer.pages, isEmpty);
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(observer.pages.length, 1);
+    });
     testWidgets('A20: episode OK ${details ? "opens details" : "plays"}; Play/Pause plays', (tester) async {
       final settings = await SettingsService.getInstance();
       if (details) await settings.write(SettingsService.episodeAction, EpisodeAction.details);

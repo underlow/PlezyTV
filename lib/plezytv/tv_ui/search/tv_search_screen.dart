@@ -22,6 +22,7 @@ import '../../../providers/hidden_libraries_provider.dart';
 import '../../../providers/multi_server_provider.dart';
 import '../../../providers/watch_state_store.dart';
 import '../../../services/data_aggregation_service.dart';
+import '../../../services/music/music_playback_service.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/storage_service.dart';
 import '../../../utils/media_navigation_helper.dart';
@@ -871,8 +872,13 @@ class TvSearchScreenState extends State<TvSearchScreen>
     ),
   );
 
-  KeyEventResult _cardKeys(MediaItem item, KeyEvent event, VoidCallback menu) =>
-      tvHomeCardKeys(_playback, item, event, menu);
+  KeyEventResult _cardKeys(MediaItem item, KeyEvent event, VoidCallback menu) => tvHomeCardKeys(
+    _playback,
+    item,
+    event,
+    menu,
+    musicActive: () => context.read<MusicPlaybackService?>()?.currentTrack != null,
+  );
 
   (double, double) _cardSize(TvSearchKind kind, {bool grid = false}) {
     final captions = TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight.toDouble();
