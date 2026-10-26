@@ -194,6 +194,75 @@ void main() {
     });
   }
 
+  for (final labels in [
+    ['Search', 'Home', 'Library', 'Settings'],
+    ['Downloads', 'Settings'],
+  ]) {
+    testWidgets('menu vertical boundaries retain focus and content: $labels', (tester) async {
+      final nodes = List.generate(labels.length, (_) => FocusNode());
+      final outside = FocusNode();
+      final above = FocusNode();
+      for (final node in [...nodes, outside, above]) {
+        addTearDown(node.dispose);
+      }
+      var contentKeys = 0;
+      var selections = 0;
+      await pumpTvWidget(
+        tester,
+        TvSideMenu(
+          items: [
+            for (var i = 0; i < labels.length; i++)
+              TvSideMenuItem(icon: Icons.home, label: labels[i], focusNode: nodes[i], onSelect: () => selections++),
+          ],
+          dividerBeforeIndex: labels.length - 1,
+          child: Focus(
+            onKeyEvent: (_, event) {
+              if (event is KeyDownEvent || event is KeyRepeatEvent) contentKeys++;
+              return KeyEventResult.ignored;
+            },
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                TextButton(focusNode: above, onPressed: () {}, child: const Text('Above')),
+                TextButton(focusNode: outside, onPressed: () {}, child: const Text('Content')),
+              ],
+            ),
+          ),
+        ),
+      );
+      await enter(tester, nodes.first);
+      final contentRect = tester.getRect(find.text('Content'));
+      Future<void> boundary(FocusNode node, LogicalKeyboardKey key) async {
+        await tester.sendKeyDownEvent(key);
+        await tester.pumpAndSettle();
+        await tester.sendKeyRepeatEvent(key);
+        await tester.sendKeyUpEvent(key);
+        await tester.pumpAndSettle();
+        expect(node.hasPrimaryFocus, isTrue);
+        expect(tester.getSize(find.byType(AnimatedContainer)).width, TvTokens.size.sidebar.expandedW.toDouble());
+        expect(tester.getRect(find.text('Content')), contentRect);
+        expect(contentKeys, 0);
+      }
+
+      await boundary(nodes.first, LogicalKeyboardKey.arrowUp);
+      for (var i = 1; i < nodes.length; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expect(nodes[i].hasPrimaryFocus, isTrue);
+      }
+      await boundary(nodes.last, LogicalKeyboardKey.arrowDown);
+      expect(find.byType(Divider), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(selections, 1);
+      for (var i = nodes.length - 2; i >= 0; i--) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expect(nodes[i].hasPrimaryFocus, isTrue);
+      }
+    });
+  }
+
   testWidgets('A13 geometry, outline without focus scale, pressed outline and disabled reason inert', (tester) async {
     final node = FocusNode();
     addTearDown(node.dispose);
