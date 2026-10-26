@@ -414,12 +414,12 @@ void main() {
     expect(hero(tester).item!.id, 'movies4');
     await key(tester, LogicalKeyboardKey.arrowDown);
     expect(hero(tester).compact, isTrue);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 420);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 200);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).compact, isFalse);
     expect(hero(tester).item!.id, 'movies4');
     expect(row(tester, 1).focusedIndex, 4);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 600);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 340);
   });
 
   testWidgets('R1: hide-spoilers preference updates the hero', (tester) async {
@@ -524,7 +524,7 @@ void main() {
     for (var frame = 0; frame < 24; frame++) {
       await tester.pump(const Duration(milliseconds: 16));
       if (frame == 0) {
-        expect(tester.getSize(find.byType(TvHero)).height, inExclusiveRange(420, 600));
+        expect(tester.getSize(find.byType(TvHero)).height, inExclusiveRange(200, 340));
       }
       expect(railBuilds, 0, reason: 'hero animation frame $frame');
       expect(cardBuilds, 0, reason: 'hero animation frame $frame');
@@ -536,11 +536,11 @@ void main() {
     expect(hero(tester).item!.id, 'shows1');
     expect(row(tester, 2).focusInside.value, isTrue);
     expect(row(tester, 2).focusedIndex, 1);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 420);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 200);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).compact, isFalse);
     expect(row(tester, 1).focusInside.value, isTrue);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 600);
+    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 340);
   });
 
   testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
@@ -1098,7 +1098,7 @@ void main() {
         navigator.pop();
         await tester.pumpAndSettle();
         final afterIndex = scenario.hubIndex + (scenario.hadContinue ? 0 : 1);
-        final expectedHeight = afterIndex > 1 ? 420.0 : 600.0;
+        final expectedHeight = afterIndex > 1 ? 200.0 : 340.0;
         expect(row(tester, afterIndex).focusInside.value, isTrue);
         expect(hero(tester).item!.globalKey, target);
         expect(hero(tester).compact, afterIndex > 1);

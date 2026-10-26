@@ -457,7 +457,7 @@ void main() {
         expect(restored.focusInside.value, isTrue);
         expect(hero.item!.globalKey, target);
         expect(hero.compact, afterIndex > 1);
-        expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(afterIndex)).dy, afterIndex > 1 ? 420 : 600);
+        expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(afterIndex)).dy, afterIndex > 1 ? 200 : 340);
       });
     }
   }

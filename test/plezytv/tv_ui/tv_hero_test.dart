@@ -308,7 +308,7 @@ void main() {
     expect(find.byType(TvRatings), findsOneWidget);
     expect(find.descendant(of: find.byType(TvHero), matching: find.byType(Focus)), findsNothing);
     expect(find.byType(TvFocusable), findsNothing);
-    expect(tester.getSize(find.byType(TvHero)).height, 600);
+    expect(tester.getSize(find.byType(TvHero)).height, 340);
   });
 
   testWidgets('logo slot respects bounds; compact description and reduced height update', (tester) async {
@@ -354,7 +354,7 @@ void main() {
       tester.getRect(find.byType(OptimizedMediaImage)).bottom,
       tester.getRect(find.byKey(const ValueKey('hero-title-slot'))).bottom,
     );
-    expect(tester.getSize(find.byType(TvHero)).height, 420);
+    expect(tester.getSize(find.byType(TvHero)).height, 200);
     expect(tester.widget<Text>(find.text('Summary')).maxLines, 2);
     expect(tester.widget<ClearLogoImage>(find.byType(ClearLogoImage)).height, lessThan(200));
     expect(tester.hasRunningAnimations, isFalse);
@@ -377,15 +377,15 @@ void main() {
     compact.value = true;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(tester.getSize(find.byType(TvHero)).height, greaterThan(420));
-    expect(tester.getSize(find.byType(TvHero)).height, lessThan(600));
+    expect(tester.getSize(find.byType(TvHero)).height, greaterThan(200));
+    expect(tester.getSize(find.byType(TvHero)).height, lessThan(340));
     await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(TvHero)).height, 420);
+    expect(tester.getSize(find.byType(TvHero)).height, 200);
   });
 
   testWidgets('hero skeleton is static, non-focusable and loads no artwork', (tester) async {
     await pumpTvWidget(tester, const Align(alignment: Alignment.topLeft, child: TvHeroSkeleton()));
-    expect(tester.getSize(find.byType(TvHeroSkeleton)).height, 600);
+    expect(tester.getSize(find.byType(TvHeroSkeleton)).height, 340);
     expect(
       find.byType(Focus).evaluate().where((e) => e.findAncestorWidgetOfExactType<TvHeroSkeleton>() != null),
       isEmpty,

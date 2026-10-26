@@ -11,9 +11,14 @@ String rgba(Color color) {
 }
 
 void main() {
-  test('A1 every mirrored token equals the design source read at test time', () {
+  test('A1 mirrored tokens follow the design source with S24 specification overrides', () {
     final source = jsonDecode(File('docs/design/tokens.json').readAsStringSync()) as Map<String, dynamic>;
     source.remove(r'$comment');
+    // S24 specification section 3 supersedes these original design values.
+    (source['space'] as Map<String, dynamic>).addAll({'cardGap': 28, 'sectionGap': 48, 'cardFocusReserve': 24});
+    (source['focus'] as Map<String, dynamic>).addAll({'cardScale': 1.05, 'episodeScale': 1.03});
+    (source['size']['hero'] as Map<String, dynamic>).addAll({'h': 340, 'compactH': 200, 'logoMaxH': 120});
+    (source['size']['sidebar'] as Map<String, dynamic>).addAll({'minItemH': 48});
     const pl = TvTokens.player;
     final actual = {
       "color": {
@@ -140,6 +145,8 @@ void main() {
         "safeY": TvTokens.space.safeY,
         "rowGap": TvTokens.space.rowGap,
         "cardGap": TvTokens.space.cardGap,
+        "sectionGap": TvTokens.space.sectionGap,
+        "cardFocusReserve": TvTokens.space.cardFocusReserve,
         "rowHeaderToCards": TvTokens.space.rowHeaderToCards,
         "contentLeft": TvTokens.space.contentLeft,
         "actionsGap": TvTokens.space.actionsGap,
@@ -195,6 +202,7 @@ void main() {
           "padLeft": TvTokens.size.sidebar.padLeft,
           "itemW": TvTokens.size.sidebar.itemW,
           "itemH": TvTokens.size.sidebar.itemH,
+          "minItemH": TvTokens.size.sidebar.minItemH,
           "iconSize": TvTokens.size.sidebar.iconSize,
           "currentMarker": [TvTokens.size.sidebar.currentMarker[0], TvTokens.size.sidebar.currentMarker[1]],
         },

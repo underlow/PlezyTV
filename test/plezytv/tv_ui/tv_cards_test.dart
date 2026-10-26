@@ -51,7 +51,7 @@ void main() {
     node.requestFocus();
     await tester.pumpAndSettle();
     final matrix = artworkTransform(tester);
-    expect(matrix.entry(0, 0), closeTo(1.08, .00001));
+    expect(matrix.entry(0, 0), closeTo(1.05, .00001));
     expect(matrix.entry(1, 3) + 324 * matrix.entry(1, 1), closeTo(324, .00001));
     expect(tester.getRect(find.text('Poster')), titleRect);
     expect(tester.getRect(find.text('2020')), captionRect);
@@ -76,7 +76,7 @@ void main() {
     expect(position.left, -7);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(artworkTransform(tester).entry(0, 0), closeTo(1.08 * .97, .00001));
+    expect(artworkTransform(tester).entry(0, 0), closeTo(1.05 * .97, .00001));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(selected, 1);
@@ -144,7 +144,7 @@ void main() {
     expect(tester.getSize(fill), const Size(160, 6));
     final image = tester.getRect(find.byType(OptimizedMediaImage));
     expect(tester.getRect(fill).bottom, image.bottom);
-    expect(artworkTransform(tester).entry(0, 0), closeTo(1.05, .00001));
+    expect(artworkTransform(tester).entry(0, 0), closeTo(1.03, .00001));
     await pumpTvWidget(tester, Center(child: TvEpisode(item: item.copyWith(viewOffsetMs: 3000000))));
     expect(find.text(formatDurationTextual(3000000)), findsOneWidget);
     expect(fill, findsNothing);

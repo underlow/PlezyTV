@@ -539,3 +539,26 @@ storage directory, replacing the previous export. It combines Plezy's portable
 settings with Show downloads and the search keyboard layout; library settings
 are restored under the active profile. Import refreshes settings listeners,
 library providers and Plezy's stored runtime effects without a restart.
+
+## Вёрстка
+
+Все размеры — design px холста 1920×1080 через `TvTheme.px` (S24 R1–R3).
+Видимый левый край неактивного контента — x = 200 от края экрана:
+внутри оболочки отступ равен `px(TvTokens.space.contentLeft) −
+MainScreenFocusScope.foregroundLeftOf(context)`, вне оболочки — 200.
+Кольца фокуса и сдвинутые подложки кнопок/вкладок могут выходить левее.
+Верхнее поле — 54, правое поле статичного контента — 96; горизонтальные
+ряды продолжаются за правый край.
+
+Между секциями — `space.sectionGap` = 48 от низа подписи до следующего
+заголовка. От заголовка ряда до карточки — `rowHeaderToCards` = 16 плюс
+`cardFocusReserve` = 24 сверху под рост в фокусе. Промежутки шапки:
+название → метаданные 12, метаданные → оценки 12, оценки → описание 16,
+описание → кнопки 32.
+
+`space.cardGap` = 28. Постер, квадрат и персона растут в фокусе в 1.05 раза,
+эпизод — в 1.03 раза, от нижнего края вверх и в стороны. Кольцо толщиной 4
+с отступом 3 учитывается в границах отрисовки: оно не заходит на соседнюю
+карточку, заголовок или неподвижные подписи. Статусы остаются в углах и
+у нижнего края карточки. Компактные шапки деталей должны иметь непрозрачный
+фон `bg.base` на всю высоту (переход экранов выполняется в S24 T3).

@@ -1,3 +1,4 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -435,7 +436,13 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Padding(
-                                    padding: EdgeInsets.only(left: px(188), right: px(96)),
+                                    padding: EdgeInsets.only(
+                                      left:
+                                          (px(TvTokens.space.contentLeft) -
+                                                  MainScreenFocusScope.foregroundLeftOf(context))
+                                              .clamp(0.0, double.infinity),
+                                      right: px(96),
+                                    ),
                                     child: FocusScope(node: _actionScope, child: _actions(context, c)),
                                   ),
                                   SizedBox(height: px(80)),
@@ -460,7 +467,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   Widget _message(BuildContext context, String text) {
     final theme = TvTheme.of(context), px = theme.px;
     return Padding(
-      padding: EdgeInsets.only(left: px(200), top: px(200), right: px(96)),
+      padding: EdgeInsets.only(
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: px(200),
+        right: px(96),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -499,7 +513,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           ),
         ),
         child: Padding(
-          padding: EdgeInsets.only(left: px(200), top: px(48), right: px(96)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+            top: px(48),
+            right: px(96),
+          ),
           child: Align(
             alignment: Alignment.topLeft,
             child: Text.rich(
@@ -606,7 +627,15 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
         ),
     ];
     return Padding(
-      padding: EdgeInsets.only(left: px(200), top: px(72), right: px(96), bottom: px(48)),
+      padding: EdgeInsets.only(
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: px(72),
+        right: px(96),
+        bottom: px(48),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -658,7 +687,12 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
       _rowOrder = [];
       return [
         Padding(
-          padding: EdgeInsets.only(left: px(200)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+          ),
           child: const TvRowSkeleton(key: ValueKey('movie-rows-skeleton')),
         ),
       ];
@@ -797,7 +831,14 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
     final theme = TvTheme.of(context), px = theme.px;
     return Padding(
       key: const ValueKey('movie-tech-info'),
-      padding: EdgeInsets.only(left: px(200), top: px(8), right: px(96)),
+      padding: EdgeInsets.only(
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: px(8),
+        right: px(96),
+      ),
       child: Wrap(
         spacing: px(64),
         runSpacing: px(24),

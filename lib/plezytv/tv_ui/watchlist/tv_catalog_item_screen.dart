@@ -1,3 +1,4 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -287,7 +288,15 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           source: TvArtworkSource(item: _item.toMediaItem()),
           child: SingleChildScrollView(
             child: Padding(
-              padding: EdgeInsets.only(left: px(200), top: px(72), right: px(96), bottom: px(48)),
+              padding: EdgeInsets.only(
+                left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                  0.0,
+                  double.infinity,
+                ),
+                top: px(72),
+                right: px(96),
+                bottom: px(48),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
