@@ -265,11 +265,20 @@ void main() {
     );
     await mount(tester, fixture(movie: movie));
     expect(find.text('PART TWO'), findsOneWidget);
-    expect(find.text('2024 · ${formatDurationTextual(9960000)} · 12+'), findsOneWidget);
-    expect(find.widgetWithText(TvChip, 'Drama'), findsOneWidget);
+    expect(find.text('2024 · ${formatDurationTextual(9960000)} · 12+ · Drama · Action'), findsOneWidget);
+    expect(find.widgetWithText(TvChip, 'Drama'), findsNothing);
     expect(find.text('Director: Denis'), findsOneWidget);
     expect(find.byType(TvRatings), findsOneWidget);
     expect(find.text('Story'), findsOneWidget);
+    final meta = tester.getRect(find.byKey(const ValueKey('movie-meta')));
+    final director = tester.getRect(find.text('Director: Denis'));
+    final edition = tester.getRect(find.byKey(const ValueKey('movie-edition')));
+    final ratings = tester.getRect(find.byType(TvRatings));
+    expect(meta.width, lessThanOrEqualTo(900));
+    expect(director.top, greaterThan(meta.bottom));
+    expect(edition.top, greaterThan(director.bottom));
+    expect(ratings.top, greaterThan(edition.bottom));
+    expect(tester.getRect(find.byKey(const ValueKey('movie-summary'))).width, lessThanOrEqualTo(900));
   });
 
   testWidgets('A19 spoiler rule follows Plezy shouldHideSpoiler (movies stay visible)', (tester) async {

@@ -22,7 +22,6 @@ import '../../../utils/snackbar_helper.dart';
 import '../../../widgets/optimized_media_image.dart';
 import '../components/tv_button.dart';
 import '../components/tv_action_row.dart';
-import '../components/tv_chip.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_right_panel.dart';
 import '../components/tv_settings_item.dart';
@@ -294,7 +293,7 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
                   0.0,
                   double.infinity,
                 ),
-                top: px(72),
+                top: px(TvTokens.space.safeY),
                 right: px(96),
                 bottom: px(48),
               ),
@@ -302,7 +301,7 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _header(context),
-                  SizedBox(height: px(48)),
+                  SizedBox(height: px(TvTokens.detail.actionsGap)),
                   _actions(context),
                 ],
               ),
@@ -337,7 +336,7 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
         ClearLogoImage(
           client: null,
           logoPath: item.logoUrl,
-          fallbackWidth: px(900),
+          fallbackWidth: px(TvTokens.detail.textMaxW),
           width: px(560),
           height: px(120),
           alignment: Alignment.centerLeft,
@@ -350,29 +349,21 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           ),
         ),
       ),
-      if (meta.isNotEmpty) (24, Text(meta, key: const ValueKey('catalog-meta'), style: theme.body)),
-      if (genres.isNotEmpty)
+      if (meta.isNotEmpty || genres.isNotEmpty)
         (
-          20,
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final genre in genres)
-                  Padding(
-                    padding: EdgeInsets.only(right: px(12)),
-                    child: TvChip.genre(label: genre),
-                  ),
-              ],
-            ),
+          TvTokens.detail.metadataGap.toDouble(),
+          Text(
+            [if (meta.isNotEmpty) meta, ...genres].join(' · '),
+            key: const ValueKey('catalog-meta'),
+            style: theme.body,
           ),
         ),
-      (20, TvRatings(item: media)),
+      (TvTokens.detail.metadataGap.toDouble(), TvRatings(item: media)),
       if (summary != null && summary.isNotEmpty)
         (
-          24,
+          TvTokens.detail.summaryGap.toDouble(),
           SizedBox(
-            width: px(900),
+            width: px(TvTokens.detail.textMaxW),
             child: Text(
               summary,
               key: const ValueKey('catalog-summary'),
@@ -383,11 +374,14 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           ),
         ),
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
-      ],
+    return SizedBox(
+      width: px(TvTokens.detail.textMaxW),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (gap, child) in parts) ...[if (gap > 0) SizedBox(height: px(gap)), child],
+        ],
+      ),
     );
   }
 

@@ -1,3 +1,4 @@
+import '../../../i18n/strings.g.dart';
 import '../../../media/episode_collection.dart';
 import '../../../media/media_item.dart';
 import '../tv_strings.dart';
@@ -58,6 +59,7 @@ String tvShowMetadata(MediaItem show, List<MediaItem> seasons) => [
   if (show.leafCount != null) TvStrings.episodes(show.leafCount!),
   if (show.contentRating?.isNotEmpty == true) show.contentRating!,
   if (show.studio?.isNotEmpty == true) show.studio!,
+  ...?show.genres?.where((genre) => genre.trim().isNotEmpty),
 ].join(' · ');
 
 String? tvShowWatchedProgress(MediaItem episode) => episode.hasActiveProgress && episode.durationMs != null
@@ -74,4 +76,10 @@ MediaItem? tvShowPrimaryTrailer(MediaItem show, List<MediaItem> extras) {
     return '${extra.raw?['ExtraType']}'.toLowerCase() == 'trailer' ||
         '${extra.raw?['Type']}'.toLowerCase() == 'trailer';
   }).firstOrNull;
+}
+
+/// A server may repeat the series title for unnamed seasons.
+String tvShowSeasonTitle(MediaItem season, MediaItem show) {
+  final title = season.title?.trim() ?? '';
+  return title.isEmpty || title == show.title?.trim() ? t.common.seasonNumber(number: season.index ?? 1) : title;
 }

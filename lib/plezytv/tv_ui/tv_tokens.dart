@@ -93,6 +93,8 @@ abstract final class TvTokens {
     contentLeft: 200,
     actionsGap: 24,
   );
+  // S24 R2, R8: shared detail header geometry.
+  static const detail = (textMaxW: 900, metadataGap: 12, summaryGap: 16, actionsGap: 32);
   static const radius = (xs: 4, sm: 8, card: 10, button: 12, iconButton: 16, chip: 8, panel: 16, badge: 6);
   static const size = (
     poster: (w: 216, h: 324, ratio: "2:3", perRowVisible: 7),

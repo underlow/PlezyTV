@@ -1,3 +1,4 @@
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -173,7 +174,7 @@ void main() {
       final after = (focus.context!.findRenderObject()! as RenderBox).localToGlobal(Offset.zero);
       expect(after.dy, closeTo(before.dy, 0.01));
       final row = find.byWidgetPredicate((w) => w is TvHorizontalRow && w.title == 'Reviews');
-      expect(page(tester).pixels - oldOffset, closeTo(tester.getSize(row).height, 0.01));
+      expect(page(tester).pixels - oldOffset, closeTo(tester.getSize(row).height + TvTokens.space.sectionGap, 0.01));
       await key(tester, LogicalKeyboardKey.arrowUp);
       expect(focusedRow(), 'Reviews');
     });
