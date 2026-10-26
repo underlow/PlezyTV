@@ -59,6 +59,7 @@ class _TvHeroState extends State<TvHero> {
   Timer? _timer;
   int _generation = 0;
   MediaItem? _ratingsItem;
+  bool _loadingFull = false;
 
   bool get _needsFull =>
       widget.loadFullRatings &&
@@ -88,9 +89,18 @@ class _TvHeroState extends State<TvHero> {
     _communityRatings = const [];
     final generation = ++_generation;
     _ratingsItem = null;
+    _loadingFull = false;
     final item = widget.item;
     final client = widget.client;
     if (!_needsFull || item == null || client == null) return;
+    final cached = _cache.remove(item.globalKey);
+    if (cached != null) {
+      _cache[item.globalKey] = cached;
+      _ratingsItem = cached;
+      _subscribe(cached, client, generation);
+      return;
+    }
+    _loadingFull = true;
     _timer = Timer(Duration(milliseconds: TvTokens.motion.heroDebounce), () async {
       final key = item.globalKey;
       var full = _cache.remove(key);
@@ -117,16 +127,23 @@ class _TvHeroState extends State<TvHero> {
         }
       }
       if (!mounted || generation != _generation) return;
-      setState(() => _ratingsItem = full);
+      setState(() {
+        _ratingsItem = full;
+        _loadingFull = false;
+      });
       if (full == null) return;
-      _ratingsSubscription = context
-          .read<CatalogSourcesProvider?>()
-          ?.communityRatingsForLibraryItem(full, client: client)
-          .listen((ratings) {
-            if (!mounted || generation != _generation) return;
-            setState(() => _communityRatings = ratings);
-          }, onError: (Object _) {});
+      _subscribe(full, client, generation);
     });
+  }
+
+  void _subscribe(MediaItem full, MediaServerClient client, int generation) {
+    _ratingsSubscription = context
+        .read<CatalogSourcesProvider?>()
+        ?.communityRatingsForLibraryItem(full, client: client)
+        .listen((ratings) {
+          if (!mounted || generation != _generation) return;
+          setState(() => _communityRatings = ratings);
+        }, onError: (Object _) {});
   }
 
   @override
@@ -147,11 +164,20 @@ class _TvHeroState extends State<TvHero> {
     final episode = media?.kind == MediaKind.episode;
     final show = media?.kind == MediaKind.show;
     final hidden = media != null && hideSpoilers && media.shouldHideSpoiler;
+    final summary = (media?.summary?.isNotEmpty ?? false) ? media!.summary : _ratingsItem?.summary;
+    final genres = (media?.genres?.isNotEmpty ?? false) ? media!.genres : _ratingsItem?.genres;
     final description = hidden
         ? (episode && media.parentIndex != null && media.index != null
               ? TvStrings.spoilerEpisode(season: media.parentIndex!, episode: media.index!, title: media.title ?? '')
               : null)
-        : media?.summary;
+        : summary;
+    final reserveRatings =
+        _loadingFull ||
+        (media != null &&
+            (_needsFull
+                ? (_ratingsItem != null &&
+                      withCommunityRatings(mediaRatingsFor(_ratingsItem!), _communityRatings).isNotEmpty)
+                : mediaRatingsFor(media).isNotEmpty));
     final music = media?.kind == MediaKind.artist || media?.kind == MediaKind.album || media?.kind == MediaKind.track;
     final metadata = music
         ? <String?>[
@@ -168,11 +194,11 @@ class _TvHeroState extends State<TvHero> {
               TvStrings.episode(season: media.parentIndex!, episode: media.index!, title: media.title ?? ''),
             if (!episode && media?.year != null) '${media!.year}',
             if (show && media!.childCount != null) TvStrings.seasons(media.childCount!),
-            if (show && media!.leafCount != null) TvStrings.episodes(media.leafCount!),
-            if (!show && media?.durationMs != null) formatDurationTextual(media!.durationMs!),
+            if (!show && !(episode && media!.hasActiveProgress) && media?.durationMs != null)
+              formatDurationTextual(media!.durationMs!),
             if (episode && media!.hasActiveProgress) TvStrings.left(media.durationMs! - media.viewOffsetMs!),
-            if (media?.contentRating?.isNotEmpty ?? false) formatContentRating(media!.contentRating),
-            if (!episode && (media?.genres?.isNotEmpty ?? false)) media!.genres!.join(', '),
+            if (!episode && (media?.contentRating?.isNotEmpty ?? false)) formatContentRating(media!.contentRating),
+            if (!episode && (genres?.isNotEmpty ?? false)) genres!.take(3).join(', '),
           ];
     return AnimatedContainer(
       height: px(compact ? TvTokens.size.hero.compactH : TvTokens.size.hero.h),
@@ -190,7 +216,7 @@ class _TvHeroState extends State<TvHero> {
               minHeight: 0,
               maxHeight: double.infinity,
               child: Padding(
-                padding: EdgeInsets.only(top: px(compact ? 72 : 110)),
+                padding: EdgeInsets.zero,
                 child: SizedBox(
                   width: px(TvTokens.size.hero.textMaxW),
                   child: Column(
@@ -207,7 +233,7 @@ class _TvHeroState extends State<TvHero> {
                             client: client,
                             logoPath: media.clearLogoPath,
                             width: px(TvTokens.size.hero.logoMaxW * (compact ? .7 : 1)),
-                            height: px(compact ? 90 : 128),
+                            height: px(TvTokens.size.hero.logoMaxH),
                             alignment: Alignment.bottomLeft,
                             fallbackWidth: px(TvTokens.size.hero.textMaxW),
                             fadeInDuration: Duration.zero,
@@ -230,7 +256,7 @@ class _TvHeroState extends State<TvHero> {
                         ),
                       ),
                       if (metadata.isNotEmpty) ...[
-                        SizedBox(height: px(compact ? 20 : 28)),
+                        SizedBox(height: px(TvTokens.space.sm)),
                         Text(
                           metadata.join(' · '),
                           maxLines: 2,
@@ -238,19 +264,25 @@ class _TvHeroState extends State<TvHero> {
                           style: theme.body.copyWith(color: TvTokens.color.text.secondary),
                         ),
                       ],
-                      SizedBox(height: px(14)),
-                      if (!music && (!_needsFull || _ratingsItem != null))
-                        TvRatings(
-                          item: _needsFull ? _ratingsItem! : media,
-                          ratings: _needsFull
-                              ? withCommunityRatings(mediaRatingsFor(_ratingsItem!), _communityRatings)
+                      if (!music) ...[
+                        SizedBox(height: px(reserveRatings ? TvTokens.space.sm : 0)),
+                        SizedBox(
+                          height: px(reserveRatings ? TvTokens.type.body.lineHeight : 0),
+                          child: (!_needsFull || _ratingsItem != null)
+                              ? TvRatings(
+                                  item: _needsFull ? _ratingsItem! : media,
+                                  ratings: _needsFull
+                                      ? withCommunityRatings(mediaRatingsFor(_ratingsItem!), _communityRatings)
+                                      : null,
+                                )
                               : null,
                         ),
+                      ],
                       if (description?.isNotEmpty ?? false) ...[
-                        SizedBox(height: px(compact ? 14 : 20)),
+                        SizedBox(height: px(TvTokens.space.md)),
                         Text(
                           description!,
-                          maxLines: compact ? 2 : 3,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.bodyLarge.copyWith(color: TvTokens.color.text.secondary),
                         ),
@@ -285,7 +317,7 @@ class TvHeroSkeleton extends StatelessWidget {
           minHeight: 0,
           maxHeight: double.infinity,
           child: Padding(
-            padding: EdgeInsets.only(top: px(compact ? 72 : 110)),
+            padding: EdgeInsets.zero,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,7 +328,7 @@ class TvHeroSkeleton extends StatelessWidget {
                 SizedBox(height: px(16)),
                 block(240, 24, TvTokens.color.bg.skeletonLine),
                 SizedBox(height: px(28)),
-                for (final width in (compact ? [860.0, 600.0] : [860.0, 820.0, 600.0])) ...[
+                for (final width in [860.0, 600.0]) ...[
                   block(width, 22, TvTokens.color.bg.skeletonLine),
                   SizedBox(height: px(12)),
                 ],

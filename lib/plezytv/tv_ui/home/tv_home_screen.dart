@@ -535,6 +535,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
                   final effective = item == null ? null : context.withFreshWatchState(item);
                   return Padding(
                     padding: EdgeInsets.only(
+                      top: px(TvTokens.space.safeY),
                       left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
                         0.0,
                         double.infinity,
@@ -565,6 +566,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 children: [
                   Padding(
                     padding: EdgeInsets.only(
+                      top: px(TvTokens.space.safeY),
                       left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
                         0.0,
                         double.infinity,

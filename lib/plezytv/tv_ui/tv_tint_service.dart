@@ -37,7 +37,12 @@ Future<Uint8List?> fetchTvArtwork(TvArtworkSource source, bool backdrop, int wid
   if (source.offline || source.client == null) return null;
   final path = backdrop ? source.item.artPath : source.item.thumbPath;
   if (path == null || path.isEmpty) return null;
-  final url = source.client!.thumbnailUrl(path, width: width, cover: false);
+  final url = source.client!.thumbnailUrl(
+    path,
+    width: width,
+    height: backdrop ? (width * 720 / 1280).round() : width,
+    cover: false,
+  );
   if (url.isEmpty) return null;
   await for (final response in PlexImageCacheManager.instance.getFileStream(url)) {
     if (response is FileInfo) return response.file.readAsBytes();

@@ -89,6 +89,7 @@ void main() {
     expect(tester.widget<TvRatings>(find.byType(TvRatings)).item, same(full));
     selected.value = testMediaItem(id: 'a');
     await tester.pump();
+    expect(find.byType(TvRatings), findsOneWidget); // Cache is synchronous, before debounce.
     await tester.pump(const Duration(milliseconds: 500));
     expect(client.requests, ['a', 'b']);
     await tester.pump();
@@ -103,6 +104,48 @@ void main() {
     await tester.pump();
     expect(find.byType(TvRatings), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('S24 full metadata fills description and at most three genres without moving it', (tester) async {
+    final client = _RatingsClient();
+    await pumpTvWidget(
+      tester,
+      TvHero(
+        item: testMediaItem(id: 'fallback', summary: ''),
+        client: client,
+        loadFullRatings: true,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    client.answers['fallback']!.complete(
+      testMediaItem(id: 'fallback', summary: 'Full summary', genres: ['Drama', 'Crime', 'Comedy', 'Action']),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Full summary'), findsOneWidget);
+    expect(find.textContaining('Drama, Crime, Comedy'), findsOneWidget);
+    expect(find.textContaining('Action'), findsNothing);
+    expect(tester.getRect(find.text('Full summary')).bottom, lessThanOrEqualTo(340));
+  });
+
+  testWidgets('S24 loading ratings reserve their final row height', (tester) async {
+    final client = _RatingsClient();
+    await pumpTvWidget(
+      tester,
+      TvHero(
+        item: testMediaItem(id: 'stable', summary: 'Stable'),
+        client: client,
+        loadFullRatings: true,
+      ),
+    );
+    final before = tester.getTopLeft(find.text('Stable')).dy;
+    await tester.pump(const Duration(milliseconds: 300));
+    client.answers['stable']!.complete(
+      testMediaItem(id: 'stable').copyWith(ratings: const [MediaRatingSource(source: 'imdb', value: 7)]),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('Stable')).dy, before);
   });
 
   testWidgets('Plex hero requests lightweight metadata and retains attributed Rating array', (tester) async {
@@ -300,11 +343,8 @@ void main() {
       ),
     );
     expect(find.text('Show'), findsOneWidget);
-    expect(
-      find.text('S2 E3 · Episode · ${formatDurationTextual(3000000)} · ${formatDurationTextual(1800000)} left'),
-      findsOneWidget,
-    );
-    expect(tester.widget<Text>(find.text('Summary')).maxLines, 3);
+    expect(find.text('S2 E3 · Episode · ${formatDurationTextual(1800000)} left'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('Summary')).maxLines, 2);
     expect(find.byType(TvRatings), findsOneWidget);
     expect(find.descendant(of: find.byType(TvHero), matching: find.byType(Focus)), findsNothing);
     expect(find.byType(TvFocusable), findsNothing);
@@ -332,7 +372,7 @@ void main() {
     expect(logo.height, lessThanOrEqualTo(200));
     final normalImage = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
     final normalImageSize = Size(normalImage.width!, normalImage.height!);
-    expect(normalImageSize, const Size(560, 128));
+    expect(normalImageSize, const Size(560, 120));
     compact.value = true;
     await tester.pump();
     final compactImage = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
@@ -343,12 +383,12 @@ void main() {
       final source = Size(100 * aspect, 100);
       final normal = applyBoxFit(BoxFit.contain, source, normalImageSize).destination;
       final compact = applyBoxFit(BoxFit.contain, source, compactImageSize).destination;
-      expect(compact.width, lessThan(normal.width));
-      expect(compact.height, lessThan(normal.height));
+      expect(compact.width, lessThanOrEqualTo(normal.width));
+      expect(compact.height, lessThanOrEqualTo(normal.height));
     }
-    expect(compactImageSize, const Size(392, 90));
+    expect(compactImageSize, const Size(392, 120));
     expect(compactImageSize.width, lessThan(normalImageSize.width));
-    expect(compactImageSize.height, lessThan(normalImageSize.height));
+    expect(compactImageSize.height, lessThanOrEqualTo(normalImageSize.height));
     expect(tester.getSize(find.byKey(const ValueKey('hero-title-slot'))).height, 128);
     expect(
       tester.getRect(find.byType(OptimizedMediaImage)).bottom,
@@ -442,10 +482,7 @@ void main() {
         ),
       ),
     );
-    expect(
-      find.text('S1 E3 · Title · ${formatDurationTextual(3120000)} · ${formatDurationTextual(2100000)} left · 18+'),
-      findsOneWidget,
-    );
+    expect(find.text('S1 E3 · Title · ${formatDurationTextual(2100000)} left'), findsOneWidget);
     await pumpTvWidget(
       tester,
       TvHero(
@@ -460,7 +497,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('2023 · 1 season · 8 episodes · 18+ · Drama, Crime'), findsOneWidget);
+    expect(find.text('2023 · 1 season · 18+ · Drama, Crime'), findsOneWidget);
   });
 
   testWidgets('F3 dense content never overflows either height transition', (tester) async {
@@ -493,7 +530,7 @@ void main() {
     );
     final metadata = find.byWidgetPredicate((w) => w is Text && (w.data?.startsWith('S1 E3') ?? false));
     expect(tester.getSize(metadata).height, 60);
-    expect(tester.getSize(find.text(item.summary!)).height, 102);
+    expect(tester.getSize(find.text(item.summary!)).height, 68);
     for (final value in [true, false]) {
       compact.value = value;
       await tester.pump();
@@ -524,7 +561,7 @@ void main() {
         if (title != 'Short') expect(text.size.height, 128);
         final logo = tester.getRect(find.byKey(const ValueKey('hero-title-slot')));
         final titleRect = tester.getRect(find.text(title));
-        expect(logo.top, compact ? 72 : 110);
+        expect(logo.top, 0);
         expect(titleRect.bottom, logo.bottom);
         final current = tester.getTopLeft(find.text('2023')).dy;
         if (metadataTop != null) expect(current, metadataTop);
@@ -536,17 +573,10 @@ void main() {
   testWidgets('F7 skeleton matches reference geometry and fixed top', (tester) async {
     await pumpTvWidget(tester, const Align(alignment: Alignment.topLeft, child: TvHeroSkeleton()));
     final blocks = find.descendant(of: find.byType(TvHeroSkeleton), matching: find.byType(Container));
-    expect(tester.getTopLeft(blocks.first).dy, 110);
+    expect(tester.getTopLeft(blocks.first).dy, 0);
     expect(
       [for (var i = 0; i < blocks.evaluate().length; i++) tester.getSize(blocks.at(i))],
-      [
-        const Size(420, 96),
-        const Size(520, 24),
-        const Size(240, 24),
-        const Size(860, 22),
-        const Size(820, 22),
-        const Size(600, 22),
-      ],
+      [const Size(420, 96), const Size(520, 24), const Size(240, 24), const Size(860, 22), const Size(600, 22)],
     );
   });
 

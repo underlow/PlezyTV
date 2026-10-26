@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'package:drift/native.dart';
+import 'package:plezy/database/app_database.dart';
+import 'package:plezy/services/plex_api_cache.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -7,12 +10,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
+import 'package:plezy/media/media_server_client.dart';
+import '../../test_helpers/backend_client_fixtures.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tint_service.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tinted_background.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 
 import 'tv_theme_test_helper.dart';
+
+class _ArtworkClient implements MediaServerClient {
+  final plex = testPlexClient();
+  final urls = <Uri>[];
+  @override
+  String thumbnailUrl(String? path, {int? width, int? height, bool cover = true}) {
+    urls.add(Uri.parse(plex.thumbnailUrl(path, width: width, height: height, cover: cover)));
+    return ''; // Stop before transport; exercise the production URL builder.
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 TvArtworkSource source(String id, {String server = 'server'}) => TvArtworkSource(
   item: MediaItem(id: id, backend: MediaBackend.plex, kind: MediaKind.movie, serverId: server),
@@ -58,6 +76,24 @@ List<Color> gradientTops(WidgetTester tester) => tester
     .toList();
 
 void main() {
+  test('S24 Plex backdrop and tint URLs supply both transcode dimensions', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    PlexApiCache.initialize(database);
+    addTearDown(database.close);
+    final client = _ArtworkClient();
+    addTearDown(client.plex.close);
+    final artwork = TvArtworkSource(
+      item: source('url').item.copyWith(artPath: '/art', thumbPath: '/poster'),
+      client: client,
+    );
+    await fetchTvArtwork(artwork, true, 1280);
+    await fetchTvArtwork(artwork, false, 64);
+    expect(client.urls.map((url) => (url.queryParameters['width'], url.queryParameters['height'])), [
+      ('1280', '720'),
+      ('64', '64'),
+    ]);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('A6/A6c dominant colors clamp and maintain text contrast; neutrals ignored', () {
@@ -410,6 +446,25 @@ void main() {
     expect(find.byType(RawImage), findsOneWidget);
     expect(tester.hasRunningAnimations, false);
     expect(tester.getSize(find.byType(RawImage)), const Size(1300, 780));
+    // Rasterize the actual horizontal mask on transparency: R17's right-hand
+    // artwork starts at x840; text at x200 remains outside the image.
+    final masks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+    final recorder = ui.PictureRecorder();
+    Canvas(recorder).drawRect(
+      const Rect.fromLTWH(0, 0, 1300, 780),
+      Paint()..shader = masks.last.shaderCallback(const Rect.fromLTWH(0, 0, 1300, 780)),
+    );
+    final picture = recorder.endRecording();
+    await tester.runAsync(() async {
+      final mask = await picture.toImage(1300, 780);
+      final bytes = (await mask.toByteData())!;
+      for (final x in [840, 1100, 1600, 1919]) {
+        expect(bytes.getUint8(((100 * 1300) + x - 620) * 4 + 3), greaterThan(250));
+      }
+      expect(bytes.getUint8((100 * 1300) * 4 + 3), lessThan(5));
+      mask.dispose();
+      picture.dispose();
+    });
   });
 
   testWidgets('reduced updates have no running animation', (tester) async {
