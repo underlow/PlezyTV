@@ -446,25 +446,39 @@ void main() {
     expect(find.byType(RawImage), findsOneWidget);
     expect(tester.hasRunningAnimations, false);
     expect(tester.getSize(find.byType(RawImage)), const Size(1300, 780));
-    // Rasterize the actual horizontal mask on transparency: R17's right-hand
-    // artwork starts at x840; text at x200 remains outside the image.
-    final masks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
-    final recorder = ui.PictureRecorder();
-    Canvas(recorder).drawRect(
-      const Rect.fromLTWH(0, 0, 1300, 780),
-      Paint()..shader = masks.last.shaderCallback(const Rect.fromLTWH(0, 0, 1300, 780)),
+    expect(tester.widget<RawImage>(find.byType(RawImage)).opacity!.value, .6);
+    expect(
+      tester
+          .widget<ColoredBox>(find.ancestor(of: find.byType(RawImage), matching: find.byType(ColoredBox)).first)
+          .color,
+      TvTokens.color.bg.base,
     );
-    final picture = recorder.endRecording();
-    await tester.runAsync(() async {
-      final mask = await picture.toImage(1300, 780);
-      final bytes = (await mask.toByteData())!;
-      for (final x in [840, 1100, 1600, 1919]) {
-        expect(bytes.getUint8(((100 * 1300) + x - 620) * 4 + 3), greaterThan(250));
-      }
-      expect(bytes.getUint8((100 * 1300) * 4 + 3), lessThan(5));
-      mask.dispose();
-      picture.dispose();
-    });
+    // Rasterize the production shaders, checking R17 screen coordinates.
+    final masks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+    const rect = Rect.fromLTWH(0, 0, 1300, 780);
+    for (final (mask, points, expected, horizontal) in [
+      (masks.last, [1000, 1250, 1500], [0.0, .5, 1.0], true),
+      (masks.first, [360, 500, 640], [1.0, .5, 0.0], false),
+    ]) {
+      final recorder = ui.PictureRecorder();
+      Canvas(recorder).drawRect(rect, Paint()..shader = mask.shaderCallback(rect));
+      final picture = recorder.endRecording();
+      await tester.runAsync(() async {
+        final raster = await picture.toImage(1300, 780);
+        final bytes = (await raster.toByteData())!;
+        for (var i = 0; i < points.length; i++) {
+          final x = horizontal ? points[i] - 620 : 1000;
+          final y = horizontal ? 100 : points[i];
+          expect(
+            bytes.getUint8((y * 1300 + x) * 4 + 3) / 255,
+            closeTo(expected[i], .01),
+            reason: 'R17 ${horizontal ? "x" : "y"}=${points[i]}',
+          );
+        }
+        raster.dispose();
+        picture.dispose();
+      });
+    }
   });
 
   testWidgets('reduced updates have no running animation', (tester) async {
