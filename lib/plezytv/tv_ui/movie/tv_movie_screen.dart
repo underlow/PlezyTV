@@ -88,7 +88,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
   String? _launchState;
 
   bool get _isTop => ModalRoute.of(context)?.isCurrent != false;
-  double _collapseAt = 300, _barHeight = 150;
+  double _collapseAt = TvTokens.detail.collapseAt.toDouble(), _barHeight = TvTokens.detail.compactH.toDouble();
 
   @override
   void initState() {
@@ -413,8 +413,8 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
 
   Widget _build(BuildContext context) {
     final theme = TvTheme.of(context), px = theme.px;
-    _collapseAt = px(300);
-    _barHeight = px(150);
+    _collapseAt = px(TvTokens.detail.collapseAt);
+    _barHeight = px(TvTokens.detail.compactH);
     final c = _controller;
     final movie = c?.movie ?? widget.metadata;
     return PopScope<bool>(
@@ -427,6 +427,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
           canRequestFocus: false,
           onKeyEvent: (_, event) => _exitable ? KeyEventResult.ignored : handleBackKeyAction(event, _pop),
           child: TvTintedBackground(
+            scrollController: _page,
             source: TvArtworkSource(item: movie, client: c?.client),
             child: _connectionError != null || _unavailable
                 ? _message(context, _unavailable ? TvStrings.movieUnavailable : TvStrings.noConnection)
@@ -705,7 +706,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               title: t.discover.cast,
               itemCount: roles.length,
               cardWidth: 200,
-              cardHeight: 290,
+              cardHeight: tvCardHeight(context, TvPersonCard.photoSize),
               itemKey: (i) => '${roles[i].id}/${roles[i].tag}',
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) {
@@ -758,7 +759,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               title: t.discover.extras,
               itemCount: c.extras.length,
               cardWidth: 400,
-              cardHeight: 315,
+              cardHeight: tvCardHeight(context, TvTokens.size.episode.h),
               itemKey: (i) => c.extras[i].globalKey,
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) => TvEpisode(
@@ -779,7 +780,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
               title: hub.title.isEmpty ? t.discover.moreLikeThis : hub.title,
               itemCount: hub.items.length,
               cardWidth: 216,
-              cardHeight: 414,
+              cardHeight: tvCardHeight(context, TvTokens.size.poster.h),
               itemKey: (i) => hub.items[i].globalKey,
               onItemFocused: (_) => _revealRow(key),
               cardBuilder: (context, i, node) {

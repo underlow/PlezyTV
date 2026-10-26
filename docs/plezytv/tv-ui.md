@@ -631,3 +631,19 @@ start at x 200, its width is capped at 1200 and its app bar uses `bg.base`,
 including when scrolled. The wrapper compensates for upstream SettingsGroup's
 16 logical-pixel margin; recheck that margin on upstream changes. Settings
 items, routes and nested pages remain owned by upstream.
+
+### Acceptance refinements (S24 T7)
+
+The compact Home hero contains only its logo/title and one metadata line; its
+logo is capped at 80 design pixels. Scores and description appear in the full
+hero only. Movie, show and catalog detail artwork fades linearly with page
+scroll from full strength at 0 to zero at 300 design pixels; the tint remains.
+Show uses the movie's opaque 150 pixel compact header and collapse threshold,
+keeping focused rail headings below it. Show metadata stays on one line with
+ellipsis and at most three genres.
+
+Detail rail heights include artwork, the 20 pixel caption gap and the two
+rounded text line boxes, so the next section starts exactly 48 pixels after
+the caption. Search episode captions append the server name only when several
+servers are connected. Collapsed menu rebuilds retain their scroll offset;
+a changed current section is revealed with only the necessary movement.

@@ -233,7 +233,7 @@ class _TvHeroState extends State<TvHero> {
                             client: client,
                             logoPath: media.clearLogoPath,
                             width: px(TvTokens.size.hero.logoMaxW * (compact ? .7 : 1)),
-                            height: px(TvTokens.size.hero.logoMaxH),
+                            height: px(compact ? TvTokens.size.hero.compactLogoMaxH : TvTokens.size.hero.logoMaxH),
                             alignment: Alignment.bottomLeft,
                             fallbackWidth: px(TvTokens.size.hero.textMaxW),
                             fadeInDuration: Duration.zero,
@@ -259,12 +259,12 @@ class _TvHeroState extends State<TvHero> {
                         SizedBox(height: px(TvTokens.space.sm)),
                         Text(
                           metadata.join(' · '),
-                          maxLines: 2,
+                          maxLines: compact ? 1 : 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.body.copyWith(color: TvTokens.color.text.secondary),
                         ),
                       ],
-                      if (!music) ...[
+                      if (!compact && !music) ...[
                         SizedBox(height: px(reserveRatings ? TvTokens.space.sm : 0)),
                         SizedBox(
                           height: px(reserveRatings ? TvTokens.type.body.lineHeight : 0),
@@ -278,11 +278,11 @@ class _TvHeroState extends State<TvHero> {
                               : null,
                         ),
                       ],
-                      if (description?.isNotEmpty ?? false) ...[
+                      if (!compact && (description?.isNotEmpty ?? false)) ...[
                         SizedBox(height: px(TvTokens.space.md)),
                         Text(
                           description!,
-                          maxLines: 2,
+                          maxLines: compact ? 1 : 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.bodyLarge.copyWith(color: TvTokens.color.text.secondary),
                         ),

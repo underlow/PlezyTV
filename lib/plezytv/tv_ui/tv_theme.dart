@@ -89,3 +89,13 @@ class _TvThemeScope extends InheritedWidget {
   @override
   bool updateShouldNotify(_TvThemeScope oldWidget) => data.scale != oldWidget.data.scale;
 }
+
+/// Card art plus the two rounded caption line boxes (S24 R2a).
+double tvCardHeight(BuildContext context, num artHeight) {
+  final theme = TvTheme.of(context);
+  return artHeight +
+      20 +
+      (theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
+              theme.px(TvTokens.type.caption.lineHeight).ceilToDouble()) /
+          theme.scale;
+}

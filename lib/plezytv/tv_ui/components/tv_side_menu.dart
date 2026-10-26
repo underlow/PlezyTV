@@ -85,7 +85,9 @@ class _TvSideMenuState extends State<TvSideMenu> {
       oldWidget.focusNode?.removeListener(_handleEntryFocus);
       widget.focusNode?.addListener(_handleEntryFocus);
     }
-    _showCurrent();
+    final oldCurrent = oldWidget.currentIndex == null ? null : _key(oldWidget.items[oldWidget.currentIndex!]);
+    final current = widget.currentIndex == null ? null : _key(widget.items[widget.currentIndex!]);
+    if (current != oldCurrent) _showCurrent();
     final keys = widget.items.map(_key).toSet();
     assert(keys.length == widget.items.length, 'Menu item keys must be unique');
     final removedFocus = oldWidget.items.any((item) => !keys.contains(_key(item)) && _node(item).hasFocus);
@@ -119,7 +121,19 @@ class _TvSideMenuState extends State<TvSideMenu> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _expanded || widget.currentIndex == null) return;
       final context = _node(widget.items[widget.currentIndex!]).context;
-      if (context != null) Scrollable.ensureVisible(context);
+      if (context != null) {
+        final scrollable = Scrollable.maybeOf(context);
+        if (scrollable == null) return;
+        final viewport = scrollable.context.findRenderObject()! as RenderBox;
+        final box = context.findRenderObject()! as RenderBox;
+        final above = box.localToGlobal(Offset.zero, ancestor: viewport).dy < 0;
+        Scrollable.ensureVisible(
+          context,
+          alignmentPolicy: above
+              ? ScrollPositionAlignmentPolicy.keepVisibleAtStart
+              : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        );
+      }
     });
   }
 

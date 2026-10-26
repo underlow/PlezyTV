@@ -59,7 +59,7 @@ String tvShowMetadata(MediaItem show, List<MediaItem> seasons) => [
   if (show.leafCount != null) TvStrings.episodes(show.leafCount!),
   if (show.contentRating?.isNotEmpty == true) show.contentRating!,
   if (show.studio?.isNotEmpty == true) show.studio!,
-  ...?show.genres?.where((genre) => genre.trim().isNotEmpty),
+  ...?show.genres?.where((genre) => genre.trim().isNotEmpty).take(3),
 ].join(' · ');
 
 String? tvShowWatchedProgress(MediaItem episode) => episode.hasActiveProgress && episode.durationMs != null

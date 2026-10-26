@@ -27,6 +27,7 @@ import '../../../services/settings_service.dart';
 import '../../../services/storage_service.dart';
 import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/media_server_http_client.dart';
+import '../../../utils/formatters.dart';
 import '../../../utils/provider_extensions.dart';
 import '../../../utils/snackbar_helper.dart';
 import '../../../widgets/media_context_menu.dart';
@@ -842,7 +843,12 @@ class TvSearchScreenState extends State<TvSearchScreen>
   }
 
   String _caption(MediaItem item, {required bool multiServer}) {
-    final base = item.kind == MediaKind.show && item.childCount != null
+    final base = item.kind == MediaKind.episode
+        ? [
+            ?formatSeasonEpisodeLabel(item.parentIndex, item.index),
+            if (item.title?.isNotEmpty ?? false) item.title!,
+          ].join(' · ')
+        : item.kind == MediaKind.show && item.childCount != null
         ? TvStrings.seasons(item.childCount!)
         : item.year?.toString() ?? '';
     final server = multiServer ? item.serverName : null;
@@ -936,6 +942,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
                         item: item,
                         client: client,
                         showSeriesTitle: true,
+                        caption: _caption(item, multiServer: multiServer),
                         focusNode: node,
                         onSelect: () => unawaited(_open(item)),
                         onLongPress: menu,
@@ -1014,7 +1021,13 @@ class TvSearchScreenState extends State<TvSearchScreen>
           return _mediaMenu(
             item,
             (_, _) => kind == TvSearchKind.episodes
-                ? TvEpisode(item: item, client: client, showSeriesTitle: true, externalFocus: isFocused)
+                ? TvEpisode(
+                    item: item,
+                    client: client,
+                    showSeriesTitle: true,
+                    caption: _caption(item, multiServer: multiServer),
+                    externalFocus: isFocused,
+                  )
                 : TvPoster(
                     item: item,
                     client: client,

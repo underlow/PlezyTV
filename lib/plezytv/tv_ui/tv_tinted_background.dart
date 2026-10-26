@@ -27,12 +27,14 @@ class TvTintedBackground extends StatefulWidget {
     required this.source,
     this.service,
     this.showBackdrop = true,
+    this.scrollController,
     this.timer = Timer.new,
     this.child,
   });
   final TvArtworkSource source;
   final TvTintService? service;
   final bool showBackdrop;
+  final ScrollController? scrollController;
   final TvBackgroundTimer timer;
   final Widget? child;
 
@@ -164,14 +166,24 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
     _images.removeWhere((image) => !retained.contains(image));
   }
 
+  Widget _look(_BackgroundLook look) {
+    final page = widget.scrollController;
+    final offset = page != null && page.hasClients ? page.offset / TvTheme.of(context).scale : 0.0;
+    return _BackgroundLook(
+      tint: look.tint,
+      backdrop: look.backdrop,
+      backdropOpacity: (1 - offset / TvTokens.detail.collapseAt).clamp(0.0, 1.0),
+    );
+  }
+
   Widget _currentLook() => _fade.value == 1
-      ? _target
+      ? _look(_target)
       : Stack(
           fit: StackFit.expand,
           children: [
             for (final (look, opacity) in _previous)
-              if (opacity == 1) look else Opacity(opacity: opacity, child: look),
-            Opacity(opacity: _fade.value, child: _target),
+              if (opacity == 1) _look(look) else Opacity(opacity: opacity, child: _look(look)),
+            Opacity(opacity: _fade.value, child: _look(_target)),
           ],
         );
 
@@ -191,16 +203,20 @@ class _TvTintedBackgroundState extends State<TvTintedBackground> with SingleTick
   Widget build(BuildContext context) => Stack(
     fit: StackFit.expand,
     children: [
-      AnimatedBuilder(animation: _fade, builder: (context, _) => _currentLook()),
+      AnimatedBuilder(
+        animation: Listenable.merge([_fade, ?widget.scrollController]),
+        builder: (context, _) => _currentLook(),
+      ),
       ?widget.child,
     ],
   );
 }
 
 class _BackgroundLook extends StatelessWidget {
-  const _BackgroundLook({this.tint, this.backdrop, this.child});
+  const _BackgroundLook({this.tint, this.backdrop, this.child, this.backdropOpacity = 1});
   final Color? tint;
   final ui.Image? backdrop;
+  final double backdropOpacity;
   final Widget? child;
 
   @override
@@ -225,36 +241,39 @@ class _BackgroundLook extends StatelessWidget {
               right: 0,
               width: theme.px(TvTokens.backdrop.width),
               height: theme.px(TvTokens.backdrop.height),
-              child: ShaderMask(
-                blendMode: BlendMode.dstIn,
-                shaderCallback: (rect) => LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [
-                    0,
-                    TvTokens.backdrop.fadeOutStart / TvTokens.backdrop.height,
-                    TvTokens.backdrop.fadeOutEnd / TvTokens.backdrop.height,
-                    1,
-                  ],
-                  colors: [Colors.white, Colors.white, Colors.transparent, Colors.transparent],
-                ).createShader(rect),
+              child: FadeTransition(
+                opacity: AlwaysStoppedAnimation(backdropOpacity),
                 child: ShaderMask(
                   blendMode: BlendMode.dstIn,
                   shaderCallback: (rect) => LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                     stops: [
                       0,
-                      (TvTokens.backdrop.fadeInStart - TvTokens.backdrop.left) / TvTokens.backdrop.width,
-                      (TvTokens.backdrop.fadeInEnd - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                      TvTokens.backdrop.fadeOutStart / TvTokens.backdrop.height,
+                      TvTokens.backdrop.fadeOutEnd / TvTokens.backdrop.height,
                       1,
                     ],
-                    colors: [Colors.transparent, Colors.transparent, Colors.white, Colors.white],
+                    colors: [Colors.white, Colors.white, Colors.transparent, Colors.transparent],
                   ).createShader(rect),
-                  child: ColoredBox(
-                    color: base,
-                    child: RawImage(
-                      image: backdrop,
-                      fit: BoxFit.cover,
-                      opacity: AlwaysStoppedAnimation(TvTokens.backdrop.opacity),
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => LinearGradient(
+                      stops: [
+                        0,
+                        (TvTokens.backdrop.fadeInStart - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                        (TvTokens.backdrop.fadeInEnd - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                        1,
+                      ],
+                      colors: [Colors.transparent, Colors.transparent, Colors.white, Colors.white],
+                    ).createShader(rect),
+                    child: ColoredBox(
+                      color: base,
+                      child: RawImage(
+                        image: backdrop,
+                        fit: BoxFit.cover,
+                        opacity: AlwaysStoppedAnimation(TvTokens.backdrop.opacity),
+                      ),
                     ),
                   ),
                 ),
