@@ -343,12 +343,14 @@ class TvSearchScreenState extends State<TvSearchScreen>
   @override
   void focusSearchInput() {
     if (!mounted) return;
+    _dropDeferredRepair();
     _focusKeyboard();
   }
 
   @override
   void submitSearchQuery(String query) {
     if (!mounted) return;
+    _dropDeferredRepair();
     controller.setQuery(query);
     controller.searchNow();
     _keyless = true;
@@ -681,12 +683,26 @@ class TvSearchScreenState extends State<TvSearchScreen>
     }
   }
 
+  /// Bumped by explicit focus requests so an already scheduled deferred
+  /// repair does not override them.
+  int _explicitFocus = 0;
+
+  /// An explicit focus request wins over a repair deferred while search was
+  /// hidden or covered, including one already scheduled.
+  void _dropDeferredRepair() {
+    _pendingRepair = _pendingActive = null;
+    _explicitFocus++;
+  }
+
   /// Runs a repair deferred while search was hidden or covered.
   void _resumeFocus() {
     final repair = _pendingRepair, active = _pendingActive;
     if (repair == null || !_current) return;
     _pendingRepair = _pendingActive = null;
-    _afterFrame(() => _repairFocus(repair, active, restore: true));
+    final epoch = _explicitFocus;
+    _afterFrame(() {
+      if (epoch == _explicitFocus) _repairFocus(repair, active, restore: true);
+    });
   }
 
   /// R10 after an answer: on arrival, the first card, else the first key. When

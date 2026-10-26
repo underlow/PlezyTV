@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/focus/input_mode_tracker.dart';
 import 'package:plezy/main.dart' show rootNavigatorKey;
@@ -20,6 +21,7 @@ import 'package:plezy/plezytv/screen_links/screen_link_router.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_controller.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_history.dart';
+import 'package:plezy/plezytv/tv_ui/search/tv_search_keyboard.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_screen.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_session_controller.dart';
 import 'package:plezy/plezytv/tv_ui/tv_shell.dart';
@@ -366,6 +368,30 @@ void main() {
     expect(focused, isNotNull);
     expect(focused!.findAncestorWidgetOfExactType<TvSearchScreen>(), isNotNull);
     expect(focusedId(), isNull);
+  });
+
+  testWidgets('F5: Go to search after a hidden re-search keeps focus on the keyboard', (tester) async {
+    await mount(tester);
+    await showResults(tester, 'дюн');
+    for (var i = 0; i < 6 && focusedId() == null; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+    expect(focusedId(), 'movie0');
+    shell(tester).selectSection(_watchlist);
+    await tester.pumpAndSettle();
+    // A re-search answered while search is hidden defers a focus repair.
+    screen().refresh();
+    await tester.pumpAndSettle();
+    expect(calls, ['дюн', 'дюн']);
+    openSearch!();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(shell(tester).currentSection, _search);
+    expect(focusedId(), isNull);
+    expect(tester.state<TvSearchKeyboardState>(find.byType(TvSearchKeyboard)).hasFocus, isTrue);
   });
 
   testWidgets('A18: initialLoad after reconnect keeps and repeats the shown query', (tester) async {
