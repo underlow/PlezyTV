@@ -9,6 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plezy/connection/connection_registry.dart';
+import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
+import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
+import 'package:plezy/plezytv/tv_ui/tv_settings_backup.dart';
 import 'package:plezy/database/app_database.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/media_backend.dart';
@@ -84,6 +87,32 @@ void main() {
     if (temporaryDirectory.existsSync()) {
       await temporaryDirectory.delete(recursive: true);
     }
+  });
+
+  testWidgets('TV replaces the Plezy backup section; non-TV keeps it', (tester) async {
+    addTearDown(TvUi.resetForTesting);
+    TvUi.enabledForTesting = () => true;
+    final tv = await _pumpSettingsScreen(tester);
+    expect(find.byType(TvSettingsBackup), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is SettingNavigationTile && widget.focusNode?.debugLabel == 'settings_export_settings',
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.text(TvStrings.transferImport));
+    await _pumpUi(tester);
+    expect(find.text(TvStrings.transferConfirm), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text(t.common.cancel));
+    await _pumpUi(tester);
+    expect(find.text(TvStrings.transferConfirm), findsNothing);
+    await tv.dispose(tester);
+    TvUi.enabledForTesting = () => false;
+    final phone = await _pumpSettingsScreen(tester);
+    expect(find.byType(TvSettingsBackup), findsNothing);
+    expect(find.text(t.settings.exportSettings), findsOneWidget);
+    await phone.dispose(tester);
   });
 
   testWidgets('system back closes Manage Libraries without popping pushed settings', (tester) async {
