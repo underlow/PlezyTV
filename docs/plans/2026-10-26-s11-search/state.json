@@ -1,0 +1,14 @@
+{
+  "project": "docs/projects/plezy-tv/project.md",
+  "stage": "S11",
+  "phase": "implementation",
+  "base_commit": "8f6f5c418d414142005629e3e140a7d0e2c8bc2f",
+  "profile": "medium",
+  "codex": [],
+  "status": "paused",
+  "development_agent": {
+    "platform": "claude",
+    "model": "opus",
+    "effort": "low"
+  }
+}
