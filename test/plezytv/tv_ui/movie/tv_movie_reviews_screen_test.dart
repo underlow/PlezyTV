@@ -120,6 +120,9 @@ void main() {
       final card = FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvMovieReviewCard>()!;
       expect(card.review.text, reviews[i].text);
       final subtree = find.byWidget(card);
+      final body = tester.widget<Text>(find.descendant(of: subtree, matching: find.text(reviews[i].text)));
+      expect(body.maxLines, 4);
+      expect(body.overflow, TextOverflow.ellipsis);
       expect(find.descendant(of: subtree, matching: find.byType(SvgPicture)), i < 2 ? findsOneWidget : findsNothing);
       if (i < 2) {
         final icon = tester.widget<SvgPicture>(find.descendant(of: subtree, matching: find.byType(SvgPicture)));
@@ -271,7 +274,8 @@ void main() {
   for (final fails in [false, true]) {
     testWidgets('A3 A16 empty/error reviews preserve rows and navigation error=$fails', (tester) async {
       final gate = await mountReviews(tester, cast: true, related: true);
-      final titles = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).map((w) => w.title).toList();
+      const titles = ['Cast', 'Similar'];
+      expect(tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).map((w) => w.title), titles);
       if (fails) {
         gate.completeError(StateError('offline'));
       } else {
