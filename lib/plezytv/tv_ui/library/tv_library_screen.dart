@@ -341,10 +341,16 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
         key: _grid,
         source: c.source,
         decorateFocus: false,
-        columns: episodes ? 4 : 6,
+        columns:
+            ((TvTokens.size.letters.x -
+                        TvTokens.space.contentLeft -
+                        TvTokens.space.cardGap +
+                        TvTokens.size.posterGrid.gap) /
+                    (size.width + TvTokens.size.posterGrid.gap))
+                .floor(),
         cellWidth: size.width,
         cellHeight: size.height + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight,
-        gap: TvTokens.space.cardGap.toDouble(),
+        gap: TvTokens.size.posterGrid.gap.toDouble(),
         onUp: _focusTabs,
         onLeft: _sidebar,
         onRight: () => _alpha.currentState?.requestFocus(),
@@ -368,9 +374,11 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
+        SizedBox(
+          width: TvTheme.of(context).px(TvTokens.size.letters.x - TvTokens.space.contentLeft - TvTokens.space.cardGap),
           child: Focus(canRequestFocus: false, onFocusChange: (value) => _inGrid = value, child: _gridWidget!),
         ),
+        SizedBox(width: TvTheme.of(context).px(TvTokens.space.cardGap)),
         if (c.showAlpha)
           ValueListenableBuilder<int>(
             valueListenable: _position,
@@ -519,7 +527,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
               double.infinity,
             ),
             top: px(54),
-            right: px(c.grouping == 'episodes' ? 24 : 96),
+            right: px(TvTokens.space.safeX),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -527,11 +535,25 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
               Row(
                 children: [
                   Expanded(
-                    child: Text(c.library.title, style: theme.headline, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            c.library.title,
+                            style: theme.headline,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (c.totalCount != null) ...[
+                          SizedBox(width: px(TvTokens.space.md)),
+                          Text('${c.totalCount}', style: theme.caption),
+                        ],
+                      ],
+                    ),
                   ),
                   TvButton(
-                    label:
-                        '${c.effectiveSort?.title ?? TvStrings.defaultSort}${c.totalCount == null ? '' : ' · ${c.totalCount}'}',
+                    label: TvStrings.sortBy(c.effectiveSort?.title ?? TvStrings.defaultSort),
                     focusNode: _sort,
                     icon: Icons.swap_vert,
                     variant: TvButtonVariant.secondary,

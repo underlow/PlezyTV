@@ -1170,7 +1170,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
       node: _screen,
       onKeyEvent: _screenKey,
       child: Padding(
-        padding: EdgeInsets.only(top: px(80)),
+        padding: EdgeInsets.only(top: px(TvTokens.space.safeY)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1203,7 +1203,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
             SizedBox(width: px(size.resultsX - size.panelX - size.panelW)),
             Expanded(
               child: Padding(
-                padding: EdgeInsets.only(right: px(80)),
+                padding: EdgeInsets.only(right: px(TvTokens.space.safeX)),
                 // The handler sits on the scope node itself: focus falls back to
                 // it when the focused card or button unmounts (loading, retry).
                 child: FocusScope(node: _content, onKeyEvent: _contentKey, child: _right(multiServer)),

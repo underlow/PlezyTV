@@ -614,3 +614,20 @@ tab. Up returns to actions and restores the header; Down visits Cast and the
 remaining rails in order. Multiple seasons use standard 216×324 posters.
 Season tabs and rail titles use the raw season title, falling back to the
 localized season number when empty or equal to the series title.
+
+### Search, library, Watchlist and settings layout (S24 T6)
+
+Search uses the shared 54 top and 96 right fields. The RU and EN digits key
+fills the last two and three keyboard cells respectively. Focusing a result
+reveals its whole horizontal row, including captions.
+
+Library and Watchlist headers show the item count beside the title and
+`Sort: <field>` on the sort button. Poster grids retain 228 pixel cards with
+32 pixel gaps; whole columns fit before `letters.x - cardGap` (six posters,
+or three 400 pixel episode cards). The library alphabet starts at x 1776.
+
+The shell wraps upstream settings in `TvSettingsSection`: its group edges
+start at x 200, its width is capped at 1200 and its app bar uses `bg.base`,
+including when scrolled. The wrapper compensates for upstream SettingsGroup's
+16 logical-pixel margin; recheck that margin on upstream changes. Settings
+items, routes and nested pages remain owned by upstream.

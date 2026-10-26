@@ -64,8 +64,7 @@ List<List<_KeySpec?>> _charRows(TvSearchKeyboardLayout layout) {
         chars('лмнопр'),
         chars('стуфхц'),
         chars('чшщъыь'),
-        // The empty cell is where the mockup's microphone was (no mic, R2).
-        [...chars('эюя-'), null, toDigits],
+        [...chars('эюя-'), toDigits],
       ];
     case TvSearchKeyboardLayout.en:
       return [
@@ -73,7 +72,7 @@ List<List<_KeySpec?>> _charRows(TvSearchKeyboardLayout layout) {
         chars('ghijkl'),
         chars('mnopqr'),
         chars('stuvwx'),
-        [...chars('yz-'), null, null, toDigits],
+        [...chars('yz-'), toDigits],
       ];
     case TvSearchKeyboardLayout.digits:
       return [chars('123456'), chars('7890.,'), chars("-_':!?"), chars('&@#()+')];
@@ -86,7 +85,9 @@ List<_Placed> _buildGrid(TvSearchKeyboardLayout layout) {
   for (var r = 0; r < rows.length; r++) {
     for (var c = 0; c < rows[r].length; c++) {
       final spec = rows[r][c];
-      if (spec != null) placed.add(_Placed(spec, r, c, 1));
+      if (spec != null) {
+        placed.add(_Placed(spec, r, c, spec.kind == _KeyKind.toDigits ? _columns - c : 1));
+      }
     }
   }
   var r = rows.length;

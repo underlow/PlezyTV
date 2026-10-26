@@ -62,8 +62,8 @@ void main() {
   testWidgets('A16: sort default direction, panel refresh, Back anchor and Down first item', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0), movie(1)];
     final c = await mount(tester, client);
-    expect(find.text('Title · 2'), findsOneWidget);
-    await button(tester, 'Title');
+    expect(find.text('Sort: Title'), findsOneWidget);
+    await button(tester, 'Sort: Title');
     expect(
       find.descendant(of: find.byKey(const ValueKey('ascending')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
@@ -82,7 +82,7 @@ void main() {
       find.descendant(of: find.byKey(const ValueKey('direction')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
     );
-    expect(find.text('Added · 2'), findsOneWidget);
+    expect(find.text('Sort: Added'), findsOneWidget);
     expect(c.preferences.descending, isTrue);
     expect(client.queries.last.sort?.field, 'addedAt');
     expect(find.byType(TvRightPanel), findsOneWidget);
@@ -110,7 +110,7 @@ void main() {
     await activate(tester, 'drama');
     expect(c.preferences.filters.single.values, ['drama']);
     expect(find.text('Filters · 1'), findsOneWidget);
-    expect(find.textContaining(' · 0'), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
     await press(tester, LogicalKeyboardKey.escape);
     await press(tester, LogicalKeyboardKey.escape);
     expect(focus, 'Library filters');
@@ -159,7 +159,7 @@ void main() {
     await settle(tester);
     expect(c.folders.length, 2);
     expect(focus, 'Folder row 0');
-    await button(tester, 'Title');
+    await button(tester, 'Sort: Title');
     final level = c.folders.last;
     await c.refresh();
     await settle(tester);
@@ -245,7 +245,7 @@ void main() {
   testWidgets('grouping page switches grid to folders and reset restores defaults', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0)];
     final c = await mount(tester, client);
-    await button(tester, 'Title');
+    await button(tester, 'Sort: Title');
     await activate(tester, 'grouping');
     await activate(tester, 'group:folders');
     expect(c.grouping, 'folders');

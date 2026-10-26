@@ -78,7 +78,9 @@ class TvWatchlistScreen extends StatefulWidget {
 class TvWatchlistScreenState extends State<TvWatchlistScreen>
     with Refreshable, FullRefreshable, TabVisibilityAware, FocusableTab {
   static const _skeletonDelay = Duration(milliseconds: 300);
-  static const _columns = 6;
+  static final _columns =
+      (TvTokens.size.letters.x - TvTokens.space.contentLeft - TvTokens.space.cardGap + TvTokens.size.posterGrid.gap) ~/
+      (TvTokens.size.posterGrid.w + TvTokens.size.posterGrid.gap);
 
   late final TvWatchlistAvailability availability;
   late final TvWatchlistController controller;
@@ -537,7 +539,7 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
         columns: _columns,
         cellWidth: size.width,
         cellHeight: size.height + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight,
-        gap: TvTokens.space.cardGap.toDouble(),
+        gap: TvTokens.size.posterGrid.gap.toDouble(),
         onUp: _focusTabs,
         onLeft: _sidebar,
         onSelect: (index) => unawaited(_open(index)),
@@ -551,8 +553,8 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
 
   Widget _skeletonGrid(double Function(num) px) => GridView.count(
     crossAxisCount: _columns,
-    mainAxisSpacing: px(TvTokens.space.cardGap),
-    crossAxisSpacing: px(TvTokens.space.cardGap),
+    mainAxisSpacing: px(TvTokens.size.posterGrid.gap),
+    crossAxisSpacing: px(TvTokens.size.posterGrid.gap),
     childAspectRatio:
         TvTokens.size.posterGrid.w /
         (TvTokens.size.posterGrid.h + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight),
@@ -667,11 +669,21 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        TvStrings.watchlist,
-                        style: theme.headline,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              TvStrings.watchlist,
+                              style: theme.headline,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (c.phase == TvWatchlistPhase.ready) ...[
+                            SizedBox(width: px(TvTokens.space.md)),
+                            Text('${c.view.length}', style: theme.caption),
+                          ],
+                        ],
                       ),
                     ),
                     if (showHeader && showSource) ...[
@@ -689,9 +701,7 @@ class TvWatchlistScreenState extends State<TvWatchlistScreen>
                     ],
                     if (controls) ...[
                       TvButton(
-                        label:
-                            '${_sortLabel(c.sort)}'
-                            '${c.phase == TvWatchlistPhase.ready ? ' · ${c.view.length}' : ''}',
+                        label: TvStrings.sortBy(_sortLabel(c.sort)),
                         focusNode: _sortButton,
                         icon: Icons.swap_vert,
                         variant: TvButtonVariant.secondary,

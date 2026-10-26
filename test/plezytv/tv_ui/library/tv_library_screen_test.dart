@@ -343,7 +343,13 @@ void main() {
     final c = make(client);
     await mount(tester, c);
     await settle(tester);
-    expect(find.text('Title · 300'), findsOneWidget);
+    expect(find.text('Sort: Title'), findsOneWidget);
+    expect(find.text('300'), findsOneWidget);
+    final layout = tester.widget<TvPagedGrid<MediaItem>>(find.byType(TvPagedGrid<MediaItem>));
+    expect(layout.columns, 6);
+    expect(layout.cellWidth, 228);
+    expect(layout.gap, 32);
+    expect(200 + layout.columns * layout.cellWidth + (layout.columns - 1) * layout.gap, lessThanOrEqualTo(1776 - 28));
     client.onPage = (_) async => LibraryPage(items: [movie(2)], totalCount: 1);
     await c.select(
       filters: const [
@@ -352,7 +358,8 @@ void main() {
     );
     await settle(tester);
     expect(find.text('Filters · 1'), findsOneWidget);
-    expect(find.text('Title · 1'), findsOneWidget);
+    expect(find.text('Sort: Title'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
   });
 
   testWidgets('A10/A11: held down traverses 300+ slots; Back goes to start then bubbles', (tester) async {
@@ -623,7 +630,8 @@ void main() {
       client.onPage = (_) async => LibraryPage(items: [movie(40)], totalCount: 1);
       await press(tester, LogicalKeyboardKey.select);
       expect(c.alphaPrefix, 'A');
-      expect(find.text('Title · 1'), findsOneWidget);
+      expect(find.text('Sort: Title'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
       expect(focus, 'TV grid 0');
       expect(client.queries.last.nameStartsWith, 'A');
     });
@@ -685,7 +693,7 @@ void main() {
     expect(find.text(TvStrings.noConnection), findsNothing);
   });
 
-  testWidgets('other tabs use Plezy labels and keep focus on tabs; episodes use four wide cells', (tester) async {
+  testWidgets('other tabs use Plezy labels and keep focus on tabs; episodes fit three wide cells', (tester) async {
     final c = make(
       FakeMediaServerClient()..items = List.generate(10, movie),
       lib: const MediaLibrary(
@@ -704,7 +712,7 @@ void main() {
     expect(focus, isNot(startsWith('TV grid')));
     await c.select(tab: 'browse', grouping: 'episodes');
     await settle(tester);
-    expect(tester.widget<TvPagedGrid<MediaItem>>(find.byType(TvPagedGrid<MediaItem>)).columns, 4);
+    expect(tester.widget<TvPagedGrid<MediaItem>>(find.byType(TvPagedGrid<MediaItem>)).columns, 3);
     expect(find.byType(TvEpisode), findsWidgets);
     expect(tester.takeException(), isNull);
   });
