@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'package:plezy/media/media_item.dart';
+import 'package:plezy/media/media_server_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
@@ -13,7 +16,65 @@ import 'package:plezy/widgets/optimized_media_image.dart';
 import '../../test_helpers/media_items.dart';
 import 'tv_theme_test_helper.dart';
 
+class _RatingsClient implements MediaServerClient {
+  final requests = <String>[];
+  final answers = <String, Completer<MediaItem?>>{};
+  @override
+  Future<MediaItem?> fetchItem(String id) {
+    requests.add(id);
+    return (answers[id] = Completer<MediaItem?>()).future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  testWidgets('full hero ratings debounce, ignore stale answers, cache and fail silently', (tester) async {
+    final client = _RatingsClient();
+    final selected = ValueNotifier(testMediaItem(id: 'a', title: 'A', rating: 9.4));
+    addTearDown(selected.dispose);
+    await pumpTvWidget(
+      tester,
+      ValueListenableBuilder<MediaItem>(
+        valueListenable: selected,
+        builder: (_, item, _) => TvHero(item: item, client: client, loadFullRatings: true),
+      ),
+    );
+    expect(find.text('A'), findsOneWidget);
+    expect(find.byType(TvRatings), findsNothing);
+    expect(client.requests, isEmpty);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(client.requests, ['a']);
+    selected.value = testMediaItem(id: 'b', title: 'B');
+    await tester.pump();
+    client.answers['a']!.complete(testMediaItem(id: 'a', rating: 6.9));
+    await tester.pump();
+    expect(find.byType(TvRatings), findsNothing);
+    await tester.pump(const Duration(milliseconds: 500));
+    final full = testMediaItem(id: 'b').copyWith(ratings: const [MediaRatingSource(source: 'imdb', value: 6.9)]);
+    client.answers['b']!.complete(full);
+    await tester.pump();
+    await tester.pump();
+    expect(tester.widget<TvRatings>(find.byType(TvRatings)).item, same(full));
+    selected.value = testMediaItem(id: 'a');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(client.requests, ['a', 'b']);
+    await tester.pump();
+    expect(find.byType(TvRatings), findsOneWidget);
+    selected.value = testMediaItem(id: 'skip');
+    await tester.pump();
+    selected.value = testMediaItem(id: 'fail');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(client.requests, ['a', 'b', 'fail']);
+    client.answers['fail']!.completeError(StateError('offline'));
+    await tester.pump();
+    expect(find.byType(TvRatings), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('episode metadata, title fallback, ratings and description; no focus', (tester) async {
     await pumpTvWidget(
       tester,

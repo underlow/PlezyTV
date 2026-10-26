@@ -954,19 +954,9 @@ Map<String, Object?>? _rawMetadata(PlexMetadataDto dto) {
   return raw.isEmpty ? null : raw;
 }
 
-/// Every attributed score a Plex payload carries, headline first.
-///
-/// Section listings only ever send the scalar pair ([rating]/[ratingImage] and
-/// [audienceRating]/[audienceRatingImage]), so they yield one or two entries.
-/// `/library/metadata/{id}` additionally sends the `Rating[]` child array —
-/// IMDb, both Rotten Tomatoes panels, TMDB — with no extra query parameter, so
-/// detail responses yield up to four. Plex offers no listing parameter that
-/// includes the array, which is why cards stay shorter than detail screens.
-///
-/// Entries are deduped on `(source, value)` because the array repeats whichever
-/// source the scalar pair was drawn from. Insertion order keeps the server's
-/// own headline first, so `ratings.first` matches the scalar `rating` the
-/// cards and sorts already use.
+/// Attributed agent ratings take precedence over the scalar headline pair.
+/// Listings without a Rating array retain their scalar scores. A rewritten
+/// scalar can carry a stale source image, so never combine it with the array.
 List<MediaRatingSource>? plexRatingSources({
   Object? rating,
   Object? ratingImage,
@@ -985,8 +975,10 @@ List<MediaRatingSource>? plexRatingSources({
     ratings.add(MediaRatingSource(source: source, value: value, votes: source == 'imdb' ? imdbVotes : null));
   }
 
-  add(rating, fallbackSource: 'critic', image: ratingImage);
-  add(audienceRating, fallbackSource: 'audience', image: audienceRatingImage);
+  if (ratingSources.isEmpty) {
+    add(rating, fallbackSource: 'critic', image: ratingImage);
+    add(audienceRating, fallbackSource: 'audience', image: audienceRatingImage);
+  }
   for (final entry in ratingSources) {
     add(entry.value, fallbackSource: 'audience', image: entry.image, type: entry.type);
   }

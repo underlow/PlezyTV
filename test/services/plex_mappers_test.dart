@@ -240,8 +240,7 @@ void main() {
         'ratingImage': 'rottentomatoes://image.rating.ripe',
         'audienceRatingImage': 'rottentomatoes://image.rating.upright',
         'imdbRatingCount': 250858,
-        // The detail endpoint adds the multi-source array; the TMDB entry
-        // duplicates the audienceRating scalar and must not appear twice.
+        // The detail endpoint adds the authoritative multi-source array.
         'Rating': [
           {'image': 'imdb://image.rating', 'type': 'audience', 'value': 8.4},
           {'image': 'rottentomatoes://image.rating.ripe', 'type': 'critic', 'value': 8.8},
@@ -287,18 +286,10 @@ void main() {
       expect(item.rating, 8.8);
       expect(item.userRating, 9.5);
 
-      // Headline scalar first, then the array, deduped on (source, value):
-      // the RT critic entry repeats `rating`/`ratingImage`, and the TMDB entry
-      // is a distinct source so it survives alongside the RT audience scalar.
-      expect(item.ratings?.map((rating) => rating.source).toList(), [
-        'rottenTomatoesCritic',
-        'rottenTomatoesAudience',
-        'imdb',
-        'tmdb',
-      ]);
-      expect(item.ratings?.map((rating) => rating.value).toList(), [8.8, 9.1, 8.4, 9.1]);
-      // Vote counts are IMDb-only; Plex reports none for the other sources.
-      expect(item.ratings?.map((rating) => rating.votes).toList(), [null, null, 250858, null]);
+      // Only the attributed array contributes detail ratings, in server order.
+      expect(item.ratings?.map((rating) => rating.source).toList(), ['imdb', 'rottenTomatoesCritic', 'tmdb']);
+      expect(item.ratings?.map((rating) => rating.value).toList(), [8.4, 8.8, 9.1]);
+      expect(item.ratings?.map((rating) => rating.votes).toList(), [250858, null, null]);
 
       // Plex stores all temporal fields in milliseconds — pass-through.
       expect(item.durationMs, 8880000);
