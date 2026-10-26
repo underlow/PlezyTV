@@ -110,7 +110,24 @@ void main() {
       tester.widget<ColoredBox>(find.descendant(of: bar, matching: find.byType(ColoredBox))).color,
       TvTokens.color.bg.base,
     );
-    expect(tester.getTopLeft(find.text(rows.first.title)).dy, greaterThanOrEqualTo(54));
+    for (final row in rows) {
+      (row.key! as GlobalKey<TvHorizontalRowState>).currentState!.requestFocus();
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.text(row.title)).dy,
+        closeTo(tester.getBottomLeft(bar).dy + 24, .01),
+        reason: row.title,
+      );
+    }
+    for (final row in rows.reversed) {
+      (row.key! as GlobalKey<TvHorizontalRowState>).currentState!.requestFocus();
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.text(row.title)).dy,
+        closeTo(tester.getBottomLeft(bar).dy + 24, .01),
+        reason: row.title,
+      );
+    }
   });
 
   testWidgets('R9 multiple seasons use ordinary posters and raw season titles', (tester) async {

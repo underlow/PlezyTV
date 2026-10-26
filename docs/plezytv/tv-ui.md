@@ -647,3 +647,15 @@ rounded text line boxes, so the next section starts exactly 48 pixels after
 the caption. Search episode captions append the server name only when several
 servers are connected. Collapsed menu rebuilds retain their scroll offset;
 a changed current section is revealed with only the necessary movement.
+
+### Detail scrolling and artwork layers (S24 T8)
+
+Every focused detail rail heading aligns 24 design pixels below the compact
+header, including the last rail. Movie and show pages reserve trailing viewport
+space so the scroll extent permits that alignment. Movie reviews and the technical
+information block use the same 48 pixel section gap, including when reviews or
+related rails arrive later. Catalog details currently have no lower rails.
+
+Artwork scroll opacity is derived from the clamped 0–300 pixel range. Only a
+changed opacity notifies its layer; the masks and image remain inside a retained
+repaint boundary. The tint does not fade with page scroll.

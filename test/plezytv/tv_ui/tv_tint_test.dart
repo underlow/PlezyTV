@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
@@ -424,7 +425,14 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     });
     await tester.pumpAndSettle();
-    for (final offset in [0.0, 150.0, 300.0, 400.0]) {
+    final masks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+    final raw = tester.widget<RawImage>(find.byType(RawImage));
+    final boundary = find.ancestor(of: find.byType(RawImage), matching: find.byType(RepaintBoundary)).first;
+    expect(boundary, findsOneWidget);
+    final paintBoundary = tester.renderObject<RenderRepaintBoundary>(boundary);
+    paintBoundary.debugResetMetrics();
+    FadeTransition? previousFade;
+    for (final offset in [0.0, 150.0, 300.0, 400.0, 500.0]) {
       page.jumpTo(offset);
       await tester.pump();
       final opacity = tester.widget<FadeTransition>(
@@ -432,6 +440,14 @@ void main() {
       );
       expect(opacity.opacity.value, (1 - offset / 300).clamp(0, 1));
       expect(gradientTops(tester), [tvBackgroundTop(Colors.red)]);
+      final currentMasks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+      for (var i = 0; i < masks.length; i++) {
+        expect(currentMasks[i], same(masks[i]), reason: 'scroll must retain shader closures');
+      }
+      expect(tester.widget<RawImage>(find.byType(RawImage)), same(raw));
+      if (offset > 300) expect(opacity, same(previousFade), reason: 'saturated opacity must not rebuild');
+      expect(paintBoundary.debugSymmetricPaintCount, 0, reason: 'opacity must retain the painted artwork layer');
+      previousFade = opacity;
     }
   });
 

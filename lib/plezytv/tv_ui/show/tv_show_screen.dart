@@ -70,6 +70,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
   final _retry = FocusNode(debugLabel: 'Show retry');
   final _page = ScrollController();
   bool _collapsed = false;
+  double _rowTopGap = TvTokens.space.cardFocusReserve.toDouble();
   double _barHeight = TvTokens.detail.compactH.toDouble();
   double _collapseAt = TvTokens.detail.collapseAt.toDouble();
 
@@ -89,7 +90,10 @@ class _TvShowScreenState extends State<TvShowScreen> {
     final first = _firstRow?.currentContext?.findRenderObject();
     final threshold = first == null
         ? _collapseAt
-        : math.min(_collapseAt, RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight);
+        : math.min(
+            _collapseAt,
+            RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
+          );
     final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
@@ -614,6 +618,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
   Widget _build(BuildContext context) {
     final theme = TvTheme.of(context), px = TvTheme.of(context).px;
     _barHeight = px(TvTokens.detail.compactH);
+    _rowTopGap = px(TvTokens.space.cardFocusReserve);
     _collapseAt = px(TvTokens.detail.collapseAt);
     final c = _controller;
     final show = c?.show ?? widget.metadata;
@@ -879,7 +884,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
             SizedBox(height: px(TvTokens.space.sectionGap)),
           row,
         ],
-        SizedBox(height: px(54)),
+        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
       ],
     );
   }
@@ -904,15 +909,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
       if (anchor == null || _tabScope.hasFocus) return;
       final row = anchor.findAncestorStateOfType<TvHorizontalRowState>();
       final render = row?.context.findRenderObject();
-      final first = _firstRow?.currentContext?.findRenderObject();
-      if (render == null || first == null || !_page.hasClients) return;
+      if (render == null || !_page.hasClients) return;
       final viewport = RenderAbstractViewport.of(render);
-      final floor = viewport.getOffsetToReveal(first, 0).offset - _barHeight;
-      final start = viewport.getOffsetToReveal(render, 0).offset - _barHeight;
-      final end = viewport.getOffsetToReveal(render, 1).offset;
-      final target = math
-          .max(_page.offset.clamp(math.min(start, end), start).toDouble(), floor)
-          .clamp(0.0, _page.position.maxScrollExtent);
+      final target = (viewport.getOffsetToReveal(render, 0).offset - _barHeight - _rowTopGap).clamp(
+        0.0,
+        _page.position.maxScrollExtent,
+      );
       if (DevicePerformance.isReduced) {
         _page.jumpTo(target);
       } else {
@@ -1065,7 +1067,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
           ),
         ),
         _episodeRow(context, key, title),
-        SizedBox(height: px(54)),
+        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
       ],
     );
   }
