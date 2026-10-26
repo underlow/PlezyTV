@@ -80,6 +80,63 @@ String focusedEpisode(WidgetTester tester) =>
     tester.widgetList<TvEpisode>(find.byType(TvEpisode)).firstWhere((e) => e.focusNode!.hasFocus).item.id;
 
 void main() {
+  testWidgets('B1 season header uses episode title rather than series title', (tester) async {
+    final client = fixture();
+    client.episodes['Season 1']![2] = client.episodes['Season 1']![2].copyWith(
+      title: 'Daddy Issues',
+      grandparentTitle: 'Slow Horses',
+    );
+    await mount(tester, client, seasonId: 'Season 1', episodeId: 'e3');
+    expect(find.text('S1 E3 · Daddy Issues'), findsNWidgets(2));
+    expect(find.text('S1 E3 · The show'), findsNothing);
+  });
+
+  for (final flattened in [false, true]) {
+    for (final cast in [false, true]) {
+      testWidgets('B2 overview row navigation flattened=$flattened cast=$cast', (tester) async {
+        final client = fixture();
+        if (flattened) client.seasons = [client.seasons.first];
+        if (cast) {
+          client.show = client.show.copyWith(
+            roles: [const MediaRole(id: 'actor', tag: 'Actor')],
+          );
+        }
+        client.extras = [media('Extra', MediaKind.clip)];
+        client.relatedHubs = [
+          MediaHub(id: 'similar', title: 'Similar', type: 'show', items: [client.show]),
+        ];
+        await mount(tester, client);
+        final rows = tester.stateList<TvHorizontalRowState>(find.byType(TvHorizontalRow)).toList();
+        Future<void> key(LogicalKeyboardKey key) async {
+          await tester.sendKeyEvent(key);
+          await tester.pumpAndSettle();
+        }
+
+        void focused(TvHorizontalRowState row) {
+          expect(row.focusInside.value, true);
+          final box = FocusManager.instance.primaryFocus!.context!.findRenderObject()! as RenderBox;
+          expect(box.localToGlobal(Offset.zero).dy, greaterThanOrEqualTo(0));
+          expect(box.localToGlobal(Offset(0, box.size.height)).dy, lessThanOrEqualTo(1080));
+        }
+
+        for (final row in rows) {
+          await key(LogicalKeyboardKey.arrowDown);
+          focused(row);
+        }
+        await key(LogicalKeyboardKey.arrowDown);
+        focused(rows.last);
+        for (final row in rows.reversed.skip(1)) {
+          await key(LogicalKeyboardKey.arrowUp);
+          focused(row);
+        }
+        await key(LogicalKeyboardKey.arrowUp);
+        expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+        await key(LogicalKeyboardKey.arrowUp);
+        expect(FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvTabs>(), isNotNull);
+      });
+    }
+  }
+
   testWidgets('season refresh remains coherent through hero timer and rebuild', (tester) async {
     final client = fixture();
     client.episodes['Season 2']!.add(media('third', MediaKind.episode, number: 2));
@@ -568,7 +625,7 @@ void main() {
     final box = FocusManager.instance.primaryFocus!.context!.findRenderObject()! as RenderBox;
     expect(box.localToGlobal(Offset(box.size.width, 0)).dx, lessThanOrEqualTo(1920));
   });
-  testWidgets('H6 empty lower rows hidden; flattened Down reveals cast and Up returns to tabs', (tester) async {
+  testWidgets('H6 empty lower rows hidden; flattened Down reveals cast and Up returns to actions', (tester) async {
     final client = fixture()..seasons = [media('Season 1', MediaKind.season, number: 1)];
     final c = await mount(tester, client);
     expect(find.byType(TvHorizontalRow), findsNothing);
@@ -591,6 +648,6 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
     expect(tabs(tester).selectedIndex, 0);
-    expect(FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvTabs>(), isNotNull);
+    expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
   });
 }
