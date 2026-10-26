@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:provider/provider.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../../media/media_item.dart';
@@ -8,6 +10,11 @@ import '../../../media/media_item_types.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/media_server_client.dart';
 import '../../../services/device_performance.dart';
+import '../../../services/plex_client.dart';
+import '../../../providers/catalog_sources_provider.dart';
+import '../../../media/media_rating.dart';
+import '../../../services/catalog/community_ratings.dart';
+import '../../../widgets/media_rating_badge.dart';
 import '../../../utils/content_utils.dart';
 import '../../../utils/formatters.dart';
 import '../../../widgets/optimized_media_image.dart';
@@ -36,7 +43,7 @@ class TvHero extends StatefulWidget {
   final MediaServerClient? client;
 
   /// Home opts in for Plex movies/shows: debounce like the backdrop, cache
-  /// metadata per item/client, and hide ratings until a successful response.
+  /// metadata per server/item, and hide ratings until a successful response.
   final bool loadFullRatings;
 
   @override
@@ -44,7 +51,11 @@ class TvHero extends StatefulWidget {
 }
 
 class _TvHeroState extends State<TvHero> {
-  final _cache = <String, Future<MediaItem?>>{};
+  // Keep only successful metadata; insertion order tracks the 100 most recent items.
+  final _cache = <String, MediaItem>{};
+  final _pending = <String, Future<MediaItem?>>{};
+  StreamSubscription<List<MediaRatingSource>>? _ratingsSubscription;
+  List<MediaRatingSource> _communityRatings = const [];
   Timer? _timer;
   int _generation = 0;
   MediaItem? _ratingsItem;
@@ -63,7 +74,6 @@ class _TvHeroState extends State<TvHero> {
   @override
   void didUpdateWidget(TvHero oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.client != widget.client) _cache.clear();
     if (oldWidget.item?.globalKey != widget.item?.globalKey ||
         oldWidget.client != widget.client ||
         oldWidget.loadFullRatings != widget.loadFullRatings) {
@@ -73,27 +83,56 @@ class _TvHeroState extends State<TvHero> {
 
   void _select() {
     _timer?.cancel();
+    unawaited(_ratingsSubscription?.cancel());
+    _ratingsSubscription = null;
+    _communityRatings = const [];
     final generation = ++_generation;
     _ratingsItem = null;
     final item = widget.item;
     final client = widget.client;
     if (!_needsFull || item == null || client == null) return;
     _timer = Timer(Duration(milliseconds: TvTokens.motion.heroDebounce), () async {
-      final full = await _cache.putIfAbsent(item.globalKey, () async {
-        try {
-          return await client.fetchItem(item.id);
-        } catch (_) {
-          return null;
+      final key = item.globalKey;
+      var full = _cache.remove(key);
+      if (full != null) {
+        _cache[key] = full;
+      } else {
+        final pending = _pending.putIfAbsent(key, () async {
+          try {
+            // Existing lightweight Plex metadata endpoint retains Rating[].
+            return client is PlexClient ? await client.fetchEditableItem(item.id) : await client.fetchItem(item.id);
+          } catch (_) {
+            return null;
+          }
+        });
+        full = await pending;
+        if (identical(_pending[key], pending)) {
+          unawaited(_pending.remove(key));
+          if (full != null) {
+            _cache[key] = full;
+            while (_cache.length > 100) {
+              _cache.remove(_cache.keys.first);
+            }
+          }
         }
-      });
+      }
       if (!mounted || generation != _generation) return;
       setState(() => _ratingsItem = full);
+      if (full == null) return;
+      _ratingsSubscription = context
+          .read<CatalogSourcesProvider?>()
+          ?.communityRatingsForLibraryItem(full, client: client)
+          .listen((ratings) {
+            if (!mounted || generation != _generation) return;
+            setState(() => _communityRatings = ratings);
+          }, onError: (Object _) {});
     });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    unawaited(_ratingsSubscription?.cancel());
     super.dispose();
   }
 
@@ -201,7 +240,12 @@ class _TvHeroState extends State<TvHero> {
                       ],
                       SizedBox(height: px(14)),
                       if (!music && (!_needsFull || _ratingsItem != null))
-                        TvRatings(item: _needsFull ? _ratingsItem! : media),
+                        TvRatings(
+                          item: _needsFull ? _ratingsItem! : media,
+                          ratings: _needsFull
+                              ? withCommunityRatings(mediaRatingsFor(_ratingsItem!), _communityRatings)
+                              : null,
+                        ),
                       if (description?.isNotEmpty ?? false) ...[
                         SizedBox(height: px(compact ? 14 : 20)),
                         Text(

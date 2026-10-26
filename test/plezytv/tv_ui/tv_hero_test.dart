@@ -1,4 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:drift/native.dart';
+import 'package:plezy/database/app_database.dart';
+import 'package:plezy/services/plex_api_cache.dart';
+import 'package:http/http.dart' as http;
+import '../../test_helpers/backend_client_fixtures.dart';
+import 'package:provider/provider.dart';
+import 'package:plezy/providers/catalog_sources_provider.dart';
+import 'package:plezy/media/media_backend.dart';
+import 'package:plezy/plezytv/tv_ui/movie/tv_movie_controller.dart';
+import 'package:plezy/plezytv/tv_ui/show/tv_show_controller.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_server_client.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +34,25 @@ class _RatingsClient implements MediaServerClient {
   Future<MediaItem?> fetchItem(String id) {
     requests.add(id);
     return (answers[id] = Completer<MediaItem?>()).future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Sources extends ChangeNotifier implements CatalogSourcesProvider {
+  @override
+  void dispose() {
+    unawaited(scores.close());
+    super.dispose();
+  }
+
+  final scores = StreamController<List<MediaRatingSource>>.broadcast();
+  final items = <MediaItem>[];
+  @override
+  Stream<List<MediaRatingSource>> communityRatingsForLibraryItem(MediaItem item, {required MediaServerClient? client}) {
+    items.add(item);
+    return scores.stream;
   }
 
   @override
@@ -73,6 +103,181 @@ void main() {
     await tester.pump();
     expect(find.byType(TvRatings), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Plex hero requests lightweight metadata and retains attributed Rating array', (tester) async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    PlexApiCache.initialize(database);
+    addTearDown(database.close);
+    final requests = <Uri>[];
+    final client = testPlexClient(
+      handler: (request) async {
+        requests.add(request.url);
+        return http.Response(
+          jsonEncode({
+            'MediaContainer': {
+              'Metadata': [
+                {
+                  'ratingKey': 'light',
+                  'type': 'movie',
+                  'title': 'Light',
+                  'rating': 9.4,
+                  'Rating': [
+                    {'image': 'imdb://image.rating', 'value': 6.9, 'type': 'audience'},
+                  ],
+                },
+              ],
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      },
+    );
+    addTearDown(client.close);
+    await pumpTvWidget(
+      tester,
+      TvHero(
+        item: testMediaItem(id: 'light'),
+        client: client,
+        loadFullRatings: true,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(requests, hasLength(1));
+    expect(requests.single.path, '/library/metadata/light');
+    for (final heavy in ['checkFiles', 'includeStreams', 'includeChapters', 'includeMarkers']) {
+      expect(requests.single.queryParameters, isNot(contains(heavy)));
+    }
+    final ratings = tester.widget<TvRatings>(find.byType(TvRatings)).ratings!;
+    expect(ratings.map((r) => (r.source, r.value)), [('imdb', 6.9)]);
+  });
+
+  testWidgets('failed and null metadata retry on a later settle', (tester) async {
+    final client = _RatingsClient();
+    final selected = ValueNotifier<MediaItem?>(testMediaItem(id: 'retry'));
+    addTearDown(selected.dispose);
+    await pumpTvWidget(
+      tester,
+      ValueListenableBuilder<MediaItem?>(
+        valueListenable: selected,
+        builder: (_, item, _) => TvHero(item: item, client: client, loadFullRatings: true),
+      ),
+    );
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(client.requests.length, attempt + 1);
+      if (attempt == 0) {
+        client.answers['retry']!.completeError(StateError('offline'));
+      } else {
+        client.answers['retry']!.complete(attempt == 1 ? null : testMediaItem(id: 'retry', rating: 7));
+      }
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(TvRatings), attempt == 2 ? findsOneWidget : findsNothing);
+      if (attempt < 2) {
+        selected.value = null;
+        await tester.pump();
+        selected.value = testMediaItem(id: 'retry');
+        await tester.pump();
+      }
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('full ratings never request episodes, music or non-Plex items', (tester) async {
+    final client = _RatingsClient();
+    for (final item in [
+      testMediaItem(kind: MediaKind.episode),
+      for (final kind in [MediaKind.artist, MediaKind.album, MediaKind.track]) testMediaItem(kind: kind),
+      testMediaItem(backend: MediaBackend.jellyfin),
+      testMediaItem(backend: MediaBackend.emby),
+    ]) {
+      await pumpTvWidget(tester, TvHero(item: item, client: client, loadFullRatings: true));
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    expect(client.requests, isEmpty);
+  });
+
+  testWidgets('server-item cache survives client switches and evicts least recently used above 100', (tester) async {
+    final first = _RatingsClient();
+    final second = _RatingsClient();
+    final selection = ValueNotifier((item: testMediaItem(id: '0'), client: first));
+    addTearDown(selection.dispose);
+    await pumpTvWidget(
+      tester,
+      ValueListenableBuilder<({MediaItem item, _RatingsClient client})>(
+        valueListenable: selection,
+        builder: (_, value, _) => TvHero(item: value.item, client: value.client, loadFullRatings: true),
+      ),
+    );
+    Future<void> visit(int id, _RatingsClient client, {required bool request}) async {
+      final before = client.requests.length;
+      selection.value = (item: testMediaItem(id: '$id'), client: client);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(client.requests.length, before + (request ? 1 : 0));
+      if (request) client.answers['$id']!.complete(testMediaItem(id: '$id', rating: 7));
+      await tester.pump();
+    }
+
+    await tester.pump(const Duration(milliseconds: 500));
+    first.answers['0']!.complete(testMediaItem(id: '0', rating: 7));
+    await tester.pump();
+    await visit(1, second, request: true);
+    await visit(0, first, request: false);
+    for (var i = 2; i < 100; i++) {
+      await visit(i, first, request: true);
+    }
+    await visit(0, second, request: false); // Refresh LRU position across clients.
+    await visit(100, first, request: true);
+    await visit(0, first, request: false);
+    await visit(1, second, request: true); // Oldest entry was evicted.
+  });
+
+  testWidgets('movie and show hero match detail scores after community updates', (tester) async {
+    for (final kind in [MediaKind.movie, MediaKind.show]) {
+      final client = _RatingsClient();
+      final sources = _Sources();
+      final full = testMediaItem(id: kind.name, kind: kind).copyWith(
+        ratings: const [
+          MediaRatingSource(source: 'imdb', value: 6.9),
+          MediaRatingSource(source: 'rottenTomatoes', value: 9.4),
+        ],
+      );
+      await pumpTvWidget(
+        tester,
+        ChangeNotifierProvider<CatalogSourcesProvider>.value(
+          value: sources,
+          child: TvHero(
+            item: testMediaItem(id: kind.name, kind: kind),
+            client: client,
+            loadFullRatings: true,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      client.answers[kind.name]!.complete(full);
+      await tester.pump();
+      await tester.pump();
+      expect(sources.items, [full]);
+      expect(tester.widget<TvRatings>(find.byType(TvRatings)).ratings!.map((r) => r.value), [6.9, 9.4]);
+      const community = [MediaRatingSource(source: 'imdb', value: 7.5), MediaRatingSource(source: 'trakt', value: 8.1)];
+      sources.scores.add(community);
+      await tester.pump();
+      await tester.pump();
+      final movie = TvMovieController(client: client, metadata: full)..communityRatings = community;
+      final show = TvShowController(client: client, metadata: full)..communityRatings = community;
+      final expected = kind == MediaKind.movie ? movie.ratings : show.ratings;
+      final actual = tester.widget<TvRatings>(find.byType(TvRatings)).ratings!;
+      expect(actual.map((r) => (r.source, r.value)), expected.map((r) => (r.source, r.value)));
+      expect(actual.where((r) => r.source == 'imdb').single.value, 7.5);
+      movie.dispose();
+      show.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+      sources.dispose();
+    }
   });
 
   testWidgets('episode metadata, title fallback, ratings and description; no focus', (tester) async {
