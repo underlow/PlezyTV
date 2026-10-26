@@ -1,0 +1,10 @@
+{
+  "project": "docs/projects/plezy-tv/project.md",
+  "stage": "S4",
+  "phase": "implementation",
+  "base_commit": "004e85b2dc3f06e1879807449d2b29294c561e8d",
+  "profile": "small",
+  "codex": [
+    "develop"
+  ]
+}
