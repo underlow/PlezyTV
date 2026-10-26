@@ -77,7 +77,10 @@ class TvWatchlistController extends ChangeNotifier {
   bool _snapshotLoaded = false;
   Timer? _refetchTimer;
   Timer? _membershipTimer;
-  final Map<String, ({int index, CatalogItem item})> _removed = {};
+  /// Items removed from the grid. `seenOff` is set once membership data has
+  /// read the item as not listed; only after that can a `true` reading be
+  /// newer than the removal and restore it (A34).
+  final Map<String, ({int index, CatalogItem item, bool seenOff})> _removed = {};
   bool _disposed = false;
 
   List<CatalogSource> get sources => _sources;
@@ -157,7 +160,7 @@ class TvWatchlistController extends ChangeNotifier {
     final key = TvWatchlistAvailability.keyOf(item);
     final index = _all.indexWhere((e) => TvWatchlistAvailability.keyOf(e) == key);
     if (index < 0) return;
-    _removed[key] = (index: index, item: _all[index]);
+    _removed[key] = (index: index, item: _all[index], seenOff: false);
     _setAll([..._all]..removeAt(index), TvWatchlistChange.keepFocus);
   }
 
@@ -284,16 +287,25 @@ class TvWatchlistController extends ChangeNotifier {
       final key = TvWatchlistAvailability.keyOf(item);
       if (previous[key] == true && now[key] == false) {
         // Kept for «Вернуть в список» and against a lagging re-read.
-        _removed[key] = (index: index, item: item);
+        _removed[key] = (index: index, item: item, seenOff: true);
         removedAny = true;
       } else {
         next.add(item);
       }
     }
-    // A removed item that reads as listed again (put back by the card)
-    // returns to its original place.
-    final back = _removed.entries.where((e) => source.isOnWatchlist(e.value.item.kind, e.value.item.ids) == true).toList()
-      ..sort((a, b) => a.value.index.compareTo(b.value.index));
+    // A removed item that membership data has shown as not listed and now
+    // reads as listed again (put back by the card) returns to its original
+    // place. A `true` never seen as `false` may predate the removal.
+    final back = <MapEntry<String, ({int index, CatalogItem item, bool seenOff})>>[];
+    for (final entry in _removed.entries.toList()) {
+      final listed = source.isOnWatchlist(entry.value.item.kind, entry.value.item.ids);
+      if (listed == false && !entry.value.seenOff) {
+        _removed[entry.key] = (index: entry.value.index, item: entry.value.item, seenOff: true);
+      } else if (listed == true && entry.value.seenOff) {
+        back.add(entry);
+      }
+    }
+    back.sort((a, b) => a.value.index.compareTo(b.value.index));
     for (final entry in back) {
       _removed.remove(entry.key);
       next.insert(entry.value.index.clamp(0, next.length), entry.value.item);
