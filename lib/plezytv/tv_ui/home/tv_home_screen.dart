@@ -6,9 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../focus/key_event_utils.dart';
-import '../../../focus/transport_keys.dart';
 import '../../../navigation/navigation_tabs.dart';
-import '../../../widgets/media_context_menu.dart';
 import '../shell/tv_section_shell.dart';
 import '../../../focus/dpad_navigator.dart';
 import '../../../i18n/strings.g.dart';
@@ -19,16 +17,13 @@ import '../../../mixins/tab_visibility_aware.dart';
 import '../../../navigation/main_screen_scope.dart';
 import '../../../providers/discover_provider.dart';
 import '../../../providers/watch_state_store.dart';
-import '../../../screens/hub_detail_screen.dart';
 import '../../../services/device_performance.dart';
 import '../../../services/settings_service.dart';
-import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/app_logger.dart';
 import '../../../utils/snackbar_helper.dart';
 import '../../../utils/provider_extensions.dart';
 import '../components/tv_all_card.dart';
 import '../components/tv_button.dart';
-import '../components/tv_cards.dart';
 import '../components/tv_hero.dart';
 import '../components/tv_horizontal_row.dart';
 import '../components/tv_skeletons.dart';
@@ -37,6 +32,7 @@ import '../tv_theme.dart';
 import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import '../tv_tokens.dart';
+import 'tv_home_card.dart';
 import 'tv_home_model.dart';
 import 'tv_home_playback.dart';
 
@@ -408,16 +404,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
           size: _provider.onDeck.length + (_provider.hasMoreContinueWatching ? 1 : 0),
           more: row.hasMore,
         );
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => HubDetailScreen(
-          hub: hub,
-          loadItems: continuing ? _provider.loadAllContinueWatching : null,
-          isInContinueWatching: continuing || hub.isContinueWatchingHub,
-          usesContinueWatchingAction: continuing || hub.usesContinueWatchingAction,
-          onRemoveFromContinueWatching: _provider.refreshContinueWatching,
-        ),
-      ),
+    await openTvHubDetail(
+      context,
+      hub,
+      loadItems: continuing ? _provider.loadAllContinueWatching : null,
+      continuing: continuing,
+      onRemoveFromContinueWatching: _provider.refreshContinueWatching,
     );
   }
 
@@ -441,49 +433,15 @@ class TvHomeScreenState extends State<TvHomeScreen>
         if (index == row.items.length) {
           return TvAllCard(episode: wide, focusNode: node, onSelect: () => unawaited(_openAll(row)));
         }
-        return Builder(
-          builder: (context) {
-            final item = context.withFreshWatchState(row.items[index]);
-            final client = context.getMediaClientForItemOrNull(item);
-            void select() => unawaited(
-              navigateToMediaItem(
-                context,
-                item,
-                onRefresh: _provider.updateItem,
-                playDirectly: wide || (row.hub?.usesContinueWatchingAction ?? false),
-              ),
-            );
-            return MediaContextMenu(
-              item: item,
-              onRefresh: _provider.updateItem,
-              onRemoveFromContinueWatching: _provider.refreshContinueWatching,
-              isInContinueWatching: wide || (row.hub?.isContinueWatchingHub ?? false),
-              child: Builder(
-                builder: (menuContext) {
-                  void menu() =>
-                      menuContext.findAncestorStateOfType<MediaContextMenuState>()?.showContextMenu(menuContext);
-                  return Focus(
-                    canRequestFocus: false,
-                    onKeyEvent: (_, event) {
-                      final transport = classifyTransportKey(event.logicalKey);
-                      if (transport == TransportCommand.play || transport == TransportCommand.toggle) {
-                        if (event is KeyDownEvent) unawaited(_playback.activate(item));
-                        return KeyEventResult.handled;
-                      }
-                      if (event.logicalKey.isContextMenuKey) {
-                        if (event is KeyDownEvent) menu();
-                        return KeyEventResult.handled;
-                      }
-                      return KeyEventResult.ignored;
-                    },
-                    child: wide
-                        ? TvEpisode(item: item, client: client, focusNode: node, onSelect: select, onLongPress: menu)
-                        : TvPoster(item: item, client: client, focusNode: node, onSelect: select, onLongPress: menu),
-                  );
-                },
-              ),
-            );
-          },
+        return TvHomeHubCard(
+          item: row.items[index],
+          focusNode: node,
+          playback: _playback,
+          wide: wide,
+          playDirectly: wide || (row.hub?.usesContinueWatchingAction ?? false),
+          isInContinueWatching: wide || (row.hub?.isContinueWatchingHub ?? false),
+          onRefresh: _provider.updateItem,
+          onRemoveFromContinueWatching: _provider.refreshContinueWatching,
         );
       },
     );
