@@ -574,3 +574,15 @@ Hero главной (S24 T2) начинается под верхним поле
 Фоновый арт справа затемняется к тексту и вниз к рядам, без дополнительной
 маски поверх правой части. Запрос Plex для арта передаёт обе размерности
 1280×720, для тонировки — 64×64 (транскодер требует высоту).
+
+### Detail layout (S24 T3)
+
+`TvRatings` displays at most three scores: IMDb, RT critics, RT audience, then
+other attributed sources in their incoming order, with bare scores last. This
+also applies to post-play; score values still come from Plezy.
+
+Movie, show and catalog details share `TvActionRow`: a text primary action,
+64×64 icon actions and 24 design-pixel gaps. Focus captions paint centered below
+the icon without consuming layout space. The movie compact header uses opaque
+`bg.base`. Season episode dates use `TvStrings.date` in the application locale
+with an abbreviated month (`16 Sep 2026`).

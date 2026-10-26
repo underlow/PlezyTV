@@ -21,6 +21,7 @@ import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/snackbar_helper.dart';
 import '../../../widgets/optimized_media_image.dart';
 import '../components/tv_button.dart';
+import '../components/tv_action_row.dart';
 import '../components/tv_chip.dart';
 import '../components/tv_ratings.dart';
 import '../components/tv_right_panel.dart';
@@ -413,10 +414,8 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
           ? Icon(Icons.hourglass_empty, size: px(TvTokens.size.button.iconSize), color: TvTokens.color.disabled.text)
           : CircularProgressIndicator(strokeWidth: px(3), color: TvTokens.color.disabled.text),
     );
-    return Wrap(
-      spacing: px(24),
-      runSpacing: px(24),
-      children: [
+    return TvActionRow(
+      buttons: [
         Stack(
           alignment: Alignment.centerLeft,
           children: [
@@ -438,22 +437,20 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
               ),
           ],
         ),
-        TvButton(
+        TvIconButton(
           key: const ValueKey('catalog-watchlist'),
-          label: _onList ? t.explore.removeFromWatchlist : t.explore.addToWatchlist,
+          caption: _onList ? t.explore.removeFromWatchlist : t.explore.addToWatchlist,
           icon: _onList ? Icons.bookmark_remove : Icons.bookmark_add,
-          variant: TvButtonVariant.secondary,
           focusNode: _listNode,
           onSelect: () => unawaited(_toggleList()),
           onNavigateLeft: _step(_listNode, -1),
           onNavigateRight: _step(_listNode, 1),
         ),
         if (_hasTrailer)
-          TvButton(
+          TvIconButton(
             key: const ValueKey('catalog-trailer'),
-            label: t.explore.detail.watchTrailer,
+            caption: t.explore.detail.watchTrailer,
             icon: Icons.movie_outlined,
-            variant: TvButtonVariant.secondary,
             focusNode: _trailerNode,
             onSelect: () => unawaited(_openTrailer()),
             onNavigateLeft: _step(_trailerNode, -1),
