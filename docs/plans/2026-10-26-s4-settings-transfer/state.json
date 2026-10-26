@@ -1,7 +1,7 @@
 {
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S4",
-  "phase": "implementation",
+  "phase": "delivery",
   "base_commit": "004e85b2dc3f06e1879807449d2b29294c561e8d",
   "profile": "small",
   "codex": [
@@ -12,5 +12,7 @@
     "platform": "codex",
     "model": "gpt-6.1-sol",
     "effort": "low"
-  }
+  },
+  "status": "complete",
+  "reviewed_commit": "4c6d0b60a"
 }
