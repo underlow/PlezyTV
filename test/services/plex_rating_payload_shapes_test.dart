@@ -5,7 +5,7 @@
 // `includeRatings`, `includeElements=Rating`, and `includeFields=Rating`
 // against the listing endpoint all came back without it, while
 // `includeGuids=1` demonstrably does add `Guid[]`. That asymmetry is why the
-// dashboard shows fewer scores than the detail screen, and this suite pins it.
+// raw listings carry fewer scores; the TV home hero fetches full metadata.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_item.dart';
@@ -18,6 +18,22 @@ PlexMediaItem _mediaItemFromJson(Map<String, dynamic> json, {ServerId? serverId}
 }
 
 void main() {
+  test('attributed array excludes conflicting scalar scores', () {
+    final ratings = plexRatingSources(
+      rating: 6.8,
+      audienceRating: 9.4,
+      audienceRatingImage: 'imdb://image.rating',
+      ratingSources: [
+        (image: 'imdb://image.rating', type: 'audience', value: 6.9),
+        (image: 'rottentomatoes://image.rating', type: 'critic', value: 9.4),
+        (image: 'rottentomatoes://image.rating', type: 'audience', value: 8.4),
+        (image: 'tmdb://image.rating', type: 'audience', value: 6.9),
+      ],
+    )!;
+    expect(ratings.map((r) => r.source), ['imdb', 'rottenTomatoesCritic', 'rottenTomatoesAudience', 'tmdb']);
+    expect(ratings.map((r) => r.value), [6.9, 9.4, 8.4, 6.9]);
+  });
+
   group('live Plex payloads', () {
     test('detail response surfaces IMDb alongside Rotten Tomatoes and TMDB', () {
       final item = _mediaItemFromJson({
@@ -33,10 +49,9 @@ void main() {
         ],
       }, serverId: ServerId(_serverId));
 
-      // The headline scalar leads; the array's TMDB entry repeats it and is
-      // deduped; IMDb — the score issue #1755 asked for — survives.
-      expect(item.ratings?.map((rating) => rating.source).toList(), ['tmdb', 'imdb', 'rottenTomatoesAudience']);
-      expect(item.ratings?.map((rating) => rating.value).toList(), [8.3, 8.3, 9.6]);
+      // The attributed array supplies the scores in server order.
+      expect(item.ratings?.map((rating) => rating.source).toList(), ['imdb', 'rottenTomatoesAudience', 'tmdb']);
+      expect(item.ratings?.map((rating) => rating.value).toList(), [8.3, 9.6, 8.3]);
     });
 
     test('listing response carries only the scalar the server chose', () {
