@@ -123,7 +123,8 @@ Live TV, Explore, Search, Downloads and Settings screens in `TvTheme`, an
 `MainScreenFocusScope`, `SideNavigationScope`, `OverlaySheetHost` and
 `AuthErrorBanner`. The Libraries screen is shared across library identities.
 The menu follows provider availability and hidden libraries; More opens the
-upstream library quick picker. `TvSettings.showDownloads` defaults to false and
+upstream library quick picker. Up on the first enabled menu item and Down on
+the last keep focus in the open menu, including offline mode; content stays put. `TvSettings.showDownloads` defaults to false and
 only hides the menu entry, leaving links and remote navigation available.
 
 `TvShellSessionController` owns session services and lifecycle observation;
