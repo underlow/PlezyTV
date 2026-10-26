@@ -11,9 +11,12 @@ import '../tv_tokens.dart';
 
 /// Preserves Plezy's complete rating list, including duplicates and bare scores.
 class TvRatings extends StatelessWidget {
-  const TvRatings({super.key, required this.item, this.fallbackItem});
+  const TvRatings({super.key, required this.item, this.fallbackItem, this.ratings});
   final MediaItem item;
   final MediaItem? fallbackItem;
+
+  /// Explicit merged list, when the caller also has community scores.
+  final List<MediaRatingSource>? ratings;
 
   Color? _plateColor(MediaRatingSource rating) {
     final info = ratingInfoForSource(rating.source, rating.value);
@@ -32,7 +35,7 @@ class TvRatings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ratings = mediaRatingsFor(item, fallbackItem: fallbackItem);
+    final ratings = this.ratings ?? mediaRatingsFor(item, fallbackItem: fallbackItem);
     if (ratings.isEmpty) return const SizedBox.shrink();
     final theme = TvTheme.of(context);
     final px = theme.px;
