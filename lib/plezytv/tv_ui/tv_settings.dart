@@ -12,6 +12,9 @@ abstract final class TvSettings {
   /// SettingsService.instance.listenable(showDownloads).
   static const showDownloads = BoolPref('plezytv_show_downloads', defaultValue: false);
 
+  /// S11 search keyboard layout, per device: `ru`, `en` or `digits`.
+  static const searchKeyboardLayout = StringPref('plezytv_search_keyboard_layout', defaultValue: 'ru');
+
   static Widget? settingsTile(BuildContext context) => TvUi.enabled
       ? const SettingSwitchTile(pref: showDownloads, icon: Icons.download_outlined, title: TvStrings.showDownloads)
       : null;
