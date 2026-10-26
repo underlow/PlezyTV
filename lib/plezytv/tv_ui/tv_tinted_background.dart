@@ -223,25 +223,40 @@ class _BackgroundLook extends StatelessWidget {
             Positioned(
               top: 0,
               right: 0,
-              width: theme.px(1300),
-              height: theme.px(780),
+              width: theme.px(TvTokens.backdrop.width),
+              height: theme.px(TvTokens.backdrop.height),
               child: ShaderMask(
                 blendMode: BlendMode.dstIn,
-                shaderCallback: (rect) => const LinearGradient(
+                shaderCallback: (rect) => LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  stops: [0, .55, 1],
-                  colors: [Colors.white, Colors.white, Colors.transparent],
+                  stops: [
+                    0,
+                    TvTokens.backdrop.fadeOutStart / TvTokens.backdrop.height,
+                    TvTokens.backdrop.fadeOutEnd / TvTokens.backdrop.height,
+                    1,
+                  ],
+                  colors: [Colors.white, Colors.white, Colors.transparent, Colors.transparent],
                 ).createShader(rect),
                 child: ShaderMask(
                   blendMode: BlendMode.dstIn,
-                  shaderCallback: (rect) => const LinearGradient(
-                    // The right-aligned image starts at 1920 - 1300;
-                    // reach full visibility at R17's screen x=840.
-                    stops: [0, (840 - (1920 - 1300)) / 1300, 1],
-                    colors: [Colors.transparent, Colors.white, Colors.white],
+                  shaderCallback: (rect) => LinearGradient(
+                    stops: [
+                      0,
+                      (TvTokens.backdrop.fadeInStart - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                      (TvTokens.backdrop.fadeInEnd - TvTokens.backdrop.left) / TvTokens.backdrop.width,
+                      1,
+                    ],
+                    colors: [Colors.transparent, Colors.transparent, Colors.white, Colors.white],
                   ).createShader(rect),
-                  child: RawImage(image: backdrop, fit: BoxFit.cover),
+                  child: ColoredBox(
+                    color: base,
+                    child: RawImage(
+                      image: backdrop,
+                      fit: BoxFit.cover,
+                      opacity: AlwaysStoppedAnimation(TvTokens.backdrop.opacity),
+                    ),
+                  ),
                 ),
               ),
             ),

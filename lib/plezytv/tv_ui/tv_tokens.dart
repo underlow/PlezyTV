@@ -48,6 +48,17 @@ abstract final class TvTokens {
       onServer: Color(0xFF4CAF7A),
     ),
   );
+  // S24 R17: screen coordinates on the 1920 × 1080 design canvas.
+  static const backdrop = (
+    width: 1300.0,
+    height: 780.0,
+    left: 620.0,
+    fadeInStart: 1000.0,
+    fadeInEnd: 1500.0,
+    fadeOutStart: 360.0,
+    fadeOutEnd: 640.0,
+    opacity: 0.6,
+  );
   static const font = (
     family: "Manrope",
     fallback: ["Inter", "Roboto"],
