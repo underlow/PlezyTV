@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter/material.dart';
 
 import '../tv_focusable.dart';
@@ -128,63 +129,72 @@ class _TvIconButtonState extends State<TvIconButton> {
   Widget build(BuildContext context) {
     final theme = TvTheme.of(context);
     final px = theme.px;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TvFocusable(
-          kind: TvFocusKind.fill,
-          radius: TvTokens.radius.iconButton.toDouble(),
-          focusedScale: TvTokens.focus.buttonScale,
-          disabled: widget.disabled,
-          disabledFocus: TvDisabledFocus.focusable,
-          focusNode: widget.focusNode,
-          autofocus: widget.autofocus,
-          onSelect: widget.onSelect,
-          semanticLabel: widget.caption,
-          onFocusChange: (value) {
-            setState(() => _focused = value);
-            widget.onFocusChange?.call(value);
-          },
-          onNavigateLeft: widget.onNavigateLeft,
-          onNavigateRight: widget.onNavigateRight,
-          onNavigateUp: widget.onNavigateUp,
-          onNavigateDown: widget.onNavigateDown,
-          builder: (context, state) => Container(
-            width: px(TvTokens.size.iconButton.w),
-            height: px(TvTokens.size.iconButton.h),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(px(TvTokens.radius.iconButton)),
-              color: state.disabled
-                  ? TvTokens.color.disabled.fill
-                  : state.pressed
-                  ? TvTokens.color.text.secondary
-                  : state.focused
-                  ? TvTokens.color.focus.fill
-                  : TvTokens.color.surface.level3,
-            ),
-            child: Icon(
-              widget.icon,
-              size: px(TvTokens.size.iconButton.iconSize),
-              color: state.disabled
-                  ? TvTokens.color.disabled.text
-                  : state.focused
-                  ? TvTokens.color.text.onFocus
-                  : TvTokens.color.text.primary,
+    return SizedBox(
+      width: px(TvTokens.size.iconButton.w),
+      height: px(TvTokens.size.iconButton.h),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          TvFocusable(
+            kind: TvFocusKind.fill,
+            radius: TvTokens.radius.iconButton.toDouble(),
+            focusedScale: TvTokens.focus.buttonScale,
+            disabled: widget.disabled,
+            disabledFocus: TvDisabledFocus.focusable,
+            focusNode: widget.focusNode,
+            autofocus: widget.autofocus,
+            onSelect: widget.onSelect,
+            semanticLabel: widget.caption,
+            onFocusChange: (value) {
+              setState(() => _focused = value);
+              widget.onFocusChange?.call(value);
+            },
+            onNavigateLeft: widget.onNavigateLeft,
+            onNavigateRight: widget.onNavigateRight,
+            onNavigateUp: widget.onNavigateUp,
+            onNavigateDown: widget.onNavigateDown,
+            builder: (context, state) => Container(
+              width: px(TvTokens.size.iconButton.w),
+              height: px(TvTokens.size.iconButton.h),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(px(TvTokens.radius.iconButton)),
+                color: state.disabled
+                    ? TvTokens.color.disabled.fill
+                    : state.pressed
+                    ? TvTokens.color.text.secondary
+                    : state.focused
+                    ? TvTokens.color.focus.fill
+                    : TvTokens.color.surface.level3,
+              ),
+              child: Icon(
+                widget.icon,
+                size: px(TvTokens.size.iconButton.iconSize),
+                color: state.disabled
+                    ? TvTokens.color.disabled.text
+                    : state.focused
+                    ? TvTokens.color.text.onFocus
+                    : TvTokens.color.text.primary,
+              ),
             ),
           ),
-        ),
-        SizedBox(height: px(10)),
-        Visibility(
-          visible: _focused,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: Opacity(
-            opacity: widget.disabled ? TvTokens.focus.disabledOpacity : 1,
-            child: Text(widget.caption, style: theme.caption),
-          ),
-        ),
-      ],
+          if (_focused)
+            Positioned(
+              top: px(TvTokens.size.iconButton.h + 10),
+              left: 0,
+              right: 0,
+              child: OverflowBox(
+                fit: OverflowBoxFit.deferToChild,
+                alignment: Alignment.topCenter,
+                maxWidth: double.infinity,
+                minWidth: 0,
+                child: Opacity(
+                  opacity: widget.disabled ? TvTokens.focus.disabledOpacity : 1,
+                  child: Text(widget.caption, style: theme.caption, maxLines: 1),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

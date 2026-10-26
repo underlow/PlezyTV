@@ -505,13 +505,7 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
       top: 0,
       height: _barHeight,
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xF20E0F12), Color(0x000E0F12)],
-          ),
-        ),
+        decoration: BoxDecoration(color: TvTokens.color.bg.base),
         child: Padding(
           padding: EdgeInsets.only(
             left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(

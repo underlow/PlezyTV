@@ -117,7 +117,7 @@ void main() {
     expect(containers.last.padding, const EdgeInsets.symmetric(horizontal: 12));
   });
 
-  testWidgets('A8 icon caption reserves layout and only appears on focus', (tester) async {
+  testWidgets('R6 icon caption overlays without reserving layout', (tester) async {
     final node = FocusNode();
     addTearDown(node.dispose);
     await pumpTvWidget(
@@ -127,15 +127,14 @@ void main() {
       ),
     );
     final before = tester.getSize(find.byType(TvIconButton));
-    expect(tester.widget<Visibility>(find.byType(Visibility)).visible, isFalse);
-    expect(find.text('Watchlist', skipOffstage: false), findsOneWidget);
+    expect(find.text('Watchlist'), findsNothing);
     await focus(tester, node);
-    expect(tester.widget<Visibility>(find.byType(Visibility)).visible, isTrue);
+    expect(find.text('Watchlist'), findsOneWidget);
     expect(tester.getSize(find.byType(TvIconButton)), before);
-    expect(before.height, 98);
+    expect(before, const Size(64, 64));
   });
 
-  testWidgets('A9 Plezy ratings preserve entries, order, values and bare fallback', (tester) async {
+  testWidgets('R7 ratings prioritize and limit entries while preserving values and bare fallback', (tester) async {
     for (final item in [
       MediaItem(
         id: 'a',
@@ -154,7 +153,11 @@ void main() {
     ]) {
       await pumpTvWidget(tester, Center(child: TvRatings(item: item)));
       final texts = tester.widgetList<Text>(find.descendant(of: find.byType(TvRatings), matching: find.byType(Text)));
-      expect(texts.map((text) => text.data), mediaRatingsFor(item).map(mediaRatingLabel));
+      expect(texts.map((text) => text.data), switch (item.id) {
+        'a' => ['7.1', '6.2', '85%'],
+        'b' => [mediaRatingLabel(mediaRatingsFor(item).single)],
+        _ => <String>[],
+      });
       expect(find.byType(TvFocusable), findsNothing);
       for (final text in texts) {
         expect(text.style!.fontWeight, FontWeight.w600);

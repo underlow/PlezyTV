@@ -965,7 +965,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
                 Text(
                   [
                     if (episode?.durationMs != null) formatDurationTextual(episode!.durationMs!),
-                    if (episode?.originallyAvailableAt != null) episode!.originallyAvailableAt!,
+                    if (episode?.originallyAvailableAt != null) TvStrings.date(episode!.originallyAvailableAt!),
                     if (episode != null && tvShowWatchedProgress(episode) != null) tvShowWatchedProgress(episode)!,
                   ].join(' · '),
                   style: theme.body,
