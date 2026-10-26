@@ -217,11 +217,15 @@ class _TvSideMenuState extends State<TvSideMenu> {
     final theme = TvTheme.of(context);
     final px = theme.px;
     final sizes = TvTokens.size.sidebar;
+    final enabled = widget.items.where((item) => !item.disabled);
     return TvFocusable(
       kind: TvFocusKind.fill,
       focusedScale: 1,
       disabled: item.disabled,
       focusNode: _node(item),
+      // Keep vertical traversal inside the rail at its enabled endpoints.
+      onNavigateUp: item == enabled.firstOrNull ? () {} : null,
+      onNavigateDown: item == enabled.lastOrNull ? () {} : null,
       onFocusChange: (focused) {
         if (focused) _showFocused(_key(item));
       },
