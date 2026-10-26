@@ -18,17 +18,20 @@ import '../../../mixins/tab_visibility_aware.dart';
 import '../../../navigation/main_screen_scope.dart';
 import '../../../navigation/navigation_tabs.dart';
 import '../../../navigation/profile_navigation_scope.dart';
+import '../../../providers/discover_provider.dart';
 import '../../../providers/hidden_libraries_provider.dart';
 import '../../../providers/multi_server_provider.dart';
 import '../../../providers/watch_state_store.dart';
 import '../../../services/data_aggregation_service.dart';
 import '../../../services/settings_service.dart';
+import '../../../screens/hub_detail_screen.dart';
 import '../../../services/storage_service.dart';
 import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/media_server_http_client.dart';
 import '../../../utils/provider_extensions.dart';
 import '../../../utils/snackbar_helper.dart';
 import '../../../widgets/media_context_menu.dart';
+import '../components/tv_all_card.dart';
 import '../components/tv_button.dart';
 import '../components/tv_cards.dart';
 import '../components/tv_horizontal_row.dart';
@@ -37,6 +40,7 @@ import '../components/tv_paged_source.dart';
 import '../components/tv_person_card.dart';
 import '../components/tv_skeletons.dart';
 import '../components/tv_tabs.dart';
+import '../home/tv_home_model.dart';
 import '../home/tv_home_playback.dart';
 import '../shell/tv_section_shell.dart';
 import '../tv_settings.dart';
@@ -62,6 +66,7 @@ abstract final class TvSearchStrings {
   static String nothingFoundHelp(String query) =>
       'No results for “$query”. Check the spelling or the keyboard layout (РУС / ENG).';
   static const unavailable = 'Search unavailable';
+  static const recentSearches = 'Recent searches';
 }
 
 /// Production history: the profile-scoped store, opened lazily.
@@ -140,6 +145,25 @@ class TvSearchScreenState extends State<TvSearchScreen>
   bool _focusOnArrival = false;
   ({TvSearchKind kind, String key})? _active;
 
+  // ---------- Idle discover rows (R7) ----------
+  DiscoverProvider? _discover;
+  final _homeBuilder = TvHomeModelBuilder();
+  TvHomeModel? _homeModel;
+  final _hubRows = <String, GlobalKey<TvHorizontalRowState>>{};
+  final _recentNodes = <FocusNode>[];
+  int _activeHub = 0;
+
+  /// Up to two Home hubs (no Continue Watching), with Home's item filter.
+  List<TvHomeRow> get _hubs => [...?_homeModel?.rows.where((row) => row.kind == TvHomeRowKind.hub).take(2)];
+
+  bool get _hubsLoading {
+    final discover = _discover;
+    return discover != null && _hubs.isEmpty && discover.areHubsLoading && discover.errorMessage == null;
+  }
+
+  @visibleForTesting
+  List<String> get hubTitles => [for (final row in _hubs) row.title];
+
   @visibleForTesting
   List<String>? get history => _history;
 
@@ -182,8 +206,11 @@ class TvSearchScreenState extends State<TvSearchScreen>
       _route = pageRoute;
       if (pageRoute != null) observer?.subscribe(this, pageRoute);
     }
+    _bindDiscover(context.read<DiscoverProvider?>());
     if (_initialized) return;
     _initialized = true;
+    // load() may notify synchronously; never during this build.
+    _afterFrame(_ensureDiscoverLoaded);
     _layout = TvSearchKeyboardLayout.fromPref(SettingsService.instanceOrNull?.read(TvSettings.searchKeyboardLayout));
     final shell = context.findAncestorStateOfType<TvSectionShellState>();
     _playback = TvHomePlayback.forContext(
@@ -214,6 +241,26 @@ class TvSearchScreenState extends State<TvSearchScreen>
     if (keys.length == _lastHiddenKeys.length && keys.containsAll(_lastHiddenKeys)) return;
     _lastHiddenKeys = Set.of(keys);
     if (controller.query.trim().isNotEmpty) controller.searchNow();
+  }
+
+  void _bindDiscover(DiscoverProvider? discover) {
+    if (identical(discover, _discover)) return;
+    _discover?.removeListener(_discoverChanged);
+    _discover = discover?..addListener(_discoverChanged);
+    _homeModel = discover == null ? null : _homeBuilder.build(discover);
+  }
+
+  void _discoverChanged() {
+    final discover = _discover;
+    if (discover == null || !mounted) return;
+    setState(() => _homeModel = _homeBuilder.build(discover));
+  }
+
+  /// R7: load only when hubs never loaded (initial) or failed, and no load runs.
+  void _ensureDiscoverLoaded() {
+    final discover = _discover;
+    if (discover == null || discover.isLoadInFlight) return;
+    if (discover.areHubsLoading || discover.errorMessage != null) unawaited(discover.load());
   }
 
   void _loadHistory() {
@@ -267,6 +314,10 @@ class TvSearchScreenState extends State<TvSearchScreen>
     _observer?.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _hidden?.removeListener(_hiddenChanged);
+    _discover?.removeListener(_discoverChanged);
+    for (final node in _recentNodes) {
+      node.dispose();
+    }
     controller.removeListener(_changed);
     controller.dispose();
     for (final source in _sources.values) {
@@ -301,10 +352,14 @@ class TvSearchScreenState extends State<TvSearchScreen>
   void refresh() => controller.searchNow();
 
   @override
-  void primeRefresh() => controller.searchNow();
+  void primeRefresh() {
+    _ensureDiscoverLoaded();
+    controller.searchNow();
+  }
 
   @override
   void fullRefresh() {
+    _ensureDiscoverLoaded();
     controller.clear();
     _keyless = false;
     _focusOnArrival = false;
@@ -378,10 +433,184 @@ class TvSearchScreenState extends State<TvSearchScreen>
         _retry.requestFocus();
         return true;
       case TvSearchState.idle:
-      case TvSearchState.loading:
+        if (_recentNodes.isNotEmpty && (_history?.isNotEmpty ?? false)) {
+          _recentNodes.first.requestFocus();
+          return true;
+        }
+        return _focusHub(0);
       case TvSearchState.empty:
+        return _focusHub(0);
+      case TvSearchState.loading:
         return false;
     }
+  }
+
+  // ---------- Idle / nothing-found rows ----------
+
+  String _hubKey(TvHomeRow row) => '${row.hub!.serverId}:${row.hub!.libraryId}:${row.hub!.id}';
+
+  bool _focusHub(int index) {
+    final hubs = _hubs;
+    if (index < 0 || index >= hubs.length) return false;
+    final key = _hubKey(hubs[index]);
+    final row = _hubRows[key]?.currentState;
+    if (row == null) return false;
+    row.requestFocus();
+    _revealHub(key);
+    return true;
+  }
+
+  void _revealHub(String key) {
+    final ctx = _hubRows[key]?.currentContext;
+    if (ctx != null) unawaited(Scrollable.ensureVisible(ctx, alignment: 0));
+  }
+
+  bool get _showRecent => controller.state == TvSearchState.idle && (_history?.isNotEmpty ?? false);
+
+  void _focusRecent() {
+    if (_showRecent && _recentNodes.isNotEmpty) _recentNodes.first.requestFocus();
+  }
+
+  Future<void> _openAllHub(TvHomeRow row) async {
+    final discover = _discover;
+    final hub = row.hub!;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HubDetailScreen(
+          hub: hub,
+          isInContinueWatching: hub.isContinueWatchingHub,
+          usesContinueWatchingAction: hub.usesContinueWatchingAction,
+          onRemoveFromContinueWatching: discover?.refreshContinueWatching,
+        ),
+      ),
+    );
+  }
+
+  Widget _hubRail(TvHomeRow row, int index) {
+    final key = _hubKey(row);
+    final hub = row.hub!;
+    final discover = _discover;
+    return TvHorizontalRow(
+      key: _hubRows.putIfAbsent(key, () => GlobalKey<TvHorizontalRowState>()),
+      title: row.title,
+      counter: row.count?.toString(),
+      contentLeft: 0,
+      itemCount: row.items.length + (row.hasMore ? 1 : 0),
+      itemKey: (i) => i == row.items.length ? 'all' : TvHomeRow.itemKey(row.items[i]),
+      cardWidth: TvTokens.size.poster.w.toDouble(),
+      cardHeight:
+          TvTokens.size.poster.h + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight.toDouble(),
+      onItemFocused: (_) {
+        _activeHub = index;
+        _revealHub(key);
+      },
+      cardBuilder: (context, i, node) {
+        if (i == row.items.length) {
+          return TvAllCard(focusNode: node, onSelect: () => unawaited(_openAllHub(row)));
+        }
+        return Builder(
+          builder: (context) {
+            final item = context.withFreshWatchState(row.items[i]);
+            final client = context.getMediaClientForItemOrNull(item);
+            void select() => unawaited(
+              navigateToMediaItem(
+                context,
+                item,
+                onRefresh: discover?.updateItem,
+                playDirectly: hub.usesContinueWatchingAction,
+              ),
+            );
+            return MediaContextMenu(
+              item: item,
+              onRefresh: discover?.updateItem,
+              onRemoveFromContinueWatching: discover?.refreshContinueWatching,
+              isInContinueWatching: hub.isContinueWatchingHub,
+              child: Builder(
+                builder: (menuContext) {
+                  void menu() =>
+                      menuContext.findAncestorStateOfType<MediaContextMenuState>()?.showContextMenu(menuContext);
+                  return Focus(
+                    canRequestFocus: false,
+                    onKeyEvent: (_, event) => _cardKeys(item, event, menu),
+                    child: TvPoster(item: item, client: client, focusNode: node, onSelect: select, onLongPress: menu),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _syncRecentNodes(int count) {
+    while (_recentNodes.length < count) {
+      _recentNodes.add(FocusNode(debugLabel: 'TV Search recent ${_recentNodes.length}'));
+    }
+    while (_recentNodes.length > count) {
+      _recentNodes.removeLast().dispose();
+    }
+  }
+
+  Widget _recent(List<String> queries) {
+    final theme = TvTheme.of(context), px = theme.px;
+    _syncRecentNodes(queries.length);
+    return Column(
+      key: const ValueKey('tv-search-recent'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(TvSearchStrings.recentSearches, style: theme.title),
+        SizedBox(height: px(16)),
+        Wrap(
+          spacing: px(12),
+          runSpacing: px(12),
+          children: [
+            for (var i = 0; i < queries.length; i++)
+              TvButton(
+                label: queries[i],
+                icon: Icons.history,
+                variant: TvButtonVariant.smallSecondary,
+                focusNode: _recentNodes[i],
+                onSelect: () => submitSearchQuery(queries[i]),
+                onNavigateLeft: i == 0 ? _focusKeyboard : () => _recentNodes[i - 1].requestFocus(),
+                onNavigateRight: i + 1 < queries.length ? () => _recentNodes[i + 1].requestFocus() : () {},
+                onNavigateUp: () {},
+                onNavigateDown: () => _focusHub(0),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// R7 rows: recent queries (idle only) and up to two Home hubs.
+  Widget _discoverBlock({Widget? header}) {
+    final px = TvTheme.of(context).px;
+    final hubs = _hubs;
+    final history = _history ?? const <String>[];
+    final showRecent = controller.state == TvSearchState.idle && history.isNotEmpty;
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (header != null) ...[header, SizedBox(height: px(48))],
+            if (showRecent) ...[_recent(history), SizedBox(height: px(48))],
+            for (var i = 0; i < hubs.length; i++) ...[
+              _hubRail(hubs[i], i),
+              SizedBox(height: px(TvTokens.space.rowGap)),
+            ],
+            if (_hubsLoading) ...[
+              const TvRowSkeleton(),
+              SizedBox(height: px(TvTokens.space.rowGap)),
+              const TvRowSkeleton(),
+            ],
+            SizedBox(height: constraints.maxHeight),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------- Results ----------
@@ -486,7 +715,18 @@ class TvSearchScreenState extends State<TvSearchScreen>
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.arrowDown) {
-      if (controller.state != TvSearchState.results) return KeyEventResult.ignored;
+      final state = controller.state;
+      if (state == TvSearchState.idle || state == TvSearchState.empty) {
+        if (!down) return KeyEventResult.handled;
+        final next = _activeHub + (key == LogicalKeyboardKey.arrowDown ? 1 : -1);
+        if (next < 0) {
+          _focusRecent();
+        } else {
+          _focusHub(next);
+        }
+        return KeyEventResult.handled;
+      }
+      if (state != TvSearchState.results) return KeyEventResult.ignored;
       if (!down) return KeyEventResult.handled;
       final isDown = key == LogicalKeyboardKey.arrowDown;
       if (_tabs.currentState?.focusedIndex != null) {
@@ -826,7 +1066,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
     final px = TvTheme.of(context).px;
     switch (controller.state) {
       case TvSearchState.idle:
-        return const SizedBox.shrink();
+        return _discoverBlock();
       case TvSearchState.loading:
         if (!controller.showSkeleton) return const SizedBox.shrink();
         return SingleChildScrollView(
@@ -843,7 +1083,9 @@ class TvSearchScreenState extends State<TvSearchScreen>
       case TvSearchState.results:
         return _results(multiServer);
       case TvSearchState.empty:
-        return _message(TvSearchStrings.nothingFound, TvSearchStrings.nothingFoundHelp(controller.shownQuery));
+        return _discoverBlock(
+          header: _message(TvSearchStrings.nothingFound, TvSearchStrings.nothingFoundHelp(controller.shownQuery)),
+        );
       case TvSearchState.unavailable:
         return _message(
           TvSearchStrings.unavailable,

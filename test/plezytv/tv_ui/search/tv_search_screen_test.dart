@@ -7,6 +7,7 @@ import 'package:plezy/database/app_database.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_backend.dart';
+import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/media_person.dart';
@@ -25,6 +26,7 @@ import 'package:plezy/plezytv/tv_ui/search/tv_search_keyboard.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_screen.dart';
 import 'package:plezy/plezytv/tv_ui/tv_settings.dart';
 import 'package:plezy/profiles/active_profile_provider.dart';
+import 'package:plezy/providers/discover_provider.dart';
 import 'package:plezy/providers/download_provider.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/providers/offline_mode_provider.dart';
@@ -137,6 +139,55 @@ class _Routes extends NavigatorObserver {
   }
 }
 
+/// Discover data for the idle rows; [load] counts calls.
+class _Discover extends ChangeNotifier implements DiscoverProvider {
+  @override
+  List<MediaItem> onDeck = [];
+  @override
+  List<MediaHub> hubs = [];
+  @override
+  bool isLoading = false, areHubsLoading = false, isLoadInFlight = false, hasMoreContinueWatching = false;
+  @override
+  String? errorMessage;
+  int loads = 0;
+  bool loadStartsLoading = false;
+
+  @override
+  Future<void> load() async {
+    loads++;
+    if (loadStartsLoading) {
+      isLoading = areHubsLoading = isLoadInFlight = true;
+      errorMessage = null;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<void> updateItem(MediaItem item) async {}
+
+  void ready(List<MediaHub> value) {
+    hubs = value;
+    isLoading = areHubsLoading = isLoadInFlight = false;
+    errorMessage = null;
+    notifyListeners();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+MediaHub hub(String id, {int count = 3}) =>
+    MediaHub(id: id, title: id, type: 'movie', items: movies(count, id), size: count, serverId: 'server');
+
+final continueHub = MediaHub(
+  id: 'continueWatching',
+  title: 'Continue Watching',
+  type: 'mixed',
+  items: movies(2, 'cw'),
+  size: 2,
+  serverId: 'server',
+);
+
 Finder _key(String id) => find.byKey(ValueKey('tv-search-key-$id'));
 
 void main() {
@@ -167,6 +218,7 @@ void main() {
     _ActionClient? client,
     ActiveProfileProvider? profile,
     WatchStateStore? watchState,
+    _Discover? discover,
   }) async {
     final servers = client == null ? null : testMultiServer(clients: [client]);
     final downloads = _NoDownloads();
@@ -186,6 +238,7 @@ void main() {
           if (offline != null) ChangeNotifierProvider<OfflineModeProvider>.value(value: offline),
           if (profile != null) ChangeNotifierProvider<ActiveProfileProvider>.value(value: profile),
           if (watchState != null) ChangeNotifierProvider<WatchStateStore>.value(value: watchState),
+          if (discover != null) ChangeNotifierProvider<DiscoverProvider>.value(value: discover),
         ],
         child: ProfileNavigationScope(
           navigatorKey: GlobalKey<NavigatorState>(),
@@ -572,5 +625,127 @@ void main() {
     await pump(tester);
     expect(_key('char:a'), findsOneWidget);
     expect(_key('char:а'), findsNothing);
+  });
+
+  group('T5 idle screen', () {
+    late _Discover discover;
+    setUp(() => discover = _Discover()..hubs = [continueHub, hub('trending'), hub('recent'), hub('third')]);
+
+    String? focusLabel() => FocusManager.instance.primaryFocus?.debugLabel;
+
+    testWidgets('A1: history and two Home hubs (no Continue Watching); → ↓ ↑ ← focus', (tester) async {
+      history.values['a'] = ['Тьма', 'Дюна'];
+      await pump(tester, discover: discover);
+      expect(keyFocused(tester, 'char:а'), isTrue);
+      expect(find.text(TvSearchStrings.recentSearches), findsOneWidget);
+      expect(find.text('Тьма'), findsOneWidget);
+      expect(find.text('Дюна'), findsOneWidget);
+      expect(screen.currentState!.hubTitles, ['trending', 'recent']);
+      expect(find.text('Continue Watching'), findsNothing);
+      expect(find.text('third'), findsNothing);
+      expect(discover.loads, 0);
+
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusLabel(), 'TV Search recent 0');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(focusLabel(), 'TV Search recent 1');
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(focusedId(tester), 'trending0');
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(focusedId(tester), 'recent0');
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(focusedId(tester), 'trending0');
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(focusLabel(), 'TV Search recent 0');
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(keyFocused(tester, 'char:а'), isTrue);
+    });
+
+    testWidgets('R10: without history → goes to the first hub card', (tester) async {
+      await pump(tester, discover: discover);
+      expect(find.text(TvSearchStrings.recentSearches), findsNothing);
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusedId(tester), 'trending0');
+    });
+
+    testWidgets('A10: a recent query with results searches at once and focuses the first result', (tester) async {
+      history.values['a'] = ['Тьма'];
+      search.respond = (_) => answer(items: movies(2));
+      await pump(tester, discover: discover);
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusLabel(), 'TV Search recent 0');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(search.calls, ['Тьма']);
+      expect(controller().query, 'Тьма');
+      expect(focusedId(tester), 'movie0');
+    });
+
+    testWidgets('A10/A8: a recent query without results — nothing found, rows below, focus on «а»', (tester) async {
+      history.values['a'] = ['Тьма'];
+      await pump(tester, discover: discover);
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(search.calls, ['Тьма']);
+      expect(find.text(TvSearchStrings.nothingFound), findsOneWidget);
+      expect(find.text(TvSearchStrings.nothingFoundHelp('Тьма')), findsOneWidget);
+      expect(keyFocused(tester, 'char:а'), isTrue);
+      // Rows under the text, without history.
+      expect(find.text(TvSearchStrings.recentSearches), findsNothing);
+      expect(find.text('trending'), findsOneWidget);
+      expect(find.text('recent'), findsOneWidget);
+      final textY = tester.getTopLeft(find.text(TvSearchStrings.nothingFound)).dy;
+      expect(tester.getTopLeft(find.text('trending')).dy, greaterThan(textY));
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusedId(tester), 'trending0');
+    });
+
+    testWidgets('initial provider: one load(), skeletons, then rows', (tester) async {
+      discover
+        ..hubs = []
+        ..isLoading = true
+        ..areHubsLoading = true
+        ..loadStartsLoading = true;
+      await pump(tester, discover: discover);
+      expect(discover.loads, 1);
+      expect(find.byType(TvRowSkeleton), findsWidgets);
+      screen.currentState!.primeRefresh();
+      screen.currentState!.fullRefresh();
+      await tester.pumpAndSettle();
+      expect(discover.loads, 1);
+      discover.ready([hub('trending')]);
+      await tester.pumpAndSettle();
+      expect(find.byType(TvRowSkeleton), findsNothing);
+      expect(screen.currentState!.hubTitles, ['trending']);
+    });
+
+    testWidgets('A19: error — no rows, no skeletons; primeRefresh with servers — rows appear', (tester) async {
+      discover
+        ..hubs = []
+        ..errorMessage = 'No servers';
+      await pump(tester, discover: discover, client: _ActionClient());
+      expect(discover.loads, 1); // mount retries a failed load once; it fails again
+      expect(find.byType(TvRowSkeleton), findsNothing);
+      expect(screen.currentState!.hubTitles, isEmpty);
+      discover.loadStartsLoading = true;
+      screen.currentState!.primeRefresh();
+      await tester.pump();
+      expect(discover.loads, 2);
+      expect(find.byType(TvRowSkeleton), findsWidgets);
+      discover.ready([hub('trending'), hub('recent')]);
+      await tester.pumpAndSettle();
+      expect(find.byType(TvRowSkeleton), findsNothing);
+      expect(screen.currentState!.hubTitles, ['trending', 'recent']);
+    });
+
+    testWidgets('only Continue Watching — no rows block, → keeps focus on the keyboard', (tester) async {
+      discover.hubs = [continueHub];
+      await pump(tester, discover: discover);
+      expect(screen.currentState!.hubTitles, isEmpty);
+      expect(find.byType(TvPoster), findsNothing);
+      expect(find.byType(TvRowSkeleton), findsNothing);
+      await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
+      expect(focusedId(tester), isNull);
+      expect(tester.state<TvSearchKeyboardState>(find.byType(TvSearchKeyboard)).hasFocus, isTrue);
+    });
   });
 }
