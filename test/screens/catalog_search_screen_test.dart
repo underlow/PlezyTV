@@ -211,7 +211,8 @@ class _FakeCatalogLibraryMatcher extends CatalogLibraryMatcher {
   _FakeCatalogLibraryMatcher(super.multiServer);
 
   @override
-  Future<LibraryLookupResult> match(CatalogItem item) async => libraryLookupResult(const []);
+  Future<LibraryLookupResult> match(CatalogItem item, {bool refreshIncomplete = false}) async =>
+      libraryLookupResult(const []);
 }
 
 Future<void> _pumpMenuSearch(WidgetTester tester, _FakeSearchSource source, {required TargetPlatform platform}) async {

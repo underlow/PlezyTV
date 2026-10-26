@@ -6,25 +6,41 @@ import '../../../navigation/navigation_tabs.dart';
 /// Libraries share one mounted screen, but each library is a distinct section.
 @immutable
 class TvShellSection {
-  const TvShellSection.tab(this.tab) : libraryGlobalKey = null, isNoConnection = false;
-  const TvShellSection.noConnection() : tab = NavigationTabId.discover, libraryGlobalKey = null, isNoConnection = true;
+  const TvShellSection.tab(NavigationTabId this.tab)
+    : libraryGlobalKey = null,
+      isNoConnection = false,
+      isWatchlist = false;
+  const TvShellSection.noConnection() : tab = null, libraryGlobalKey = null, isNoConnection = true, isWatchlist = false;
   const TvShellSection.library(String globalKey)
     : tab = NavigationTabId.libraries,
       libraryGlobalKey = globalKey,
-      isNoConnection = false;
+      isNoConnection = false,
+      isWatchlist = false;
 
-  // The offline root has no upstream tab; discover is only its stack placeholder.
+  /// The fork-owned «Список» (S10); it has no upstream tab.
+  const TvShellSection.watchlist() : tab = null, libraryGlobalKey = null, isNoConnection = false, isWatchlist = true;
+
+  /// Mounted-screen slot of the watchlist (tabs use their [NavigationTabId]).
+  static const Object watchlistSlot = #watchlist;
+
   final bool isNoConnection;
-  final NavigationTabId tab;
+  final bool isWatchlist;
+
+  /// Upstream tab; null for the offline root and the watchlist.
+  final NavigationTabId? tab;
   final String? libraryGlobalKey;
+
+  /// Mounted screen identity: a [NavigationTabId], [watchlistSlot], or null offline.
+  Object? get slot => isWatchlist ? watchlistSlot : tab;
 
   @override
   bool operator ==(Object other) =>
       other is TvShellSection &&
       isNoConnection == other.isNoConnection &&
+      isWatchlist == other.isWatchlist &&
       tab == other.tab &&
       libraryGlobalKey == other.libraryGlobalKey;
 
   @override
-  int get hashCode => Object.hash(isNoConnection, tab, libraryGlobalKey);
+  int get hashCode => Object.hash(isNoConnection, isWatchlist, tab, libraryGlobalKey);
 }
