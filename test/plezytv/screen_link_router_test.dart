@@ -1,3 +1,9 @@
+import 'package:plezy/plezytv/settings_transfer/settings_transfer_service.dart';
+import 'package:plezy/services/settings_export_service.dart';
+import 'package:plezy/services/base_shared_preferences_service.dart';
+import 'package:plezy/services/settings_service.dart';
+import 'package:plezy/services/storage_service.dart';
+import '../test_helpers/prefs.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -147,6 +153,7 @@ void main() {
   tearDown(() {
     router.queue.dispose();
     router.updaterOverride = null;
+    router.transferOverride = null;
     receiver.navigationOwner = null;
     receiver.onHome = null;
     receiver.onTabLibraries = null;
@@ -179,6 +186,63 @@ void main() {
     receiver.onHome = () {};
     receiver.onTabSettings = () {};
   }
+
+  testWidgets('settings import waits for profile and reports applied key count', (tester) async {
+    await mount(tester, _Servers(), _Libraries(), []);
+    final transfer = _SuccessfulTransfer();
+    router.transferOverride = transfer;
+    rootNavigatorKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => const _Picker()));
+    await tester.pumpAndSettle();
+    router.claim('plezytv://settings/import');
+    await tester.pump(const Duration(seconds: 1));
+    expect(transfer.calls, 0);
+    rootNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(transfer.calls, 1);
+    expect(MemoryLogOutput.getLogs().any((e) => e.message.contains('Settings import: 3 keys imported')), true);
+    expect(find.textContaining('Settings import: 3 keys imported'), findsOneWidget);
+  });
+
+  testWidgets('settings export calls transport and reports key count and path', (tester) async {
+    await mount(tester, _Servers(), _Libraries(), []);
+    final dir = (await tester.runAsync(() => Directory.systemTemp.createTemp('s4-export-link-')))!;
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}/plezytv-settings.json');
+    router.transferOverride = _ExportTransfer(file);
+    MemoryLogOutput.clearLogs();
+    await tester.runAsync(() async {
+      router.claim('plezytv://settings/export');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    expect(MemoryLogOutput.getLogs().any((e) => e.message == 'Settings export: 2 keys, ${file.path}'), true);
+    expect(find.text('Settings export: 2 keys, ${file.path}'), findsOneWidget);
+  });
+
+  testWidgets('invalid settings file reports cause and leaves preferences unchanged', (tester) async {
+    resetSharedPreferencesForTest();
+    final prefs = await BaseSharedPreferencesService.sharedCache();
+    await prefs.setInt('seek_time_small', 42);
+    await SettingsService.getInstance();
+    await (await StorageService.getInstance()).setActiveProfileId('local-bob');
+    final dir = (await tester.runAsync(() => Directory.systemTemp.createTemp('s4-link-')))!;
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}/plezytv-settings.json');
+    await tester.runAsync(() => file.writeAsString('{bad'));
+    final before = {for (final key in prefs.keys) key: prefs.get(key)};
+    await mount(tester, _Servers(), _Libraries(), []);
+    router.transferOverride = _FileTransfer(file);
+    MemoryLogOutput.clearLogs();
+    await tester.runAsync(() async {
+      router.claim('plezytv://settings/import');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    expect({for (final key in prefs.keys) key: prefs.get(key)}, before);
+    expect(MemoryLogOutput.getLogs().any((e) => e.message.contains('Settings import failed:')), true);
+    expect(find.textContaining('Settings import failed:'), findsOneWidget);
+  });
 
   testWidgets('explicit missing item ignores unrelated offline server and warns once', (tester) async {
     final servers = _Servers()
@@ -464,5 +528,31 @@ class _HeldUpdate extends UpdateService {
   Future<UpdateRelease?> check({required bool automatic}) {
     started = true;
     return gate.future;
+  }
+}
+
+class _SuccessfulTransfer extends SettingsTransferService {
+  int calls = 0;
+  @override
+  Future<ImportResult> importAndApply(BuildContext context) async {
+    calls++;
+    return const ImportResult(keysImported: 3, keysSkipped: 1);
+  }
+}
+
+class _FileTransfer extends SettingsTransferService {
+  final File file;
+  _FileTransfer(this.file);
+  @override
+  Future<File> settingsFile() async => file;
+}
+
+class _ExportTransfer extends SettingsTransferService {
+  final File file;
+  _ExportTransfer(this.file);
+  @override
+  Future<String> exportToFile() async {
+    await file.writeAsString('{"prefs":{"a":{},"b":{}}}');
+    return file.path;
   }
 }
