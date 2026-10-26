@@ -417,6 +417,13 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final wide = row.kind == TvHomeRowKind.continueWatching;
     final music = row.layout == TvHomeRowLayout.music;
     final key = _rowKey(row);
+    final theme = TvTheme.of(context);
+    // Text paragraphs round line heights to whole layout pixels. Reserve
+    // those same rounded heights at fractional design scales.
+    final captions =
+        (theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
+            theme.px(TvTokens.type.caption.lineHeight).ceilToDouble()) /
+        theme.scale;
     return TvHorizontalRow(
       key: _rows.putIfAbsent(key, () => GlobalKey<TvHorizontalRowState>()),
       title: row.title,
@@ -431,8 +438,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
               ? TvTokens.size.poster.w
               : TvTokens.size.poster.h) +
           20 +
-          TvTokens.type.body.lineHeight +
-          TvTokens.type.caption.lineHeight.toDouble(),
+          captions,
       onItemFocused: (index) => _focused(row, index),
       cardBuilder: (context, index, node) {
         if (index == row.items.length) {
@@ -499,7 +505,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
         for (final row in _model.rows) ...[_rail(row), SizedBox(height: px(TvTokens.space.rowGap))],
         if (_model.hubsState == TvHomePartState.loading && !_model.rows.any((r) => r.kind == TvHomeRowKind.hub))
           Padding(
-            padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+            padding: EdgeInsets.only(
+              left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
             child: const TvRowSkeleton(),
           ),
       ];
@@ -529,7 +540,13 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 builder: (context, _) {
                   final effective = item == null ? null : context.withFreshWatchState(item);
                   return Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      top: px(TvTokens.space.safeY),
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: TvHero(
                       loadFullRatings: true,
                       item: effective,
@@ -554,16 +571,32 @@ class TvHomeScreenState extends State<TvHomeScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      top: px(TvTokens.space.safeY),
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: const TvHeroSkeleton(),
                   ),
                   Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: const TvRowSkeleton(episode: true),
                   ),
                   SizedBox(height: px(TvTokens.space.rowGap)),
                   Padding(
-                    padding: EdgeInsets.only(left: px(TvTokens.space.contentLeft)),
+                    padding: EdgeInsets.only(
+                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
+                    ),
                     child: const TvRowSkeleton(),
                   ),
                 ],

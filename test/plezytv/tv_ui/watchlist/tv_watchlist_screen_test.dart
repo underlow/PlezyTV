@@ -251,7 +251,8 @@ void main() {
     await pumpScreen(tester, [_Source(CatalogSourceId.plex, _items(32))]);
 
     expect(find.text('Watchlist'), findsOneWidget);
-    expect(find.text('Date added · 32'), findsOneWidget);
+    expect(find.text('Sort: Date added'), findsOneWidget);
+    expect(find.text('32'), findsOneWidget);
     expect(find.text('Plex'), findsNothing);
     expect(focusLabel(), 'TV grid 0');
     expect(grid(tester).focusedIndex, 0);
@@ -262,7 +263,7 @@ void main() {
     final source = _Source(CatalogSourceId.plex, _items(3))..gate = Completer();
     await pumpScreen(tester, [source]);
     expect(find.text('Watchlist'), findsOneWidget);
-    expect(find.text('Date added'), findsOneWidget);
+    expect(find.text('Sort: Date added'), findsOneWidget);
     expect(find.byType(TvPosterSkeleton), findsNothing);
     await tester.pump(const Duration(milliseconds: 310));
     expect(find.byType(TvPosterSkeleton), findsWidgets);
@@ -292,13 +293,14 @@ void main() {
 
     expect(find.text('Couldn’t load the watchlist'), findsOneWidget);
     expect(focusLabel(), 'Watchlist state action');
-    expect(find.text('Date added'), findsNothing);
+    expect(find.text('Sort: Date added'), findsNothing);
 
     source.error = null;
     await key(tester, LogicalKeyboardKey.enter);
     await tester.pump();
     await tester.pump();
-    expect(find.text('Date added · 4'), findsOneWidget);
+    expect(find.text('Sort: Date added'), findsOneWidget);
+    expect(find.text('4'), findsOneWidget);
     expect(find.byType(TvPoster), findsNWidgets(4));
   });
 
@@ -336,7 +338,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Plex'), findsOneWidget);
-    expect(find.text('Date added · 5'), findsOneWidget);
+    expect(find.text('Sort: Date added'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
     expect(focusLabel(), 'TV grid 0');
     expect(prefs.value.source, 'plex');
   });
@@ -344,7 +347,8 @@ void main() {
   testWidgets('A25: with nothing remembered Plex opens first', (tester) async {
     await pumpScreen(tester, [_Source(CatalogSourceId.trakt, _items(2)), _Source(CatalogSourceId.plex, _items(3))]);
     expect(find.text('Plex'), findsOneWidget);
-    expect(find.text('Date added · 3'), findsOneWidget);
+    expect(find.text('Sort: Date added'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
   });
 
   testWidgets('A18: an empty tab shows its text and keeps focus on the tabs', (tester) async {
@@ -357,7 +361,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('No shows in your watchlist'), findsOneWidget);
-    expect(find.text('Date added · 0'), findsOneWidget);
+    expect(find.text('Sort: Date added'), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
     bool onTabs() => FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Watchlist tabs');
     expect(onTabs(), isTrue);
     expect(find.byType(TvPoster), findsNothing);

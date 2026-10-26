@@ -539,3 +539,123 @@ storage directory, replacing the previous export. It combines Plezy's portable
 settings with Show downloads and the search keyboard layout; library settings
 are restored under the active profile. Import refreshes settings listeners,
 library providers and Plezy's stored runtime effects without a restart.
+
+## Вёрстка
+
+Все размеры — design px холста 1920×1080 через `TvTheme.px` (S24 R1–R3).
+Видимый левый край неактивного контента — x = 200 от края экрана:
+внутри оболочки отступ равен `px(TvTokens.space.contentLeft) −
+MainScreenFocusScope.foregroundLeftOf(context)`, вне оболочки — 200.
+Кольца фокуса и сдвинутые подложки кнопок/вкладок могут выходить левее.
+Верхнее поле — 54, правое поле статичного контента — 96; горизонтальные
+ряды продолжаются за правый край.
+
+Между секциями — `space.sectionGap` = 48 от низа подписи до следующего
+заголовка. От заголовка ряда до карточки — `rowHeaderToCards` = 16 плюс
+`cardFocusReserve` = 24 сверху под рост в фокусе. Промежутки шапки:
+название → метаданные 12, метаданные → оценки 12, оценки → описание 16,
+описание → кнопки 32.
+
+`space.cardGap` = 28. Постер, квадрат и персона растут в фокусе в 1.05 раза,
+эпизод — в 1.03 раза, от нижнего края вверх и в стороны. Кольцо толщиной 4
+с отступом 3 учитывается в границах отрисовки: оно не заходит на соседнюю
+карточку, заголовок или неподвижные подписи. Статусы остаются в углах и
+у нижнего края карточки. Компактные шапки деталей должны иметь непрозрачный
+фон `bg.base` на всю высоту (переход экранов выполняется в S24 T3).
+
+Hero главной (S24 T2) начинается под верхним полем 54 и занимает 340,
+после прокрутки — 200. Логотип ограничен 560×120, описание — двумя
+строками. Метаданные фильма: год, длительность, возрастной рейтинг и до
+трёх жанров; сериала: год, число сезонов, возрастной рейтинг и до трёх жанров;
+эпизода: номер и название, длительность либо остаток. Недостающие описание
+и жанры берутся из полных метаданных. При их загрузке место строки оценок
+зарезервировано; кэшированные оценки появляются сразу.
+
+Фоновый арт 1300×780 расположен справа сверху (x 620–1920). Горизонтальная
+маска линейно раскрывает его от x 1000 до 1500, вертикальная скрывает от
+y 360 до 640. Сам арт имеет непрозрачность 0.6 поверх `bg.base`; без арта
+сохраняется тонированный фон. Запрос Plex для арта передаёт обе размерности
+1280×720, для тонировки — 64×64 (транскодер требует высоту).
+
+### Detail layout (S24 T3)
+
+`TvRatings` displays at most three scores: IMDb, RT critics, RT audience, then
+other attributed sources in their incoming order, with bare scores last. This
+also applies to post-play; score values still come from Plezy.
+
+Movie, show and catalog details share `TvActionRow`: a text primary action,
+64×64 icon actions and 24 design-pixel gaps. Focus captions paint centered below
+the icon without consuming layout space. The movie compact header uses opaque
+`bg.base`. Season episode dates use `TvStrings.date` in the application locale
+with an abbreviated month (`16 Sep 2026`).
+
+### Shell and Home layout (S24 T4)
+
+Menu rows use 64 design pixels when they fit, shrinking evenly to a minimum
+of 48, including the divider in the available height. Beyond that, Settings
+stays below the scroll viewport; the selected section is revealed on collapse
+and focused items scroll into view on expansion. The last item retains Down.
+
+Home and search episode cards show the series title above `S1 E3 · episode
+title`; remaining time is represented by the progress bar. Home applies this
+also to episodes in poster hubs. Season, player queue and post-play captions
+retain their existing format. Home uses the 340/200 hero and the 48 section gap.
+
+### Movie, show and catalog layout (S24 T5)
+
+Detail text columns are limited to 900 design pixels. Movie and catalog genres
+are plain metadata text; movie director and edition follow metadata, then scores,
+technical labels, up to four summary lines and actions. Sections use the shared
+48 pixel gap.
+
+On Show, a series with exactly one season displays that season's episode rail,
+using the same cards, paging, context menu and playback as its retained season
+tab. Up returns to actions and restores the header; Down visits Cast and the
+remaining rails in order. Multiple seasons use standard 216×324 posters.
+Season tabs and rail titles use the raw season title, falling back to the
+localized season number when empty or equal to the series title.
+
+### Search, library, Watchlist and settings layout (S24 T6)
+
+Search uses the shared 54 top and 96 right fields. The RU and EN digits key
+fills the last two and three keyboard cells respectively. Focusing a result
+reveals its whole horizontal row, including captions.
+
+Library and Watchlist headers show the item count beside the title and
+`Sort: <field>` on the sort button. Poster grids retain 228 pixel cards with
+32 pixel gaps; whole columns fit before `letters.x - cardGap` (six posters,
+or three 400 pixel episode cards). The library alphabet starts at x 1776.
+
+The shell wraps upstream settings in `TvSettingsSection`: its group edges
+start at x 200, its width is capped at 1200 and its app bar uses `bg.base`,
+including when scrolled. The wrapper compensates for upstream SettingsGroup's
+16 logical-pixel margin; recheck that margin on upstream changes. Settings
+items, routes and nested pages remain owned by upstream.
+
+### Acceptance refinements (S24 T7)
+
+The compact Home hero contains only its logo/title and one metadata line; its
+logo is capped at 80 design pixels. Scores and description appear in the full
+hero only. Movie, show and catalog detail artwork fades linearly with page
+scroll from full strength at 0 to zero at 300 design pixels; the tint remains.
+Show uses the movie's opaque 150 pixel compact header and collapse threshold,
+keeping focused rail headings below it. Show metadata stays on one line with
+ellipsis and at most three genres.
+
+Detail rail heights include artwork, the 20 pixel caption gap and the two
+rounded text line boxes, so the next section starts exactly 48 pixels after
+the caption. Search episode captions append the server name only when several
+servers are connected. Collapsed menu rebuilds retain their scroll offset;
+a changed current section is revealed with only the necessary movement.
+
+### Detail scrolling and artwork layers (S24 T8)
+
+Every focused detail rail heading aligns 24 design pixels below the compact
+header, including the last rail. Movie and show pages reserve trailing viewport
+space so the scroll extent permits that alignment. Movie reviews and the technical
+information block use the same 48 pixel section gap, including when reviews or
+related rails arrive later. Catalog details currently have no lower rails.
+
+Artwork scroll opacity is derived from the clamped 0–300 pixel range. Only a
+changed opacity notifies its layer; the masks and image remain inside a retained
+repaint boundary. The tint does not fade with page scroll.

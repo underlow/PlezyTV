@@ -88,8 +88,22 @@ class TvHomeHubCard extends StatelessWidget {
             child: {MediaKind.artist, MediaKind.album, MediaKind.track}.contains(item.kind)
                 ? TvMusicCard(item: item, client: client, focusNode: focusNode, onSelect: select, onLongPress: menu)
                 : wide
-                ? TvEpisode(item: item, client: client, focusNode: focusNode, onSelect: select, onLongPress: menu)
-                : TvPoster(item: item, client: client, focusNode: focusNode, onSelect: select, onLongPress: menu),
+                ? TvEpisode(
+                    showSeriesTitle: item.kind == MediaKind.episode,
+                    item: item,
+                    client: client,
+                    focusNode: focusNode,
+                    onSelect: select,
+                    onLongPress: menu,
+                  )
+                : TvPoster(
+                    showSeriesTitle: item.kind == MediaKind.episode,
+                    item: item,
+                    client: client,
+                    focusNode: focusNode,
+                    onSelect: select,
+                    onLongPress: menu,
+                  ),
           );
         },
       ),

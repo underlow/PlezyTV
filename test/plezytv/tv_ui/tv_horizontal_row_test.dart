@@ -217,7 +217,7 @@ void main() {
       );
       expect(
         tester.getTopLeft(find.byKey(const ValueKey(1))).dx - tester.getTopLeft(find.byKey(const ValueKey(0))).dx,
-        240,
+        244,
       );
       nodes[0]!.requestFocus();
       await tester.pumpAndSettle();
@@ -231,15 +231,15 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
       if (reduced) {
-        expect(scroll.offset, 1680);
+        expect(scroll.offset, 1708);
         expect(tester.hasRunningAnimations, isFalse);
       } else {
         expect(scroll.offset, 0);
         await tester.pump(const Duration(milliseconds: 75));
         expect(scroll.offset, greaterThan(0));
-        expect(scroll.offset, lessThan(1680));
+        expect(scroll.offset, lessThan(1708));
         await tester.pump(const Duration(milliseconds: 75));
-        expect(scroll.offset, 1680);
+        expect(scroll.offset, 1708);
       }
       expect(tester.getTopLeft(find.byKey(const ValueKey(7))).dx, 200);
       outside.requestFocus();
@@ -262,7 +262,7 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
         await tester.pumpAndSettle();
         expect(nodes[i]!.hasFocus, isTrue);
-        expect(scroll.offset, i * 240);
+        expect(scroll.offset, i * 244);
       }
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();

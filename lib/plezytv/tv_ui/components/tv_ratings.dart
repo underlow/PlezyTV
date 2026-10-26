@@ -9,7 +9,21 @@ import '../../../widgets/media_rating_badge.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 
-/// Preserves Plezy's complete rating list, including duplicates and bare scores.
+/// Selects at most three scores, preserving Plezy order within each priority.
+List<MediaRatingSource> selectTvRatings(List<MediaRatingSource> ratings) {
+  int priority(MediaRatingSource rating) => switch (rating.source) {
+    'imdb' => 0,
+    'rottenTomatoesCritic' || 'rottenTomatoes' => 1,
+    'rottenTomatoesAudience' => 2,
+    'critic' || 'audience' || '' => 4,
+    _ => 3,
+  };
+  return [
+    for (var rank = 0; rank <= 4; rank++) ...ratings.where((rating) => priority(rating) == rank),
+  ].take(3).toList();
+}
+
+/// Shared TV rating row, including community scores supplied by callers.
 class TvRatings extends StatelessWidget {
   const TvRatings({super.key, required this.item, this.fallbackItem, this.ratings});
   final MediaItem item;
@@ -35,7 +49,7 @@ class TvRatings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ratings = this.ratings ?? mediaRatingsFor(item, fallbackItem: fallbackItem);
+    final ratings = selectTvRatings(this.ratings ?? mediaRatingsFor(item, fallbackItem: fallbackItem));
     if (ratings.isEmpty) return const SizedBox.shrink();
     final theme = TvTheme.of(context);
     final px = theme.px;

@@ -48,6 +48,17 @@ abstract final class TvTokens {
       onServer: Color(0xFF4CAF7A),
     ),
   );
+  // S24 R17: screen coordinates on the 1920 × 1080 design canvas.
+  static const backdrop = (
+    width: 1300.0,
+    height: 780.0,
+    left: 620.0,
+    fadeInStart: 1000.0,
+    fadeInEnd: 1500.0,
+    fadeOutStart: 360.0,
+    fadeOutEnd: 640.0,
+    opacity: 0.6,
+  );
   static const font = (
     family: "Manrope",
     fallback: ["Inter", "Roboto"],
@@ -75,10 +86,21 @@ abstract final class TvTokens {
     safeX: 96,
     safeY: 54,
     rowGap: 48,
-    cardGap: 24,
+    sectionGap: 48,
+    cardFocusReserve: 24,
+    cardGap: 28,
     rowHeaderToCards: 16,
     contentLeft: 200,
     actionsGap: 24,
+  );
+  // S24 R2, R8: shared detail header geometry.
+  static const detail = (
+    textMaxW: 900,
+    metadataGap: 12,
+    summaryGap: 16,
+    actionsGap: 32,
+    compactH: 150,
+    collapseAt: 300,
   );
   static const radius = (xs: 4, sm: 8, card: 10, button: 12, iconButton: 16, chip: 8, panel: 16, badge: 6);
   static const size = (
@@ -91,25 +113,34 @@ abstract final class TvTokens {
     iconButton: (w: 64, h: 64, iconSize: 30),
     chip: (h: 36, padX: 14),
     tab: (h: 52, padX: 24, underline: 4),
-    sidebar: (collapsedW: 136, expandedW: 392, padLeft: 32, itemW: 72, itemH: 64, iconSize: 32, currentMarker: [4, 32]),
+    sidebar: (
+      collapsedW: 136,
+      expandedW: 392,
+      padLeft: 32,
+      itemW: 72,
+      itemH: 64,
+      minItemH: 48,
+      iconSize: 32,
+      currentMarker: [4, 32],
+    ),
     rightPanel: (w: 600, iconSize: 28, background: Color(0xF21A1C21)),
     settingsItem: (h: 88, iconSize: 36, maxW: 1200),
     progressBar: (h: 6),
     unwatchedBadge: (minW: 36, h: 32),
-    hero: (h: 600, compactH: 420, textMaxW: 860, logoMaxW: 560, logoMaxH: 200),
+    hero: (h: 340, compactH: 200, textMaxW: 860, logoMaxW: 560, logoMaxH: 120, compactLogoMaxH: 80),
     focusRing: (width: 4, offset: 3),
     letters: (w: 48, itemH: 24, focusedH: 32, x: 1776),
     keyboard: (key: 64, gap: 12, columns: 6, panelW: 444, panelX: 200, resultsX: 740),
     buttonSmall: (h: 52, padX: 24),
   );
   static const focus = (
-    cardScale: 1.08,
+    cardScale: 1.05,
     buttonScale: 1.05,
     listItemScale: 1.0,
     pressedScale: 0.97,
     unfocusedSiblingOpacity: 1.0,
     disabledOpacity: 0.4,
-    episodeScale: 1.05,
+    episodeScale: 1.03,
   );
   static const motion = (
     focusIn: 120,

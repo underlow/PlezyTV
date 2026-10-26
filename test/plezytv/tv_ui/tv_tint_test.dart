@@ -1,18 +1,37 @@
 import 'dart:async';
+import 'package:drift/native.dart';
+import 'package:plezy/database/app_database.dart';
+import 'package:plezy/services/plex_api_cache.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
+import 'package:plezy/media/media_server_client.dart';
+import '../../test_helpers/backend_client_fixtures.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tint_service.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tinted_background.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 
 import 'tv_theme_test_helper.dart';
+
+class _ArtworkClient implements MediaServerClient {
+  final plex = testPlexClient();
+  final urls = <Uri>[];
+  @override
+  String thumbnailUrl(String? path, {int? width, int? height, bool cover = true}) {
+    urls.add(Uri.parse(plex.thumbnailUrl(path, width: width, height: height, cover: cover)));
+    return ''; // Stop before transport; exercise the production URL builder.
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 TvArtworkSource source(String id, {String server = 'server'}) => TvArtworkSource(
   item: MediaItem(id: id, backend: MediaBackend.plex, kind: MediaKind.movie, serverId: server),
@@ -58,6 +77,24 @@ List<Color> gradientTops(WidgetTester tester) => tester
     .toList();
 
 void main() {
+  test('S24 Plex backdrop and tint URLs supply both transcode dimensions', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    PlexApiCache.initialize(database);
+    addTearDown(database.close);
+    final client = _ArtworkClient();
+    addTearDown(client.plex.close);
+    final artwork = TvArtworkSource(
+      item: source('url').item.copyWith(artPath: '/art', thumbPath: '/poster'),
+      client: client,
+    );
+    await fetchTvArtwork(artwork, true, 1280);
+    await fetchTvArtwork(artwork, false, 64);
+    expect(client.urls.map((url) => (url.queryParameters['width'], url.queryParameters['height'])), [
+      ('1280', '720'),
+      ('64', '64'),
+    ]);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('A6/A6c dominant colors clamp and maintain text contrast; neutrals ignored', () {
@@ -370,6 +407,50 @@ void main() {
     expect(gradientTops(tester), [tvBackgroundTop(Colors.green)]);
   });
 
+  testWidgets('R17a scrolling fades only artwork linearly over 300 design pixels', (tester) async {
+    final page = ScrollController();
+    addTearDown(page.dispose);
+    final service = StubTintService(fetch: (_, _, _) async => Uint8List(1), decode: (_, _) => image(Colors.yellow));
+    await pumpTvWidget(
+      tester,
+      TvTintedBackground(
+        source: source('A'),
+        service: service,
+        scrollController: page,
+        child: SingleChildScrollView(controller: page, child: const SizedBox(height: 2000)),
+      ),
+    );
+    service.answers['A']!.complete(Colors.red);
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pumpAndSettle();
+    final masks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+    final raw = tester.widget<RawImage>(find.byType(RawImage));
+    final boundary = find.ancestor(of: find.byType(RawImage), matching: find.byType(RepaintBoundary)).first;
+    expect(boundary, findsOneWidget);
+    final paintBoundary = tester.renderObject<RenderRepaintBoundary>(boundary);
+    paintBoundary.debugResetMetrics();
+    FadeTransition? previousFade;
+    for (final offset in [0.0, 150.0, 300.0, 400.0, 500.0]) {
+      page.jumpTo(offset);
+      await tester.pump();
+      final opacity = tester.widget<FadeTransition>(
+        find.ancestor(of: find.byType(RawImage), matching: find.byType(FadeTransition)).first,
+      );
+      expect(opacity.opacity.value, (1 - offset / 300).clamp(0, 1));
+      expect(gradientTops(tester), [tvBackgroundTop(Colors.red)]);
+      final currentMasks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+      for (var i = 0; i < masks.length; i++) {
+        expect(currentMasks[i], same(masks[i]), reason: 'scroll must retain shader closures');
+      }
+      expect(tester.widget<RawImage>(find.byType(RawImage)), same(raw));
+      if (offset > 300) expect(opacity, same(previousFade), reason: 'saturated opacity must not rebuild');
+      expect(paintBoundary.debugSymmetricPaintCount, 0, reason: 'opacity must retain the painted artwork layer');
+      previousFade = opacity;
+    }
+  });
+
   testWidgets('slow backdrop does not delay tint or restart its fade', (tester) async {
     final pendingBackdrop = Completer<Uint8List?>();
     final service = StubTintService(
@@ -410,6 +491,39 @@ void main() {
     expect(find.byType(RawImage), findsOneWidget);
     expect(tester.hasRunningAnimations, false);
     expect(tester.getSize(find.byType(RawImage)), const Size(1300, 780));
+    expect(tester.widget<RawImage>(find.byType(RawImage)).opacity!.value, .6);
+    expect(
+      tester
+          .widget<ColoredBox>(find.ancestor(of: find.byType(RawImage), matching: find.byType(ColoredBox)).first)
+          .color,
+      TvTokens.color.bg.base,
+    );
+    // Rasterize the production shaders, checking R17 screen coordinates.
+    final masks = tester.widgetList<ShaderMask>(find.byType(ShaderMask)).toList();
+    const rect = Rect.fromLTWH(0, 0, 1300, 780);
+    for (final (mask, points, expected, horizontal) in [
+      (masks.last, [1000, 1250, 1500], [0.0, .5, 1.0], true),
+      (masks.first, [360, 500, 640], [1.0, .5, 0.0], false),
+    ]) {
+      final recorder = ui.PictureRecorder();
+      Canvas(recorder).drawRect(rect, Paint()..shader = mask.shaderCallback(rect));
+      final picture = recorder.endRecording();
+      await tester.runAsync(() async {
+        final raster = await picture.toImage(1300, 780);
+        final bytes = (await raster.toByteData())!;
+        for (var i = 0; i < points.length; i++) {
+          final x = horizontal ? points[i] - 620 : 1000;
+          final y = horizontal ? 100 : points[i];
+          expect(
+            bytes.getUint8((y * 1300 + x) * 4 + 3) / 255,
+            closeTo(expected[i], .01),
+            reason: 'R17 ${horizontal ? "x" : "y"}=${points[i]}',
+          );
+        }
+        raster.dispose();
+        picture.dispose();
+      });
+    }
   });
 
   testWidgets('reduced updates have no running animation', (tester) async {

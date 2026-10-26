@@ -11,7 +11,6 @@ import '../../../providers/download_provider.dart';
 import '../../../providers/multi_server_provider.dart';
 import '../../../screens/downloads/downloads_screen.dart';
 import '../../../services/catalog/library_watchlist_candidates.dart';
-import '../../../services/device_performance.dart';
 import '../../../services/watch_actions.dart';
 import '../../../utils/dialogs.dart';
 import '../../../utils/download_utils.dart';
@@ -22,7 +21,7 @@ import '../../../widgets/media_context_menu.dart';
 import '../../../widgets/watchlist_source_chooser.dart';
 import '../components/tv_button.dart';
 import '../tv_strings.dart';
-import '../tv_theme.dart';
+import '../components/tv_action_row.dart';
 import 'tv_movie_controller.dart';
 
 /// Movie action row built only from public Plezy helpers (visibility rules
@@ -247,39 +246,6 @@ class _TvMovieActionsState extends State<TvMovieActions> {
         }),
       ),
     ];
-    final px = TvTheme.of(context).px;
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      clipBehavior: Clip.none,
-      child: Row(
-        key: const ValueKey('movie-actions'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) SizedBox(width: px(24)),
-            Focus(
-              canRequestFocus: false,
-              onFocusChange: (inside) {
-                if (!inside) return;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  final anchor = FocusManager.instance.primaryFocus?.context;
-                  if (anchor != null) {
-                    unawaited(
-                      Scrollable.ensureVisible(
-                        anchor,
-                        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-                        duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : 150),
-                      ),
-                    );
-                  }
-                });
-              },
-              child: buttons[i],
-            ),
-          ],
-        ],
-      ),
-    );
+    return TvActionRow(rowKey: const ValueKey('movie-actions'), buttons: buttons);
   }
 }

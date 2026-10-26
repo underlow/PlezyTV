@@ -31,6 +31,7 @@ import '../../../screens/libraries/library_quick_picker_sheet.dart';
 import '../../../screens/livetv/live_tv_screen.dart';
 import '../search/tv_search_screen.dart';
 import '../../../screens/settings/settings_screen.dart';
+import 'tv_settings_section.dart';
 import '../../../services/app_exit_service.dart';
 import '../../../services/music/music_playback_service.dart';
 import '../../../services/settings_service.dart';
@@ -478,7 +479,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
       NavigationTabId.explore => ExploreScreen(key: key),
       NavigationTabId.search => TvSearchScreen(key: key),
       NavigationTabId.downloads => DownloadsScreen(key: key),
-      NavigationTabId.settings => SettingsScreen(key: key),
+      NavigationTabId.settings => TvSettingsSection(child: SettingsScreen(key: key)),
     };
   }
 

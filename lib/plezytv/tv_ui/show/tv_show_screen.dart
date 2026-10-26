@@ -1,4 +1,7 @@
+import '../../../navigation/main_screen_scope.dart';
 import 'dart:async';
+import 'dart:math' as math;
+import 'package:flutter/rendering.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,7 +21,6 @@ import '../../../widgets/media_context_menu.dart';
 import '../../../widgets/optimized_media_image.dart';
 import '../components/tv_button.dart';
 import '../components/tv_cards.dart';
-import '../components/tv_chip.dart';
 import '../components/tv_hero.dart';
 import '../components/tv_horizontal_row.dart';
 import '../components/tv_person_card.dart';
@@ -27,6 +29,7 @@ import '../components/tv_tabs.dart';
 import '../tv_card_registry.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
+import '../tv_tokens.dart';
 import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import 'tv_show_actions.dart';
@@ -66,6 +69,35 @@ class _TvShowScreenState extends State<TvShowScreen> {
   final _primary = FocusNode(debugLabel: 'Show primary');
   final _retry = FocusNode(debugLabel: 'Show retry');
   final _page = ScrollController();
+  bool _collapsed = false;
+  double _rowTopGap = TvTokens.space.cardFocusReserve.toDouble();
+  double _barHeight = TvTokens.detail.compactH.toDouble();
+  double _collapseAt = TvTokens.detail.collapseAt.toDouble();
+
+  @override
+  void initState() {
+    super.initState();
+    _page.addListener(_scrolled);
+  }
+
+  GlobalKey<TvHorizontalRowState>? get _firstRow => _tab > 0 || _singleSeason
+      ? _episodes
+      : _controller?.seasons.isNotEmpty == true
+      ? _seasons
+      : _lowerKeys.values.firstOrNull;
+
+  void _scrolled() {
+    final first = _firstRow?.currentContext?.findRenderObject();
+    final threshold = first == null
+        ? _collapseAt
+        : math.min(
+            _collapseAt,
+            RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
+          );
+    final collapsed = _tab == 0 && _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
+    if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
+  }
+
   final _tabScope = FocusScopeNode(debugLabel: 'Show tabs');
   final _lastEpisode = <String, String>{};
   final _lastEpisodeIndex = <String, int>{};
@@ -93,7 +125,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
   bool get _episodeHasFocus =>
       FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TvHorizontalRow>()?.key == _episodes;
 
-  String get _key => _controller!.flattened ? _controller!.flattenedKey : _controller!.seasons[_tab - 1].id;
+  bool get _hasEpisodeRow => _tab > 0 || _singleSeason;
+
+  bool get _singleSeason => _controller?.seasons.length == 1;
+
+  String get _key =>
+      _controller!.flattened ? _controller!.flattenedKey : _controller!.seasons[_tab == 0 ? 0 : _tab - 1].id;
 
   /// This card on its route, for the post-play screen above (S14 C5).
   Route<dynamic>? _cardRoute;
@@ -260,7 +297,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
         });
       }
     }
-    if (_ready && _tab > 0 && !c.loading) {
+    if (_ready && _hasEpisodeRow && !c.loading) {
       final updated = c.episodesFor(_key).where((e) => e.id == _hero?.id).firstOrNull;
       if (updated != null) _hero = updated;
       if (finishedRefresh && !_playing && (_restoreEpisodeFocus || _episodeHasFocus)) {
@@ -283,7 +320,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
       if (!mounted ||
           !_restoreEpisodeFocus ||
           _playing ||
-          _tab == 0 ||
+          !_hasEpisodeRow ||
           _controller!.loading ||
           ModalRoute.of(context)?.isCurrent != true) {
         return;
@@ -344,7 +381,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
     final selection = _selection;
     final key = _key;
     final wanted = _lastEpisode[key] ?? initialId;
-    bool current() => mounted && selection == _selection && _tab > 0;
+    bool current() => mounted && selection == _selection && _hasEpisodeRow;
     while (current()) {
       final items = c.episodesFor(key);
       final found = wanted == null ? items.any((e) => !e.isWatched) : items.any((e) => e.id == wanted);
@@ -405,7 +442,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (_playing) return;
     _playing = true;
     final c = _controller!;
-    final seasonKey = _tab > 0 ? _key : null;
+    final seasonKey = _hasEpisodeRow && _episodeWasFocusOwner ? _key : null;
     _launchState = _watchFingerprint(c);
     try {
       if (widget.playEpisode != null) {
@@ -424,7 +461,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
       if (!_isTop) _refreshOnReturn = true;
       await c.refresh();
       if (!mounted) return;
-      if (seasonKey != null && _tab > 0 && _key == seasonKey) {
+      if (seasonKey != null && _hasEpisodeRow && _key == seasonKey) {
         var items = c.episodesFor(seasonKey);
         var index = items.indexWhere((e) => e.id == episode.id);
         if (index >= 0 && items[index].isWatched) {
@@ -502,7 +539,10 @@ class _TvShowScreenState extends State<TvShowScreen> {
       // Each rail owns a focus scope; cross scopes explicitly in display order.
       final c = _controller!;
       final rows = [
-        if (!c.flattened && c.seasons.isNotEmpty) _seasons,
+        if (_singleSeason) ...[
+          if (c.episodesFor(_key).isNotEmpty) _episodes,
+        ] else if (!c.flattened && c.seasons.isNotEmpty)
+          _seasons,
         if (c.show.roles?.isNotEmpty ?? false) _lowerKeys['cast'],
         if (c.extras.isNotEmpty) _lowerKeys['extras'],
         for (final hub in c.relatedHubs.where((h) => h.items.isNotEmpty)) _lowerKeys['related/${hub.id}'],
@@ -577,6 +617,9 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   Widget _build(BuildContext context) {
     final theme = TvTheme.of(context), px = TvTheme.of(context).px;
+    _barHeight = px(TvTokens.detail.compactH);
+    _rowTopGap = px(TvTokens.space.cardFocusReserve);
+    _collapseAt = px(TvTokens.detail.collapseAt);
     final c = _controller;
     final show = c?.show ?? widget.metadata;
     final episode = _tab > 0 ? _backdropEpisode : null;
@@ -591,121 +634,168 @@ class _TvShowScreenState extends State<TvShowScreen> {
           canRequestFocus: false,
           onKeyEvent: (_, event) => handleBackKeyAction(event, _back),
           child: TvTintedBackground(
+            scrollController: _page,
             source: TvArtworkSource(item: artwork, client: c?.client),
-            child: SingleChildScrollView(
-              controller: _page,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.only(left: px(200), top: px(72), right: px(96)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClearLogoImage(
-                          client: c?.client,
-                          logoPath: show.clearLogoPath,
-                          fallbackWidth: px(900),
-                          width: px(560),
-                          height: px(100),
-                          alignment: Alignment.centerLeft,
-                          fallbackBuilder: (_) => Text(
-                            show.displayTitle,
-                            style: theme.display,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+            child: Stack(
+              children: [
+                SingleChildScrollView(
+                  controller: _page,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                            0.0,
+                            double.infinity,
                           ),
+                          top: px(TvTokens.space.safeY),
+                          right: px(96),
                         ),
-                        SizedBox(height: px(16)),
-                        SizedBox(
-                          height: px(40),
-                          child: Text(tvShowMetadata(show, c?.seasons ?? []), style: theme.body),
-                        ),
-                        SizedBox(height: px(24)),
-                        if (_ready)
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: FocusScope(
-                              node: _tabScope,
-                              onFocusChange: (inside) {
-                                if (inside) {
-                                  _episodeWasFocusOwner = false;
-                                  _revealFocusedTab();
-                                }
-                              },
-                              onKeyEvent: (_, event) {
-                                if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
-                                    (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-                                        event.logicalKey == LogicalKeyboardKey.arrowRight)) {
-                                  _revealFocusedTab();
-                                }
-                                if (event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
-                                if (event is KeyDownEvent || event is KeyRepeatEvent) {
-                                  final pending = _tabs.currentState?.focusedIndex;
-                                  if (pending != null && pending != _tab) _select(pending);
-                                  if (_tab == 0) {
-                                    _primary.requestFocus();
-                                  } else {
-                                    unawaited(_enterSeason(focus: true));
-                                  }
-                                }
-                                return KeyEventResult.handled;
-                              },
-                              child: TvTabs(
-                                key: _tabs,
-                                tabs: [
-                                  const TvTab(label: 'Show'),
-                                  if (c!.flattened)
-                                    const TvTab(label: 'Episodes')
-                                  else
-                                    for (final season in c.seasons) TvTab(label: season.displayTitle),
-                                ],
-                                selectedIndex: _tab,
-                                onSelected: _select,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClearLogoImage(
+                              client: c?.client,
+                              logoPath: show.clearLogoPath,
+                              fallbackWidth: px(TvTokens.detail.textMaxW),
+                              width: px(560),
+                              height: px(120),
+                              alignment: Alignment.centerLeft,
+                              fallbackBuilder: (_) => Text(
+                                show.displayTitle,
+                                style: theme.display,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            SizedBox(height: px(TvTokens.detail.metadataGap)),
+                            SizedBox(
+                              width: px(TvTokens.detail.textMaxW),
+                              child: Text(
+                                tvShowMetadata(show, c?.seasons ?? []),
+                                style: theme.body,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            SizedBox(height: px(24)),
+                            if (_ready)
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: FocusScope(
+                                  node: _tabScope,
+                                  onFocusChange: (inside) {
+                                    if (inside) {
+                                      _episodeWasFocusOwner = false;
+                                      _revealFocusedTab();
+                                    }
+                                  },
+                                  onKeyEvent: (_, event) {
+                                    if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+                                        (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+                                            event.logicalKey == LogicalKeyboardKey.arrowRight)) {
+                                      _revealFocusedTab();
+                                    }
+                                    if (event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
+                                    if (event is KeyDownEvent || event is KeyRepeatEvent) {
+                                      final pending = _tabs.currentState?.focusedIndex;
+                                      if (pending != null && pending != _tab) _select(pending);
+                                      if (_tab == 0) {
+                                        _primary.requestFocus();
+                                      } else {
+                                        unawaited(_enterSeason(focus: true));
+                                      }
+                                    }
+                                    return KeyEventResult.handled;
+                                  },
+                                  child: TvTabs(
+                                    key: _tabs,
+                                    tabs: [
+                                      const TvTab(label: 'Show'),
+                                      if (c!.flattened && !_singleSeason)
+                                        const TvTab(label: 'Episodes')
+                                      else
+                                        for (final season in c.seasons) TvTab(label: tvShowSeasonTitle(season, c.show)),
+                                    ],
+                                    selectedIndex: _tab,
+                                    onSelected: _select,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (_connectionError != null || (c?.error != null && !_ready))
+                        Padding(
+                          padding: EdgeInsets.all(px(64)),
+                          child: Column(
+                            children: [
+                              Text('Unable to connect to the server. Check your connection.', style: theme.body),
+                              SizedBox(height: px(24)),
+                              TvButton(
+                                label: 'Retry',
+                                focusNode: _retry,
+                                autofocus: true,
+                                onSelect: () {
+                                  if (_controller != null) {
+                                    _startLoad();
+                                  } else {
+                                    setState(() {
+                                      _connectionError = null;
+                                      _connect();
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
                           ),
-                      ],
+                        )
+                      else if (!_ready)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context))
+                                .clamp(0.0, double.infinity),
+                          ),
+                          child: _skeleton ? const TvHeroSkeleton() : SizedBox(height: px(600)),
+                        )
+                      else
+                        Focus(
+                          canRequestFocus: false,
+                          onKeyEvent: _contentKeys,
+                          child: _tab == 0 ? _overview(context) : _season(context),
+                        ),
+                    ],
+                  ),
+                ),
+                if (_tab == 0 && _collapsed)
+                  Positioned(
+                    key: const ValueKey('show-compact-header'),
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: _barHeight,
+                    child: ColoredBox(
+                      color: TvTokens.color.bg.base,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                            0.0,
+                            double.infinity,
+                          ),
+                          top: px(48),
+                          right: px(96),
+                        ),
+                        child: Text(
+                          '${show.displayTitle}${show.year == null ? '' : ' · ${show.year}'}',
+                          style: theme.headline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
                   ),
-                  if (_connectionError != null || (c?.error != null && !_ready))
-                    Padding(
-                      padding: EdgeInsets.all(px(64)),
-                      child: Column(
-                        children: [
-                          Text('Unable to connect to the server. Check your connection.', style: theme.body),
-                          SizedBox(height: px(24)),
-                          TvButton(
-                            label: 'Retry',
-                            focusNode: _retry,
-                            autofocus: true,
-                            onSelect: () {
-                              if (_controller != null) {
-                                _startLoad();
-                              } else {
-                                setState(() {
-                                  _connectionError = null;
-                                  _connect();
-                                });
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    )
-                  else if (!_ready)
-                    Padding(
-                      padding: EdgeInsets.only(left: px(200)),
-                      child: _skeleton ? const TvHeroSkeleton() : SizedBox(height: px(600)),
-                    )
-                  else
-                    Focus(
-                      canRequestFocus: false,
-                      onKeyEvent: _contentKeys,
-                      child: _tab == 0 ? _overview(context) : _season(context),
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
         ),
@@ -720,32 +810,36 @@ class _TvShowScreenState extends State<TvShowScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: px(200), top: px(32), right: px(96)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+            top: px(12),
+            right: px(96),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
+              SizedBox(
+                width: px(TvTokens.detail.textMaxW),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final genre in c.show.genres ?? <String>[])
-                      Padding(
-                        padding: EdgeInsets.only(right: px(12)),
-                        child: TvChip.genre(label: genre),
-                      ),
                     TvRatings(item: c.show.copyWith(ratings: c.ratings)),
+                    if (c.show.summary?.isNotEmpty == true) ...[
+                      SizedBox(height: px(TvTokens.detail.summaryGap)),
+                      Text(c.show.summary!, maxLines: 4, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
+                    ],
                   ],
                 ),
               ),
-              SizedBox(height: px(20)),
-              SizedBox(
-                height: px(112),
-                width: px(900),
-                child: Text(c.show.summary ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
-              ),
-              SizedBox(height: px(28)),
+              SizedBox(height: px(TvTokens.detail.actionsGap)),
               FocusScope(
                 node: _actionScope,
+                onFocusChange: (inside) {
+                  if (inside) _episodeWasFocusOwner = false;
+                },
                 child: TvShowActions(
                   controller: c,
                   playExtra: _playExtra,
@@ -758,31 +852,39 @@ class _TvShowScreenState extends State<TvShowScreen> {
                   ),
                 ),
               ),
-              SizedBox(height: px(26)),
+              SizedBox(height: px(TvTokens.space.sectionGap)),
             ],
           ),
         ),
-        if (!c.flattened && c.seasons.isNotEmpty)
+        if (_singleSeason)
+          _episodeRow(context, _key, tvShowSeasonTitle(c.seasons.single, c.show))
+        else if (!c.flattened && c.seasons.isNotEmpty)
           TvHorizontalRow(
             key: _seasons,
             title: 'Seasons',
             onItemFocused: (_) => _revealContent(),
             counter: '${c.seasons.length}',
             itemCount: c.seasons.length,
-            cardWidth: 160,
-            cardHeight: 330,
+            cardWidth: 216,
+            cardHeight: tvCardHeight(context, TvTokens.size.poster.h),
             itemKey: (i) => c.seasons[i].id,
             cardBuilder: (context, i, node) => TvPoster(
               item: c.seasons[i],
               client: c.client,
-              size: TvPosterSize.season,
+              title: tvShowSeasonTitle(c.seasons[i], c.show),
               caption: c.seasons[i].leafCount == null ? '' : TvStrings.episodes(c.seasons[i].leafCount!),
               focusNode: node,
               onSelect: () => _select(i + 1, focus: true),
             ),
           ),
-        ..._lowerRows(context),
-        SizedBox(height: px(54)),
+        for (final (index, row) in _lowerRows(context).indexed) ...[
+          if (index > 0 ||
+              _singleSeason && c.episodesFor(_key).isNotEmpty ||
+              !c.flattened && !_singleSeason && c.seasons.isNotEmpty)
+            SizedBox(height: px(TvTokens.space.sectionGap)),
+          row,
+        ],
+        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
       ],
     );
   }
@@ -798,23 +900,26 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   void _revealContent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_tab == 0 && _actionScope.hasFocus) {
+      if (!mounted || _tab != 0) return;
+      if (_actionScope.hasFocus) {
         _scrollTop();
         return;
       }
       final anchor = FocusManager.instance.primaryFocus?.context;
       if (anchor == null || _tabScope.hasFocus) return;
-      unawaited(
-        Scrollable.ensureVisible(
-          anchor,
-          alignment: 0.1,
-          alignmentPolicy: _tab == 0
-              ? ScrollPositionAlignmentPolicy.explicit
-              : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-          duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : 150),
-        ),
+      final row = anchor.findAncestorStateOfType<TvHorizontalRowState>();
+      final render = row?.context.findRenderObject();
+      if (render == null || !_page.hasClients) return;
+      final viewport = RenderAbstractViewport.of(render);
+      final target = (viewport.getOffsetToReveal(render, 0).offset - _barHeight - _rowTopGap).clamp(
+        0.0,
+        _page.position.maxScrollExtent,
       );
+      if (DevicePerformance.isReduced) {
+        _page.jumpTo(target);
+      } else {
+        unawaited(_page.animateTo(target, duration: const Duration(milliseconds: 150), curve: Curves.easeOutCubic));
+      }
     });
   }
 
@@ -828,7 +933,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
           title: t.discover.cast,
           itemCount: roles.length,
           cardWidth: 200,
-          cardHeight: 290,
+          cardHeight: tvCardHeight(context, TvPersonCard.photoSize),
           itemKey: (i) => '${roles[i].id}/${roles[i].tag}',
           onItemFocused: (_) => _revealContent(),
           cardBuilder: (context, i, node) {
@@ -862,7 +967,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
           title: t.discover.extras,
           itemCount: c.extras.length,
           cardWidth: 400,
-          cardHeight: 315,
+          cardHeight: tvCardHeight(context, TvTokens.size.episode.h),
           itemKey: (i) => c.extras[i].globalKey,
           onItemFocused: (_) => _revealContent(),
           cardBuilder: (context, i, node) => TvEpisode(
@@ -878,7 +983,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
           title: hub.title.isEmpty ? t.discover.moreLikeThis : hub.title,
           itemCount: hub.items.length,
           cardWidth: 216,
-          cardHeight: 414,
+          cardHeight: tvCardHeight(context, TvTokens.size.poster.h),
           itemKey: (i) => hub.items[i].globalKey,
           onItemFocused: (_) => _revealContent(),
           cardBuilder: (context, i, node) {
@@ -909,16 +1014,26 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   Widget _season(BuildContext context) {
     final c = _controller!, theme = TvTheme.of(context), px = TvTheme.of(context).px;
-    final key = _key, items = c.episodesFor(_key), episode = _hero;
-    final title = c.flattened ? 'Episodes' : c.seasons[_tab - 1].displayTitle;
+    final key = _key, episode = _hero;
+    final title = _singleSeason
+        ? tvShowSeasonTitle(c.seasons.single, c.show)
+        : c.flattened
+        ? 'Episodes'
+        : tvShowSeasonTitle(c.seasons[_tab - 1], c.show);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: px(200), top: px(32)),
+          padding: EdgeInsets.only(
+            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+              0.0,
+              double.infinity,
+            ),
+            top: px(32),
+          ),
           child: SizedBox(
             height: px(340),
-            width: px(900),
+            width: px(TvTokens.detail.textMaxW),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -934,16 +1049,16 @@ class _TvShowScreenState extends State<TvShowScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                SizedBox(height: px(12)),
+                SizedBox(height: px(TvTokens.detail.metadataGap)),
                 Text(
                   [
                     if (episode?.durationMs != null) formatDurationTextual(episode!.durationMs!),
-                    if (episode?.originallyAvailableAt != null) episode!.originallyAvailableAt!,
+                    if (episode?.originallyAvailableAt != null) TvStrings.date(episode!.originallyAvailableAt!),
                     if (episode != null && tvShowWatchedProgress(episode) != null) tvShowWatchedProgress(episode)!,
                   ].join(' · '),
                   style: theme.body,
                 ),
-                SizedBox(height: px(16)),
+                SizedBox(height: px(TvTokens.detail.summaryGap)),
                 if (episode != null) TvRatings(item: episode),
                 SizedBox(height: px(20)),
                 Text(episode?.summary ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
@@ -951,38 +1066,55 @@ class _TvShowScreenState extends State<TvShowScreen> {
             ),
           ),
         ),
-        TvHorizontalRow(
-          key: _episodes,
-          title: title,
-          counter: c.episodeTotal(key) == null ? null : TvStrings.episodes(c.episodeTotal(key)!),
-          itemCount: items.length,
-          cardWidth: 400,
-          cardHeight: 315,
-          itemKey: (i) => items[i].id,
-          onItemFocused: _focusedEpisode,
-          cardBuilder: (context, i, node) {
-            final item = items[i];
-            final menu = _menus.putIfAbsent(item.id, () => GlobalKey<MediaContextMenuState>());
-            return MediaContextMenu(
-              key: menu,
-              item: item,
-              onRefresh: (_) => unawaited(c.refresh()),
-              child: TvEpisode(
-                item: item,
-                client: c.client,
-                focusNode: node,
-                onSelect: () => unawaited(_play(item)),
-                onLongPress: () {
-                  final state = menu.currentState;
-                  if (state != null) state.showContextMenu(state.context);
-                },
-              ),
-            );
-          },
-        ),
+        _episodeRow(context, key, title),
+      ],
+    );
+  }
+
+  Widget _episodeRow(BuildContext context, String key, String title) {
+    final c = _controller!, items = _controller!.episodesFor(key);
+    final row = TvHorizontalRow(
+      key: _episodes,
+      title: title,
+      counter: c.episodeTotal(key) == null ? null : TvStrings.episodes(c.episodeTotal(key)!),
+      itemCount: items.length,
+      cardWidth: 400,
+      cardHeight: tvCardHeight(context, TvTokens.size.episode.h),
+      itemKey: (i) => items[i].id,
+      onItemFocused: _focusedEpisode,
+      cardBuilder: (context, i, node) {
+        final item = items[i];
+        final menu = _menus.putIfAbsent(item.id, () => GlobalKey<MediaContextMenuState>());
+        return MediaContextMenu(
+          key: menu,
+          item: item,
+          onRefresh: (_) => unawaited(c.refresh()),
+          child: TvEpisode(
+            item: item,
+            client: c.client,
+            focusNode: node,
+            onSelect: () => unawaited(_play(item)),
+            onLongPress: () {
+              final state = menu.currentState;
+              if (state != null) state.showContextMenu(state.context);
+            },
+          ),
+        );
+      },
+    );
+    final px = TvTheme.of(context).px;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isNotEmpty) row,
         if (c.pageErrors.containsKey(key))
           Padding(
-            padding: EdgeInsets.only(left: px(200)),
+            padding: EdgeInsets.only(
+              left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
             child: TvButton(
               label: 'Retry episodes',
               onSelect: () async {
@@ -991,7 +1123,6 @@ class _TvShowScreenState extends State<TvShowScreen> {
               },
             ),
           ),
-        SizedBox(height: px(54)),
       ],
     );
   }

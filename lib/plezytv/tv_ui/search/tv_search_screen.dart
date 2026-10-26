@@ -27,6 +27,7 @@ import '../../../services/settings_service.dart';
 import '../../../services/storage_service.dart';
 import '../../../utils/media_navigation_helper.dart';
 import '../../../utils/media_server_http_client.dart';
+import '../../../utils/formatters.dart';
 import '../../../utils/provider_extensions.dart';
 import '../../../utils/snackbar_helper.dart';
 import '../../../widgets/media_context_menu.dart';
@@ -842,15 +843,17 @@ class TvSearchScreenState extends State<TvSearchScreen>
   }
 
   String _caption(MediaItem item, {required bool multiServer}) {
-    final base = item.kind == MediaKind.show && item.childCount != null
+    final base = item.kind == MediaKind.episode
+        ? [
+            ?formatSeasonEpisodeLabel(item.parentIndex, item.index),
+            if (item.title?.isNotEmpty ?? false) item.title!,
+          ].join(' · ')
+        : item.kind == MediaKind.show && item.childCount != null
         ? TvStrings.seasons(item.childCount!)
         : item.year?.toString() ?? '';
     final server = multiServer ? item.serverName : null;
     return [if (base.isNotEmpty) base, ?server].join(' · ');
   }
-
-  String? _episodeCaption(MediaItem item, {required bool multiServer}) =>
-      multiServer && item.serverName != null ? item.serverName : null;
 
   static String? _credit(MediaPerson person) => switch (person.credit) {
     PersonCredit.actor => t.explore.creditRole.actor,
@@ -938,7 +941,8 @@ class TvSearchScreenState extends State<TvSearchScreen>
                     ? TvEpisode(
                         item: item,
                         client: client,
-                        caption: _episodeCaption(item, multiServer: multiServer),
+                        showSeriesTitle: true,
+                        caption: _caption(item, multiServer: multiServer),
                         focusNode: node,
                         onSelect: () => unawaited(_open(item)),
                         onLongPress: menu,
@@ -1020,7 +1024,8 @@ class TvSearchScreenState extends State<TvSearchScreen>
                 ? TvEpisode(
                     item: item,
                     client: client,
-                    caption: _episodeCaption(item, multiServer: multiServer),
+                    showSeriesTitle: true,
+                    caption: _caption(item, multiServer: multiServer),
                     externalFocus: isFocused,
                   )
                 : TvPoster(
@@ -1178,11 +1183,16 @@ class TvSearchScreenState extends State<TvSearchScreen>
       node: _screen,
       onKeyEvent: _screenKey,
       child: Padding(
-        padding: EdgeInsets.only(top: px(80)),
+        padding: EdgeInsets.only(top: px(TvTokens.space.safeY)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: px(size.panelX)),
+            SizedBox(
+              width: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
             SizedBox(
               width: px(size.panelW),
               child: Column(
@@ -1206,7 +1216,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
             SizedBox(width: px(size.resultsX - size.panelX - size.panelW)),
             Expanded(
               child: Padding(
-                padding: EdgeInsets.only(right: px(80)),
+                padding: EdgeInsets.only(right: px(TvTokens.space.safeX)),
                 // The handler sits on the scope node itself: focus falls back to
                 // it when the focused card or button unmounts (loading, retry).
                 child: FocusScope(node: _content, onKeyEvent: _contentKey, child: _right(multiServer)),
