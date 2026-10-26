@@ -20,6 +20,7 @@ import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_person_card.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_tabs.dart';
+import 'package:plezy/plezytv/tv_ui/movie/tv_movie_screen.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_controller.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_history.dart';
 import 'package:plezy/plezytv/tv_ui/search/tv_search_keyboard.dart';
@@ -33,6 +34,8 @@ import 'package:plezy/providers/hidden_libraries_provider.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/providers/offline_mode_provider.dart';
 import 'package:plezy/providers/watch_state_store.dart';
+import 'package:plezy/screens/actor_media_screen.dart';
+import 'package:plezy/screens/media_detail_screen.dart';
 import 'package:plezy/services/data_aggregation_service.dart';
 import 'package:plezy/services/offline_watch_sync_service.dart';
 import 'package:plezy/screens/video_player_screen.dart';
@@ -148,14 +151,15 @@ class _OfflineWatch extends ChangeNotifier implements OfflineWatchSyncService {
 /// Players and detail routes are recorded and closed before they build.
 class _Routes extends NavigatorObserver {
   final players = <VideoPlayerRoute>[];
-  int details = 0;
+  final pages = <PageRoute<dynamic>>[];
+  int get details => pages.length;
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is VideoPlayerRoute) {
       players.add(route);
       scheduleMicrotask(() => navigator!.removeRoute(route));
     } else if (previousRoute != null && route is PageRoute) {
-      details++;
+      pages.add(route);
       scheduleMicrotask(() => navigator!.removeRoute(route, true));
     }
   }
@@ -735,6 +739,28 @@ void main() {
       expect(focusedId(tester), 'movie3');
     });
 
+    testWidgets('F1: a re-search under a covering route that removes the focused item — first card after pop', (
+      tester,
+    ) async {
+      await pump(tester, hidden: hidden);
+      await results(tester, 'дюн');
+      await focusMovie(tester, 2);
+      unawaited(
+        Navigator.of(
+          screen.currentContext!,
+        ).push(MaterialPageRoute<void>(builder: (_) => const Focus(autofocus: true, child: SizedBox()))),
+      );
+      await tester.pumpAndSettle();
+      hidden.hide('kids');
+      await tester.pumpAndSettle();
+      expect(find.byType(TvPoster, skipOffstage: false), findsNWidgets(4));
+      Navigator.of(screen.currentContext!).pop();
+      await tester.pumpAndSettle();
+      expect(focusedId(tester), 'movie0');
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(tester.state<TvSearchKeyboardState>(find.byType(TvSearchKeyboard)).hasFocus, isTrue);
+    });
+
     testWidgets('F1: a re-search that leaves nothing focuses the keyboard on return', (tester) async {
       await pump(tester, hidden: hidden);
       all = [all[2]];
@@ -894,16 +920,48 @@ void main() {
     final observer = _Routes();
     search.respond = (_) => answer(items: movies(1), people: [person('1', PersonCredit.actor)]);
     await pump(tester, client: _ActionClient(), observers: [observer]);
+    Widget page(int i) => switch (observer.pages[i]) {
+      final MaterialPageRoute<dynamic> route => route.builder(screen.currentContext!),
+      final route => route.buildPage(screen.currentContext!, kAlwaysCompleteAnimation, kAlwaysDismissedAnimation),
+    };
     await results(tester, 'дюн');
     await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
     expect(focusedId(tester), 'movie0');
     await press(tester, LogicalKeyboardKey.enter);
     expect(observer.details, 1);
+    final details = page(0);
+    expect(details, anyOf(isA<TvMovieScreen>(), isA<MediaDetailScreen>()));
+    expect((details as dynamic).metadata.id, 'movie0');
     expect(history.values['a'], ['дюн']);
+
+    // Row person card, after another query so its own history entry shows.
+    await results(tester, 'тьма');
     await press(tester, LogicalKeyboardKey.arrowDown);
     expect(focusedId(tester), 'Person 1');
     await press(tester, LogicalKeyboardKey.enter);
     expect(observer.details, 2);
+    final row = page(1);
+    expect(row, isA<ActorMediaScreen>());
+    expect((row as ActorMediaScreen).personId, '1');
+    expect(row.actorName, 'Person 1');
+    expect(history.values['a'], ['тьма', 'дюн']);
+
+    // People grid card.
+    await results(tester, 'фильм');
+    await press(tester, LogicalKeyboardKey.arrowUp, times: 2);
+    // Tabs: All, Movies, People.
+    await press(tester, LogicalKeyboardKey.arrowRight, times: 2);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(controller().selectedTab, TvSearchTab.people);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focusedId(tester), 'Person 1');
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(observer.details, 3);
+    final grid = page(2);
+    expect(grid, isA<ActorMediaScreen>());
+    expect((grid as ActorMediaScreen).personId, '1');
+    expect(history.values['a'], ['фильм', 'тьма', 'дюн']);
   });
 
   testWidgets('R6: with several servers, captions name the server', (tester) async {
