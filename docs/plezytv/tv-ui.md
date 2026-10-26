@@ -204,11 +204,15 @@ Search.
 `TvWatchlistAvailability` re-checks every item when `expectedServerIds` changes
 (the old result shows until the new one replaces it) and incomplete items when a
 server comes online; checks running at that moment are queued again once after
-they finish (incomplete ones only, for a server coming online). Posters listen to
+they finish (incomplete ones only, for a server coming online); this includes
+card checks, and a card check that supersedes a queued one inherits its
+re-check and `refreshIncomplete` requirements. Posters listen to
 their own item (`watch`); the «Есть на сервере» tab rebuilds only when the set of
 found items changes (`foundRevision`). Membership notifications drop only items
 whose `isOnWatchlist` flipped from true to false, since the membership snapshot
-may not know items added on another device.
+may not know items added on another device; such a drop is remembered like a card
+removal (original place for «Вернуть в список», not resurrected by a lagging
+re-read). A first snapshot that misses a listed item triggers one re-read.
 
 Two upstream edits support it: `CatalogLibraryMatcher.match` takes
 `refreshIncomplete` (re-queries servers that failed, were cancelled or not

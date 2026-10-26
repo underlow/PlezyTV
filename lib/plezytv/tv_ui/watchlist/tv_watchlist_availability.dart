@@ -78,6 +78,9 @@ class TvWatchlistAvailability extends ChangeNotifier {
   final Map<String, int> _inFlight = {};
   final Map<String, int> _generation = {};
 
+  /// Running card checks: key → the generation they started with.
+  final Map<String, int> _cardChecks = {};
+
   /// Checks running when the expected servers changed: queued again after
   /// they finish, whatever they answer (R8).
   final Set<String> _recheckAlways = {};
@@ -183,7 +186,11 @@ class TvWatchlistAvailability extends ChangeNotifier {
     for (final key in _inFlight.keys) {
       _bump(key);
     }
+    for (final key in _cardChecks.keys) {
+      _bump(key);
+    }
     _inFlight.clear();
+    _cardChecks.clear();
     _queue.clear();
     _recheckAlways.clear();
     _recheckIfIncomplete.clear();
@@ -206,9 +213,11 @@ class TvWatchlistAvailability extends ChangeNotifier {
     final known = _known[key];
     if (!retry && enriched == null && known != null) return known.status;
     final generation = _bump(key);
-    _queue.remove(key);
+    _cardChecks[key] = generation;
+    // A replaced refresh job's requirement carries over (R8).
+    final refresh = retry || (_queue.remove(key)?.refresh ?? false);
     final forms = [item, ?enriched];
-    final waves = await Future.wait(forms.map((form) => _match(form, retry)));
+    final waves = await Future.wait(forms.map((form) => _match(form, refresh)));
     var copies = <MediaItem>[];
     var complete = true;
     for (final wave in waves) {
@@ -220,8 +229,11 @@ class TvWatchlistAvailability extends ChangeNotifier {
       complete = complete && _isComplete(wave);
     }
     final status = _statusFrom(copies, complete);
+    if (_cardChecks[key] == generation) _cardChecks.remove(key);
     if (!_disposed && _generation[key] == generation) {
       _record(key, status);
+      _recheckIfNeeded(key, status);
+      _pump();
       notifyListeners();
     }
     return status;
@@ -259,10 +271,10 @@ class TvWatchlistAvailability extends ChangeNotifier {
     if (expectedChanged) {
       // Every item: copies of a removed server disappear when the new
       // result replaces the old one, which stays visible meanwhile.
-      _recheckAlways.addAll(_inFlight.keys);
+      _recheckAlways.addAll([..._inFlight.keys, ..._cardChecks.keys]);
       _enqueueWhere((_) => true, refresh: true);
     } else if (cameOnline) {
-      _recheckIfIncomplete.addAll(_inFlight.keys);
+      _recheckIfIncomplete.addAll([..._inFlight.keys, ..._cardChecks.keys]);
       _enqueueWhere((known) => known != null && _incomplete(known.status), refresh: true);
     }
   }
@@ -270,7 +282,9 @@ class TvWatchlistAvailability extends ChangeNotifier {
   void _enqueueWhere(bool Function(_Known?) test, {required bool refresh}) {
     final wasChecking = checking;
     for (final MapEntry(:key, :value) in _items.entries) {
-      if (_queue.containsKey(key) || _inFlight.containsKey(key) || !test(_known[key])) continue;
+      if (_queue.containsKey(key) || _inFlight.containsKey(key) || _cardChecks.containsKey(key) || !test(_known[key])) {
+        continue;
+      }
       _queue[key] = _Job(key, value, refresh);
     }
     _pump();
@@ -294,21 +308,27 @@ class TvWatchlistAvailability extends ChangeNotifier {
     if (_disposed) return;
     if (_inFlight[key] == generation) _inFlight.remove(key);
     if (_generation[key] != generation) {
-      // Superseded by a card check or a reset; free the slot.
+      // Superseded by a card check or a reset; free the slot. Re-check
+      // flags stay for the newer check, which consumes them (R8).
       _pump();
       notifyListeners();
       return;
     }
     final status = wave == null ? TvAvailability.unchecked : _statusFrom(wave.items, _isComplete(wave));
     _record(key, status);
+    _recheckIfNeeded(key, status);
+    _pump();
+    notifyListeners();
+  }
+
+  /// Consumes [key]'s re-check flags for a finished current check.
+  void _recheckIfNeeded(String key, TvAvailability status) {
     final always = _recheckAlways.remove(key);
     final ifIncomplete = _recheckIfIncomplete.remove(key);
     final item = _items[key];
     if (item != null && !_queue.containsKey(key) && (always || (ifIncomplete && _incomplete(status)))) {
       _queue[key] = _Job(key, item, true);
     }
-    _pump();
-    notifyListeners();
   }
 
   Future<LibraryLookupResult?> _match(CatalogItem item, bool refresh) async {

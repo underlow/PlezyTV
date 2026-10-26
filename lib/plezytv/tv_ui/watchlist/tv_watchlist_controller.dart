@@ -278,20 +278,34 @@ class TvWatchlistController extends ChangeNotifier {
     final now = _membership;
     // Membership data is loaded once per session, so `false` for an item
     // added on another device may be stale; only a flip is a removal.
-    final gone = _all.where((item) {
+    final next = <CatalogItem>[];
+    var removedAny = false;
+    for (final (index, item) in _all.indexed) {
       final key = TvWatchlistAvailability.keyOf(item);
-      return previous[key] == true && now[key] == false;
-    }).toList();
-    if (gone.isNotEmpty) {
-      final goneKeys = {for (final item in gone) TvWatchlistAvailability.keyOf(item)};
-      _setAll(
-        _all.where((item) => !goneKeys.contains(TvWatchlistAvailability.keyOf(item))).toList(),
-        TvWatchlistChange.keepFocus,
-      );
+      if (previous[key] == true && now[key] == false) {
+        // Kept for «Вернуть в список» and against a lagging re-read.
+        _removed[key] = (index: index, item: item);
+        removedAny = true;
+      } else {
+        next.add(item);
+      }
     }
-    // A first snapshot that agrees with the list is not a change; any other
+    // A removed item that reads as listed again (put back by the card)
+    // returns to its original place.
+    final back = _removed.entries.where((e) => source.isOnWatchlist(e.value.item.kind, e.value.item.ids) == true).toList()
+      ..sort((a, b) => a.value.index.compareTo(b.value.index));
+    for (final entry in back) {
+      _removed.remove(entry.key);
+      next.insert(entry.value.index.clamp(0, next.length), entry.value.item);
+    }
+    if (removedAny || back.isNotEmpty) {
+      _setAll(next, TvWatchlistChange.keepFocus);
+    }
+    // A first snapshot that agrees with the list is not a change; one that
+    // misses a listed item is newer than the list, so re-read it. Any later
     // notification may be an addition the snapshot cannot enumerate.
-    if (wasLoaded || gone.isNotEmpty) _scheduleRefetch();
+    final disagrees = !wasLoaded && _all.any((item) => now[TvWatchlistAvailability.keyOf(item)] == false);
+    if (wasLoaded || removedAny || disagrees) _scheduleRefetch();
   }
 
   void _recordMembership() {

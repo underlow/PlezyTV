@@ -431,6 +431,62 @@ void main() {
       });
     });
 
+    test('a first membership load missing a listed item re-reads once without removing (N1)', () {
+      fakeAsync((async) {
+        final src = _FakeSource(s, three());
+        final c = make([src]);
+        c.load();
+        async.flushMicrotasks();
+        // T2 removed elsewhere after the list was read.
+        src.items = [src.items[0], src.items[2]];
+        src.members = {for (final i in src.items) i.entryIdentityKey};
+        src.changes.notify();
+        expect(_titles(c), ['T1', 'T2', 'T3']);
+        async.elapse(const Duration(seconds: 3));
+        expect(src.listFetches, 2);
+        expect(_titles(c), ['T1', 'T3']);
+      });
+    });
+
+    test('card removal with membership loaded: restore keeps the original place (N2)', () {
+      fakeAsync((async) {
+        final src = _FakeSource(s, [...three(), _item(s, 4)]);
+        final c = make([src]);
+        c.load();
+        async.flushMicrotasks();
+        src.loadSnapshot();
+        final t3 = src.items[2];
+        // The card's mutation flips the snapshot before it calls onRemoved.
+        src.members!.remove(t3.entryIdentityKey);
+        src.changes.notify();
+        c.itemRemoved(t3);
+        expect(_titles(c), ['T1', 'T2', 'T4']);
+        src.members!.add(t3.entryIdentityKey);
+        src.changes.notify();
+        c.itemRestored(t3);
+        expect(_titles(c), ['T1', 'T2', 'T3', 'T4']);
+        async.elapse(const Duration(seconds: 3));
+        expect(_titles(c), ['T1', 'T2', 'T3', 'T4']);
+      });
+    });
+
+    test('a lagging re-read does not resurrect an item removed via the snapshot flip (N2)', () {
+      fakeAsync((async) {
+        final src = _FakeSource(s, three());
+        final c = make([src]);
+        c.load();
+        async.flushMicrotasks();
+        src.loadSnapshot();
+        src.members!.remove(src.items[0].entryIdentityKey);
+        src.changes.notify();
+        c.itemRemoved(src.items[0]);
+        // The list read still includes T1.
+        async.elapse(const Duration(seconds: 3));
+        expect(src.listFetches, 2);
+        expect(_titles(c), ['T2', 'T3']);
+      });
+    });
+
     test('a background re-read that still lists a locally removed item does not resurrect it', () async {
       final src = _FakeSource(s, three());
       final c = make([src]);
