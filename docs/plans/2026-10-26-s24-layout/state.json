@@ -1,0 +1,9 @@
+{
+  "project": "docs/projects/plezy-tv/project.md",
+  "stage": "S24",
+  "phase": "planning",
+  "base_commit": "371374eb7eed82e3acf10c46f0c0ec6bb81ad4d9",
+  "profile": "medium",
+  "codex": ["develop"],
+  "development_agent": {"platform": "codex", "model": "gpt-6.1-sol", "effort": "low"}
+}
