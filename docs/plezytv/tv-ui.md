@@ -588,3 +588,15 @@ Movie, show and catalog details share `TvActionRow`: a text primary action,
 the icon without consuming layout space. The movie compact header uses opaque
 `bg.base`. Season episode dates use `TvStrings.date` in the application locale
 with an abbreviated month (`16 Sep 2026`).
+
+### Shell and Home layout (S24 T4)
+
+Menu rows use 64 design pixels when they fit, shrinking evenly to a minimum
+of 48, including the divider in the available height. Beyond that, Settings
+stays below the scroll viewport; the selected section is revealed on collapse
+and focused items scroll into view on expansion. The last item retains Down.
+
+Home and search episode cards show the series title above `S1 E3 · episode
+title`; remaining time is represented by the progress bar. Home applies this
+also to episodes in poster hubs. Season, player queue and post-play captions
+retain their existing format. Home uses the 340/200 hero and the 48 section gap.

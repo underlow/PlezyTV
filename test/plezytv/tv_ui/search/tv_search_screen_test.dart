@@ -697,6 +697,7 @@ void main() {
         index: 1,
         durationMs: 3600000,
         grandparentId: 'show',
+        grandparentTitle: 'Example series',
       );
       search.respond = (_) => answer(items: [episode, ...movies(1)]);
       final observer = _Routes();
@@ -706,6 +707,9 @@ void main() {
       await press(tester, LogicalKeyboardKey.arrowRight, times: 6);
       await press(tester, LogicalKeyboardKey.arrowDown);
       expect(focusedId(tester), 'ep');
+      final card = find.byType(TvEpisode);
+      expect(find.descendant(of: card, matching: find.text('Example series')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('S1 E1 · Ep')), findsOneWidget);
       await press(tester, LogicalKeyboardKey.enter);
       expect(observer.players.length, details ? 0 : 1);
       expect(observer.details, details ? 1 : 0);

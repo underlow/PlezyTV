@@ -417,6 +417,13 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final wide = row.kind == TvHomeRowKind.continueWatching;
     final music = row.layout == TvHomeRowLayout.music;
     final key = _rowKey(row);
+    final theme = TvTheme.of(context);
+    // Text paragraphs round line heights to whole layout pixels. Reserve
+    // those same rounded heights at fractional design scales.
+    final captions =
+        (theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
+            theme.px(TvTokens.type.caption.lineHeight).ceilToDouble()) /
+        theme.scale;
     return TvHorizontalRow(
       key: _rows.putIfAbsent(key, () => GlobalKey<TvHorizontalRowState>()),
       title: row.title,
@@ -431,8 +438,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
               ? TvTokens.size.poster.w
               : TvTokens.size.poster.h) +
           20 +
-          TvTokens.type.body.lineHeight +
-          TvTokens.type.caption.lineHeight.toDouble(),
+          captions,
       onItemFocused: (index) => _focused(row, index),
       cardBuilder: (context, index, node) {
         if (index == row.items.length) {
