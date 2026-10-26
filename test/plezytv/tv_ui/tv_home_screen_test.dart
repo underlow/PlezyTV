@@ -10,6 +10,8 @@ import 'package:plezy/providers/offline_mode_provider.dart';
 import 'package:plezy/profiles/active_profile_provider.dart';
 import 'package:plezy/services/offline_watch_sync_service.dart';
 import 'package:plezy/utils/video_player_navigation.dart';
+import 'package:plezy/utils/platform_detector.dart';
+import 'package:plezy/utils/music_navigation.dart';
 import 'package:plezy/screens/video_player_screen.dart';
 import 'package:plezy/widgets/media_context_menu.dart';
 import 'package:plezy/i18n/strings.g.dart';
@@ -37,9 +39,11 @@ import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
 import 'package:plezy/plezytv/tv_ui/home/tv_home_screen.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tint_service.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tinted_background.dart';
 import 'package:plezy/services/settings_service.dart';
+import 'package:plezy/services/music/music_playback_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/screens/hub_detail_screen.dart';
 import 'package:plezy/widgets/optimized_media_image.dart';
@@ -52,6 +56,9 @@ class _ActionClient implements MediaServerClient {
   final removed = <MediaItem>[];
   final lookups = <String>[];
   MediaItem? nextEpisode;
+  List<MediaItem> albumTracks = [];
+  @override
+  Future<List<MediaItem>> fetchAlbumTracks(String id) async => albumTracks;
   @override
   ServerId get serverId => ServerId('server');
   @override
@@ -76,6 +83,27 @@ class _ActionClient implements MediaServerClient {
   Future<void> removeFromContinueWatching(MediaItem item) async => removed.add(item);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Music extends ChangeNotifier implements MusicPlaybackService {
+  MediaItem? track;
+  final queues = <List<MediaItem>>[];
+  @override
+  MediaItem? get currentTrack => track;
+  @override
+  int beginPlayIntent() => 1;
+  @override
+  bool isPlayIntentCurrent(int intent) => true;
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName == #playFromList) {
+      final tracks = invocation.namedArguments[#tracks] as List<MediaItem>;
+      queues.add(tracks);
+      track = invocation.namedArguments[#startTrack] as MediaItem? ?? tracks.first;
+      return Future<void>.value();
+    }
+    return super.noSuchMethod(invocation);
+  }
 }
 
 class _NoDownloads extends ChangeNotifier implements DownloadProvider {
@@ -110,12 +138,14 @@ class _Launches extends NavigatorObserver {
 // Return the real details route's changed result before mounting its upstream
 // dependency tree. This exercises Home's actual navigateToMediaItem callback.
 class _ChangedDetails extends NavigatorObserver {
+  final names = <String?>[];
   int opened = 0;
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute == null) return;
+    if (previousRoute == null || route is! PageRoute) return;
     opened++;
-    scheduleMicrotask(() => navigator!.removeRoute(route, true));
+    names.add(route.settings.name);
+    scheduleMicrotask(() => navigator!.removeRoute(route, route.settings.name == kNowPlayingRouteName ? null : true));
   }
 }
 
@@ -222,6 +252,7 @@ void main() {
     List<NavigatorObserver> observers = const [],
     _ActionClient? actionClient,
     ActiveProfileProvider? profile,
+    MusicPlaybackService? music,
   }) async {
     final servers = actionClient == null ? null : testMultiServer(clients: [actionClient]);
     final downloads = _NoDownloads();
@@ -236,6 +267,7 @@ void main() {
         builder: (context, child) => Scaffold(body: child),
         providers: [
           ChangeNotifierProvider<DiscoverProvider>.value(value: provider),
+          if (music != null) ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
           if (servers != null) ChangeNotifierProvider<MultiServerProvider>.value(value: servers.provider),
           ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
           ChangeNotifierProvider<OfflineWatchSyncService>.value(value: offlineWatch),
@@ -273,6 +305,97 @@ void main() {
   void content() {
     provider.onDeck = items('episode');
     provider.hubs = [hub('movies'), hub('shows'), hub('more')];
+  }
+
+  for (final keyCode in [LogicalKeyboardKey.enter, LogicalKeyboardKey.mediaPlayPause]) {
+    testWidgets('S17 A7/A16: track $keyCode plays album queue and retains focus', (tester) async {
+      final track = testMediaItem(id: 'track', kind: MediaKind.track, parentId: 'album', serverId: 'server');
+      final client = _ActionClient()..albumTracks = [testMediaItem(id: 'other', kind: MediaKind.track), track];
+      final music = _Music();
+      final detection = await TvDetectionService.getInstance();
+      detection.setForceTv(true);
+      addTearDown(() => detection.setForceTv(false));
+      final observer = _ChangedDetails();
+      provider.hubs = [
+        MediaHub(id: 'music', title: 'Music', type: 'track', items: [track]),
+      ];
+      final stack = await ProfileStack.create(withStorage: false);
+      addTearDown(stack.dispose);
+      await pump(tester, actionClient: client, music: music, profile: stack.active, observers: [observer]);
+      await tester.pumpAndSettle();
+      await key(tester, keyCode);
+      expect(music.queues.single, client.albumTracks);
+      expect(observer.names, [kNowPlayingRouteName]);
+      expect(music.currentTrack, same(track));
+      expect(row(tester, 0).focusInside.value, isTrue);
+      await key(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(music.queues.length, 1);
+      await key(tester, LogicalKeyboardKey.contextMenu);
+      expect(find.text(t.music.addToQueue), findsOneWidget);
+    });
+  }
+
+  testWidgets('S17 A15/A22: current music suppresses movie Play, preserves OK', (tester) async {
+    provider.hubs = [hub('movies')];
+    final music = _Music()..track = testMediaItem(id: 'track', kind: MediaKind.track);
+    final observer = _ChangedDetails();
+    await pump(tester, music: music, observers: [observer]);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.mediaPlayPause);
+    expect(observer.opened, 0);
+    expect(row(tester, 0).focusInside.value, isTrue);
+    await key(tester, LogicalKeyboardKey.enter);
+    expect(observer.opened, 1);
+  });
+
+  testWidgets('S17 A1/A3/A10: music geometry, focus artwork and square All route', (tester) async {
+    final tracks = [
+      for (var i = 0; i < 2; i++)
+        testMediaItem(id: 'album$i', kind: MediaKind.album, title: 'Album $i', parentTitle: 'Artist'),
+    ];
+    final original = MediaHub(id: 'music', title: 'Music', type: 'album', items: tracks, more: true);
+    provider.hubs = [original];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    expect(find.byType(TvMusicCard), findsNWidgets(2));
+    final rail = tester.widget<TvHorizontalRow>(find.byType(TvHorizontalRow));
+    expect(rail.cardWidth, 216);
+    expect(rail.cardHeight, 216 + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight);
+    expect(hero(tester).item, tracks.first);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(hero(tester).item, tracks.last);
+    expect(tester.widget<TvTintedBackground>(find.byType(TvTintedBackground)).source.item, tracks.last);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(tester.widget<TvAllCard>(find.byType(TvAllCard)).square, isTrue);
+    await key(tester, LogicalKeyboardKey.enter);
+    expect(tester.widget<HubDetailScreen>(find.byType(HubDetailScreen)).hub, same(original));
+    Navigator.of(tester.element(find.byType(HubDetailScreen))).pop();
+    await tester.pumpAndSettle();
+    expect(row(tester, 0).focusedIndex, 2);
+    expect(row(tester, 0).focusInside.value, isTrue);
+  });
+
+  for (final kind in [MediaKind.album, MediaKind.artist]) {
+    testWidgets('S17 A8: OK opens $kind and restores card focus', (tester) async {
+      provider.hubs = [
+        MediaHub(
+          id: 'music',
+          title: 'Music',
+          type: 'music',
+          items: [testMediaItem(id: 'music', kind: kind)],
+        ),
+      ];
+      final observer = _ChangedDetails();
+      await pump(tester, observers: [observer]);
+      await tester.pumpAndSettle();
+      await key(tester, LogicalKeyboardKey.enter);
+      expect(observer.opened, 1);
+      expect(row(tester, 0).focusInside.value, isTrue);
+      expect(row(tester, 0).focusedIndex, 0);
+      await key(tester, LogicalKeyboardKey.mediaPlayPause);
+      expect(observer.opened, 2);
+      expect(row(tester, 0).focusInside.value, isTrue);
+    });
   }
 
   testWidgets('A1/A2/A3: first card, hero, vertical row memory and compact geometry', (tester) async {
