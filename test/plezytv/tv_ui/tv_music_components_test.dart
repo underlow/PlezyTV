@@ -77,6 +77,29 @@ void main() {
     }
   });
 
+  testWidgets('R2/R6 track artist falls back to grandparent without originalTitle', (tester) async {
+    final item = testMediaItem(
+      kind: MediaKind.track,
+      title: 'Track',
+      originalTitle: null,
+      grandparentTitle: 'Grandparent',
+      parentTitle: 'Album',
+      durationMs: 180000,
+    );
+    await pumpTvWidget(tester, Center(child: TvMusicCard(item: item)));
+    expect(find.text('Grandparent · Album'), findsOneWidget);
+    await pumpTvWidget(tester, TvHero(item: item));
+    expect(find.text('Grandparent · Album · ${formatDurationTextual(180000)}'), findsOneWidget);
+  });
+
+  testWidgets('A20 album without genres retains artist and year', (tester) async {
+    final item = testMediaItem(kind: MediaKind.album, title: 'Album', parentTitle: 'Parent', year: 2024, genres: null);
+    await pumpTvWidget(tester, Center(child: TvMusicCard(item: item)));
+    expect(find.text('Parent'), findsOneWidget);
+    await pumpTvWidget(tester, TvHero(item: item));
+    expect(find.text('Parent · 2024'), findsOneWidget);
+  });
+
   testWidgets('C2 artist external ring, primary artwork and empty placeholder', (tester) async {
     for (final path in ['/own', null]) {
       await pumpTvWidget(
