@@ -320,6 +320,23 @@ when merging; private detail-screen handlers are not shared with this screen.
 
 ## Movie screen (S8)
 
+Online Plex movies show a lazy **Reviews** rail after cast and before extras and
+related titles. `TvMovieController.reviews` owns the immutable reviews for one
+opening; `tv_movie_reviews.dart` requests `includeReviews=1` after metadata,
+independently of other rows. Errors and empty results stay silent. Refresh keeps
+reviews and does not repeat the request; disposal aborts it. Jellyfin and offline
+movies have no request or rail. Reviews without text or both author fields are
+filtered by the loader.
+
+`TvMovieReviewCard` shows freshness, publication, critic and an ellipsized excerpt.
+OK opens the full review in `TvRightPanel`, with a single-line ellipsized title;
+Up/Down scroll by 102 design pixels, Left/Right stay put, and Back restores the
+same card and page offset even if other rows finished loading behind the panel.
+A late rail insertion above the focused row adds its measured height to the page
+offset, preserving the card's screen position. Insertion while focus
+is on the actions leaves page offset and focus unchanged.
+
+
 `TvUi.showDetailRoute` returns a `TvMovieScreen` route for online `MediaKind.movie`
 items under the same conditions as shows; `media_navigation_helper.dart` is
 unchanged and `playDirectly` still bypasses details. The route pops `true` when
