@@ -236,20 +236,13 @@ class _BackgroundLook extends StatelessWidget {
                 child: ShaderMask(
                   blendMode: BlendMode.dstIn,
                   shaderCallback: (rect) => const LinearGradient(
-                    stops: [0, .55, 1],
+                    // The right-aligned image starts at 1920 - 1300;
+                    // reach full visibility at R17's screen x=840.
+                    stops: [0, (840 - (1920 - 1300)) / 1300, 1],
                     colors: [Colors.transparent, Colors.white, Colors.white],
                   ).createShader(rect),
                   child: RawImage(image: backdrop, fit: BoxFit.cover),
                 ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              bottom: 0,
-              left: 0,
-              width: theme.px(1100),
-              child: DecoratedBox(
-                decoration: BoxDecoration(gradient: LinearGradient(colors: [base, base.withValues(alpha: 0)])),
               ),
             ),
           ],
