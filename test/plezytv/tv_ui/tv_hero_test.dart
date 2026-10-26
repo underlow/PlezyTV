@@ -60,6 +60,25 @@ class _Sources extends ChangeNotifier implements CatalogSourcesProvider {
 }
 
 void main() {
+  testWidgets('R4a compact hero contains only title and one metadata line inside 200', (tester) async {
+    await pumpTvWidget(
+      tester,
+      Align(
+        alignment: Alignment.topLeft,
+        child: TvHero(
+          compact: true,
+          item: testMediaItem(title: 'Title', year: 2026, summary: 'Description', rating: 9),
+        ),
+      ),
+    );
+    expect(find.text('Description'), findsNothing);
+    expect(find.byType(TvRatings), findsNothing);
+    expect(tester.widget<ClearLogoImage>(find.byType(ClearLogoImage)).height, 80);
+    final meta = find.textContaining('2026');
+    expect(tester.widget<Text>(meta).maxLines, 1);
+    expect(tester.getBottomLeft(meta).dy, lessThanOrEqualTo(200));
+  });
+
   testWidgets('full hero ratings debounce, ignore stale answers, cache and fail silently', (tester) async {
     final client = _RatingsClient();
     final selected = ValueNotifier(testMediaItem(id: 'a', title: 'A', rating: 9.4));
@@ -386,7 +405,7 @@ void main() {
       expect(compact.width, lessThanOrEqualTo(normal.width));
       expect(compact.height, lessThanOrEqualTo(normal.height));
     }
-    expect(compactImageSize, const Size(392, 120));
+    expect(compactImageSize, const Size(392, 80));
     expect(compactImageSize.width, lessThan(normalImageSize.width));
     expect(compactImageSize.height, lessThanOrEqualTo(normalImageSize.height));
     expect(tester.getSize(find.byKey(const ValueKey('hero-title-slot'))).height, 128);
@@ -395,7 +414,7 @@ void main() {
       tester.getRect(find.byKey(const ValueKey('hero-title-slot'))).bottom,
     );
     expect(tester.getSize(find.byType(TvHero)).height, 200);
-    expect(tester.widget<Text>(find.text('Summary')).maxLines, 2);
+    expect(find.text('Summary'), findsNothing);
     expect(tester.widget<ClearLogoImage>(find.byType(ClearLogoImage)).height, lessThan(200));
     expect(tester.hasRunningAnimations, isFalse);
   });

@@ -151,8 +151,11 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _focusInitial());
   }
 
+  final _page = ScrollController();
+
   @override
   void dispose() {
+    _page.dispose();
     _openNode.dispose();
     _listNode.dispose();
     _trailerNode.dispose();
@@ -286,7 +289,9 @@ class _TvCatalogItemScreenState extends State<TvCatalogItemScreen> {
         onKeyEvent: (_, event) => handleBackKeyAction(event, () => Navigator.of(context).maybePop()),
         child: TvTintedBackground(
           source: TvArtworkSource(item: _item.toMediaItem()),
+          scrollController: _page,
           child: SingleChildScrollView(
+            controller: _page,
             child: Padding(
               padding: EdgeInsets.only(
                 left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(

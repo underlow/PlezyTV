@@ -1,3 +1,4 @@
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'dart:async';
 import 'package:plezy/plezytv/tv_ui/tv_tinted_background.dart';
 import 'package:plezy/utils/deletion_notifier.dart';
@@ -80,6 +81,38 @@ String focusedEpisode(WidgetTester tester) =>
     tester.widgetList<TvEpisode>(find.byType(TvEpisode)).firstWhere((e) => e.focusNode!.hasFocus).item.id;
 
 void main() {
+  testWidgets('R9a R9b R2a show compact header and bounded metadata, exact row spacing', (tester) async {
+    final client = fixture();
+    client.extras = [media('Trailer', MediaKind.movie)];
+    client.show = client.show.copyWith(
+      year: 2026,
+      genres: ['One', 'Two', 'Three', 'Four'],
+      roles: [const MediaRole(id: 'actor', tag: 'Actor', role: 'Role')],
+    );
+    await mount(tester, client);
+    final metadata = find.textContaining('One · Two · Three');
+    expect(metadata, findsOneWidget);
+    expect(tester.widget<Text>(metadata).maxLines, 1);
+    expect(tester.widget<Text>(metadata).overflow, TextOverflow.ellipsis);
+    expect(find.textContaining('Four'), findsNothing);
+    final rows = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList();
+    expect(rows.first.cardHeight, 398);
+    expect(rows[1].cardHeight, 274);
+    final firstCard = find.byType(TvPoster).first;
+    final caption = find.descendant(of: firstCard, matching: find.byType(Text)).last;
+    expect(tester.getTopLeft(find.text('Cast')).dy - tester.getBottomLeft(caption).dy, closeTo(48, .01));
+    // Row focus drives the production scroll and header threshold.
+    (rows.first.key! as GlobalKey<TvHorizontalRowState>).currentState!.requestFocus();
+    await tester.pumpAndSettle();
+    final bar = find.byKey(const ValueKey('show-compact-header'));
+    expect(bar, findsOneWidget);
+    expect(
+      tester.widget<ColoredBox>(find.descendant(of: bar, matching: find.byType(ColoredBox))).color,
+      TvTokens.color.bg.base,
+    );
+    expect(tester.getTopLeft(find.text(rows.first.title)).dy, greaterThanOrEqualTo(54));
+  });
+
   testWidgets('R9 multiple seasons use ordinary posters and raw season titles', (tester) async {
     final client = fixture();
     client.seasons[0] = client.seasons[0].copyWith(title: 'The show', parentTitle: 'The show');

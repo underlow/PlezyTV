@@ -20,6 +20,34 @@ double scale(WidgetTester tester, Finder parent) {
 }
 
 void main() {
+  testWidgets('R10a rebuild retains offset; changed section is minimally revealed', (tester) async {
+    final revision = ValueNotifier(0);
+    addTearDown(revision.dispose);
+    await pumpTvWidget(
+      tester,
+      ValueListenableBuilder<int>(
+        valueListenable: revision,
+        builder: (_, value, _) => TvSideMenu(
+          currentIndex: value < 2 ? 15 : 22,
+          items: List.generate(24, (i) => TvSideMenuItem(key: ValueKey(i), icon: Icons.home, label: 'Item $i')),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+    scroll.jumpTo(30);
+    await tester.pump();
+    revision.value = 1;
+    await tester.pumpAndSettle();
+    expect(scroll.pixels, 30);
+    revision.value = 2;
+    await tester.pumpAndSettle();
+    final rect = tester.getRect(find.byKey(const ValueKey(22)));
+    final viewport = tester.getRect(find.byType(Scrollable).first);
+    expect(rect.bottom, closeTo(viewport.bottom, .01));
+  });
+
   for (final count in [17, 24]) {
     testWidgets('R10: $count items fit or pin Settings and reveal current section', (tester) async {
       final nodes = List.generate(count, (_) => FocusNode());

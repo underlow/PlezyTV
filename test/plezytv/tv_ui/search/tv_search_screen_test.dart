@@ -1067,6 +1067,23 @@ void main() {
     expect(find.text('2021 · Living room'), findsOneWidget);
   });
 
+  for (final multiple in [false, true]) {
+    testWidgets('R11a episode captions preserve server suffix multiple=$multiple', (tester) async {
+      search.respond = (_) => answer(
+        items: [
+          media(
+            'Episode',
+            MediaKind.episode,
+          ).copyWith(grandparentTitle: 'Series', parentIndex: 1, index: 3, serverName: 'Living room'),
+        ],
+      );
+      await pump(tester, client: _ActionClient(), moreClients: [if (multiple) _ActionClient('second')]);
+      await results(tester, 'episode');
+      expect(find.text('Series'), findsOneWidget);
+      expect(find.text('S1 E3 · Episode${multiple ? ' · Living room' : ''}'), findsOneWidget);
+    });
+  }
+
   group('T5 idle screen', () {
     late _Discover discover;
     setUp(() => discover = _Discover()..hubs = [continueHub, hub('trending'), hub('recent'), hub('third')]);

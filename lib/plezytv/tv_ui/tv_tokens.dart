@@ -94,7 +94,14 @@ abstract final class TvTokens {
     actionsGap: 24,
   );
   // S24 R2, R8: shared detail header geometry.
-  static const detail = (textMaxW: 900, metadataGap: 12, summaryGap: 16, actionsGap: 32);
+  static const detail = (
+    textMaxW: 900,
+    metadataGap: 12,
+    summaryGap: 16,
+    actionsGap: 32,
+    compactH: 150,
+    collapseAt: 300,
+  );
   static const radius = (xs: 4, sm: 8, card: 10, button: 12, iconButton: 16, chip: 8, panel: 16, badge: 6);
   static const size = (
     poster: (w: 216, h: 324, ratio: "2:3", perRowVisible: 7),
@@ -120,7 +127,7 @@ abstract final class TvTokens {
     settingsItem: (h: 88, iconSize: 36, maxW: 1200),
     progressBar: (h: 6),
     unwatchedBadge: (minW: 36, h: 32),
-    hero: (h: 340, compactH: 200, textMaxW: 860, logoMaxW: 560, logoMaxH: 120),
+    hero: (h: 340, compactH: 200, textMaxW: 860, logoMaxW: 560, logoMaxH: 120, compactLogoMaxH: 80),
     focusRing: (width: 4, offset: 3),
     letters: (w: 48, itemH: 24, focusedH: 32, x: 1776),
     keyboard: (key: 64, gap: 12, columns: 6, panelW: 444, panelX: 200, resultsX: 740),

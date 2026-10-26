@@ -406,6 +406,35 @@ void main() {
     expect(gradientTops(tester), [tvBackgroundTop(Colors.green)]);
   });
 
+  testWidgets('R17a scrolling fades only artwork linearly over 300 design pixels', (tester) async {
+    final page = ScrollController();
+    addTearDown(page.dispose);
+    final service = StubTintService(fetch: (_, _, _) async => Uint8List(1), decode: (_, _) => image(Colors.yellow));
+    await pumpTvWidget(
+      tester,
+      TvTintedBackground(
+        source: source('A'),
+        service: service,
+        scrollController: page,
+        child: SingleChildScrollView(controller: page, child: const SizedBox(height: 2000)),
+      ),
+    );
+    service.answers['A']!.complete(Colors.red);
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pumpAndSettle();
+    for (final offset in [0.0, 150.0, 300.0, 400.0]) {
+      page.jumpTo(offset);
+      await tester.pump();
+      final opacity = tester.widget<FadeTransition>(
+        find.ancestor(of: find.byType(RawImage), matching: find.byType(FadeTransition)).first,
+      );
+      expect(opacity.opacity.value, (1 - offset / 300).clamp(0, 1));
+      expect(gradientTops(tester), [tvBackgroundTop(Colors.red)]);
+    }
+  });
+
   testWidgets('slow backdrop does not delay tint or restart its fade', (tester) async {
     final pendingBackdrop = Completer<Uint8List?>();
     final service = StubTintService(
