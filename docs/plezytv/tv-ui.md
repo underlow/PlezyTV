@@ -503,3 +503,13 @@ Play/Pause starts the next episode and does nothing on the movie screen. The ups
 changes `playback_prompts.dart`, `build.dart`, `video_player_screen.dart`,
 `key_event_utils.dart`, `playback_state_provider.dart` or
 `rating_bottom_sheet.dart`.
+
+## Settings backup (S4)
+
+`TvSettings.backupSection` replaces Plezy's backup section on TV with export
+and confirmed import tiles. Non-TV retains Plezy's file picker workflow.
+`SettingsTransferService` writes `plezytv-settings.json` in the external app
+storage directory, replacing the previous export. It combines Plezy's portable
+settings with Show downloads and the search keyboard layout; library settings
+are restored under the active profile. Import refreshes settings listeners,
+library providers and Plezy's stored runtime effects without a restart.

@@ -1,4 +1,16 @@
-enum ScreenTarget { home, libraries, library, libraryFilter, item, search, downloads, settings, update }
+enum ScreenTarget {
+  home,
+  libraries,
+  library,
+  libraryFilter,
+  item,
+  search,
+  downloads,
+  settings,
+  update,
+  settingsExport,
+  settingsImport,
+}
 
 class ScreenLink {
   final String source;
@@ -12,7 +24,7 @@ class ScreenLink {
 
   static bool claims(String source) {
     final uri = Uri.tryParse(source);
-    return uri?.scheme == 'plezytv' && uri?.host == 'screen';
+    return uri?.scheme == 'plezytv' && (uri?.host == 'screen' || uri?.host == 'settings');
   }
 
   /// Throws FormatException with a user-facing reason; never performs IO.
@@ -23,9 +35,26 @@ class ScreenLink {
       throw const FormatException('invalid screen path');
     }
     final name = uri.pathSegments.single;
+    if (uri.host == 'settings') {
+      if (uri.hasQuery) throw const FormatException('settings links do not accept parameters');
+      final target = switch (name) {
+        'export' => ScreenTarget.settingsExport,
+        'import' => ScreenTarget.settingsImport,
+        _ => throw FormatException('unknown settings action $name'),
+      };
+      return ScreenLink(source, target);
+    }
     final target = name == 'library-filter'
         ? ScreenTarget.libraryFilter
-        : ScreenTarget.values.where((value) => value != ScreenTarget.libraryFilter && value.name == name).firstOrNull;
+        : ScreenTarget.values
+              .where(
+                (value) =>
+                    value != ScreenTarget.libraryFilter &&
+                    value != ScreenTarget.settingsExport &&
+                    value != ScreenTarget.settingsImport &&
+                    value.name == name,
+              )
+              .firstOrNull;
     if (target == null) throw FormatException('unknown target $name');
     for (final entry in uri.queryParametersAll.entries) {
       if (!(target == ScreenTarget.libraryFilter

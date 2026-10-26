@@ -22,12 +22,9 @@ void main() {
     );
     final taps = <String>[];
     service.onShelfItemTap = taps.add;
-    expect(
-      await service.handleMethodCallForTesting(
-        const MethodCall('onWatchNextTap', {'contentId': 'plezytv://screen/home'}),
-      ),
-      isTrue,
-    );
+    for (final source in ['plezytv://screen/home', 'plezytv://settings/import', 'plezytv://settings/export']) {
+      expect(await service.handleMethodCallForTesting(MethodCall('onWatchNextTap', {'contentId': source})), isTrue);
+    }
     expect(taps, isEmpty);
   });
 
@@ -35,13 +32,18 @@ void main() {
     final service = SystemShelfService.forTesting(channel: channel);
     for (final source in [
       'plezytv://screen/settings',
+      'plezytv://settings/import',
+      'plezytv://settings/export',
       'plezytv://play?content_id=plezy_server_42',
       'plezytv://live?channel=4.1',
       'plezy_server_42',
       'plezy://play?content_id=original',
     ]) {
       messenger.setMockMethodCallHandler(channel, (_) async => source);
-      expect(await service.getInitialDeepLink(), source.contains('://screen/') ? isNull : source);
+      expect(
+        await service.getInitialDeepLink(),
+        (source.contains('://screen/') || source.contains('://settings/')) ? isNull : source,
+      );
     }
   });
 

@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:plezy/plezytv/settings_transfer/settings_transfer_service.dart';
+import 'package:plezy/services/storage_service.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -216,6 +220,13 @@ final continueHub = MediaHub(
 
 Finder _key(String id) => find.byKey(ValueKey('tv-search-key-$id'));
 
+class _FileTransfer extends SettingsTransferService {
+  const _FileTransfer(this.file);
+  final File file;
+  @override
+  Future<File> settingsFile() async => file;
+}
+
 void main() {
   late _Search search;
   late _ScopedHistory history;
@@ -247,6 +258,7 @@ void main() {
     _Discover? discover,
     _Hidden? hidden,
     List<_ActionClient> moreClients = const [],
+    ValueNotifier<int>? section,
   }) async {
     final servers = client == null ? null : testMultiServer(clients: [client, ...moreClients]);
     final downloads = _NoDownloads();
@@ -279,14 +291,18 @@ void main() {
             child: Stack(
               children: [
                 Focus(focusNode: menu, child: const SizedBox()),
-                TvSearchScreen(
-                  key: screen,
-                  searchForTesting: search.call,
-                  fetchForTesting: (item) async {
-                    fetched.add(item.id);
-                    return fetch(item);
-                  },
-                  historyForTesting: history,
+                ValueListenableBuilder<int>(
+                  valueListenable: section ?? const AlwaysStoppedAnimation(0),
+                  builder: (context, index, child) => IndexedStack(index: index, children: [child!, const SizedBox()]),
+                  child: TvSearchScreen(
+                    key: screen,
+                    searchForTesting: search.call,
+                    fetchForTesting: (item) async {
+                      fetched.add(item.id);
+                      return fetch(item);
+                    },
+                    historyForTesting: history,
+                  ),
                 ),
               ],
             ),
@@ -343,6 +359,44 @@ void main() {
     await tester.pump(TvSearchController.debounce);
     await tester.pumpAndSettle();
   }
+
+  testWidgets('file import and preference writes update a retained Search keyboard', (tester) async {
+    final section = ValueNotifier(0);
+    addTearDown(section.dispose);
+    await pump(tester, section: section);
+    final retained = screen.currentState;
+    expect(tester.widget<TvSearchKeyboard>(find.byType(TvSearchKeyboard)).layout, TvSearchKeyboardLayout.ru);
+    final directory = Directory.systemTemp.createTempSync('search-import-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    await tester.runAsync(() async {
+      final storage = await StorageService.getInstance();
+      await storage.setActiveProfileId('search-import');
+    });
+    final file = File('${directory.path}/settings.json');
+    for (final layout in [TvSearchKeyboardLayout.en, TvSearchKeyboardLayout.digits]) {
+      section.value = 1;
+      await tester.pumpAndSettle();
+      file.writeAsStringSync(
+        jsonEncode({
+          'formatVersion': 1,
+          'prefs': {
+            TvSettings.searchKeyboardLayout.key: {'type': 'string', 'value': layout.prefValue},
+          },
+        }),
+      );
+      final result = await tester.runAsync(() => _FileTransfer(file).importFromFile());
+      expect(result!.keysImported, 1);
+      SettingsService.instance.refreshListenables();
+      await tester.pumpAndSettle();
+      section.value = 0;
+      await tester.pumpAndSettle();
+      expect(screen.currentState, same(retained));
+      expect(tester.widget<TvSearchKeyboard>(find.byType(TvSearchKeyboard)).layout, layout);
+    }
+    await SettingsService.instance.write(TvSettings.searchKeyboardLayout, 'ru');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TvSearchKeyboard>(find.byType(TvSearchKeyboard)).layout, TvSearchKeyboardLayout.ru);
+  });
 
   testWidgets('A1 focus, A3 → to the first movie, A4 ← to the last pressed key', (tester) async {
     search.respond = (_) => answer(items: [...movies(3), media('show0', MediaKind.show)]);

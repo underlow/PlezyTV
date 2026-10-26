@@ -76,3 +76,44 @@ Unknown libraries, non-video libraries and unknown fields/values leave the curre
 place and log a PlezyTV warning. The route starts on Browse, retains saved grouping/sort,
 replaces saved filters with this one clause, and stores all subsequent changes only in memory.
 Back returns to the previous screen; shell selection stays unchanged.
+
+## Settings transfer over adb
+
+The fixed-file Backup section is available on Android with the TV UI enabled.
+Desktop force-TV keeps Plezy’s file picker; tvOS keeps Backup hidden. Importing
+also updates an existing Search keyboard immediately, including while Search is
+retained behind another section.
+
+Choose/sign in to a profile first, or send the link while the profile picker is
+open: it waits until selection finishes. Only the newest pending screen/settings
+link is kept. Import applies immediately without a confirmation dialog or restart.
+
+```sh
+adb shell am start -a android.intent.action.VIEW -d 'plezytv://settings/export' -p com.underlow.plezytv
+adb logcat -s PlezyTV
+# Wait for "Settings export: <count> keys" before reading the file:
+adb shell content read --uri content://com.underlow.plezytv.settings/settings.json > ./plezytv-settings.json
+
+# On the destination TV (use adb -s <serial> with multiple connected devices):
+adb shell 'content write --uri content://com.underlow.plezytv.settings/settings.json' < ./plezytv-settings.json
+adb shell am start -a android.intent.action.VIEW -d 'plezytv://settings/import' -p com.underlow.plezytv
+adb logcat -s PlezyTV
+```
+
+Export overwrites this fixed file with portable Plezy and PlezyTV settings, without
+tokens, server addresses or search history. Import reports the imported/skipped
+key counts; failures report their cause. A short on-screen notification also shows
+the result. Missing or invalid files leave preferences unchanged. No query
+parameters are accepted. The `settings` intent filter has no `BROWSABLE` category;
+these commands are intended for adb rather than browser links. Existing `screen`,
+`play` and `live` links retain their handling.
+
+The provider accepts only shell (adb) and root callers. It exposes only
+`settings.json`, with read or truncating write access; it does not apply settings
+until the import link is sent. The underlying file remains
+`/sdcard/Android/data/com.underlow.plezytv/files/plezytv-settings.json`
+(`getExternalFilesDir(null)`), for reference only: direct adb access is denied on
+the tested Xiaomi Android 11 device. No root or debug build is needed.
+
+Local tests/build checks do not establish provider commands or cold/warm intent
+behavior on a real TV. Android 9 availability of `content write` remains unverified.
