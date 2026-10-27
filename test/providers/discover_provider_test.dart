@@ -406,10 +406,44 @@ void main() {
       expectServers({'server_1'});
       manager.setVisibleServerIds({});
       await provider.refreshNow();
-      expectServers({});
+      expectServers({'server_1'});
       manager.setVisibleServerIds(null);
       await provider.syncToOnlineServers({'server_1', 'server_2', 'server_3'});
       expectServers({'server_1', 'server_2', 'server_3'});
+    });
+  }
+
+  for (final departure in ['offline', 'hidden']) {
+    test('F4: all servers $departure keeps Home rows until a fresh full refresh on return', () async {
+      twoServers();
+      await provider.load();
+      final previousDeck = List.of(provider.onDeck);
+      final previousHubs = List.of(provider.hubs);
+
+      if (departure == 'offline') {
+        manager.debugRegisterClientForTesting(client, online: false);
+        manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'), online: false);
+      } else {
+        manager.setVisibleServerIds({});
+      }
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.failed);
+      expect(provider.onDeck, previousDeck);
+      expect(provider.hubs, previousHubs);
+      expect(provider.errorMessage, isNull);
+      expect(provider.isLoading, isFalse);
+      expect(provider.areHubsLoading, isFalse);
+
+      aggregation.onDeckResult = () => [_item('fresh-a'), _item('fresh-b', serverId: 'server_2')];
+      aggregation.hubsResult = () => [_hub('fresh-a'), _hub('fresh-b', serverId: 'server_2')];
+      manager.debugRegisterClientForTesting(client);
+      manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
+      manager.setVisibleServerIds(null);
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.refreshed);
+      expect(provider.onDeck.map((item) => item.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(provider.hubs.map((hub) => hub.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(provider.errorMessage, isNull);
+      expect(provider.isLoading, isFalse);
+      expect(provider.areHubsLoading, isFalse);
     });
   }
 

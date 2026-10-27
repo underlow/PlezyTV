@@ -562,7 +562,9 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       _lastOutcome = DiscoverRefreshOutcome.cancelled;
       return;
     }
-    _retainFullPassServers(serverIds);
+    // With no visible online server, keep the pre-outage rollback snapshot.
+    // Departed-server pruning only applies while another server is eligible.
+    if (serverIds.isNotEmpty) _retainFullPassServers(serverIds);
     var outcome = DiscoverRefreshOutcome.cancelled;
     var passClearedExceptionBoundary = false;
     List<MediaItem>? systemShelfPassToken;
