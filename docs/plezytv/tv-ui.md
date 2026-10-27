@@ -69,6 +69,18 @@ Use `pumpTvWidget` from `test/plezytv/tv_ui/tv_theme_test_helper.dart` for compo
 tests. It supplies the TV theme and keyboard input mode at a chosen logical
 `size`, accepts `reduced` and `textScaler`, and resets test state in teardown.
 
+Screens with rows should build only rows near the viewport, with roughly one
+screen of reserve above and below. Keep row memory (selected card and horizontal
+offset) in the screen owner, keyed by row, so it survives the row leaving the
+widget tree. `TvHorizontalRow` accepts external row memory; without it, memory
+stays local to the row.
+
+Home loads once at startup, after hidden libraries are initialized. Rows appear
+as each server answers, with a short grace period to batch nearby answers, and
+merge in library order; Continue Watching gains the later servers' cards.
+Inserting rows keeps focus on the same card and preserves the focused row's
+on-screen position.
+
 ## Session choice and tests
 
 `TvUi.enabled` defaults to `PlatformDetector.isTV()`, which includes the Force TV
