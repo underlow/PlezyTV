@@ -99,6 +99,8 @@ class _Libraries extends ChangeNotifier implements LibrariesProvider {
 
 class _Hidden extends ChangeNotifier implements HiddenLibrariesProvider {
   @override
+  Future<void> ensureInitialized() async {}
+  @override
   Set<String> hiddenLibraryKeys = {};
   void emit() => notifyListeners();
   @override
@@ -380,15 +382,15 @@ void main() {
     realHome = true;
     await pump(tester);
     expect(find.byType(TvHomeScreen), findsOneWidget);
-    expect(homeProvider.loads, 1);
+    expect(homeProvider.loads, 0);
     homeProvider.isLoadInFlight = true;
     session.emitIntent(TvShellContentIntent.initialLoad);
-    expect(homeProvider.loads, 1);
+    expect(homeProvider.loads, 0);
     homeProvider.isLoadInFlight = false;
     session.emitIntent(TvShellContentIntent.refreshAfterResume);
     expect(homeProvider.continues, 1);
     session.emitIntent(TvShellContentIntent.fullReset);
-    expect(homeProvider.loads, 2);
+    expect(homeProvider.loads, 1);
     final rail = tester.state<TvHorizontalRowState>(find.byType(TvHorizontalRow));
     expect(rail.focusInside.value, isTrue);
     await key(tester, LogicalKeyboardKey.arrowRight);
