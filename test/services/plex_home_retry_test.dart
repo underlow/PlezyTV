@@ -10,9 +10,11 @@ import 'package:plezy/database/app_database.dart';
 import 'package:plezy/models/plex/plex_config.dart';
 import 'package:plezy/services/plex_api_cache.dart';
 import 'package:plezy/services/plex_client.dart';
+import 'package:plezy/services/storage_service.dart';
 import 'package:plezy/utils/active_client_scope.dart';
 
 import '../test_helpers/backend_client_fixtures.dart';
+import '../test_helpers/prefs.dart';
 
 typedef _RequestHandler = Future<http.StreamedResponse> Function(http.BaseRequest request);
 
@@ -228,30 +230,45 @@ void main() {
       expect(httpClient.requests.map((r) => r.url.origin), [primary, fallback, primary]);
     });
 
-    test('fetchGlobalHubs uses promoted hub endpoint advertised by media providers', () async {
+    test('fetchGlobalHubs uses saved provider endpoint immediately, then fresh advertised endpoint', () async {
+      resetSharedPreferencesForTest();
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       PlexApiCache.initialize(db);
       addTearDown(db.close);
-
+      final scope = buildPlexProfileScopeId(serverId: ServerId('server-id'), profileId: 'test-profile');
+      final storage = await StorageService.getInstance();
+      final saved = _mediaProvidersPayload();
+      final features = saved['MediaContainer']['MediaProvider'][0]['Feature'] as List;
+      (features.firstWhere((f) => f['type'] == 'promoted') as Map)['key'] = '/hubs/saved';
+      await storage.saveMediaProviders(scope, saved);
+      final providers = Completer<http.StreamedResponse>();
       final httpClient = _SequenceClient([
-        (_) async => _jsonResponse(_mediaProvidersPayload()),
+        (_) => providers.future,
+        (_) async => _jsonResponse(_globalHubsPayload()),
         (_) async => _jsonResponse(_globalHubsPayload()),
       ]);
       final client = await PlexClient.create(
         testPlexConfig(baseUrl: 'http://server:32400'),
         serverId: ServerId('server-id'),
-        profileScopeId: buildPlexProfileScopeId(serverId: ServerId('server-id'), profileId: 'test-profile'),
+        profileScopeId: scope,
         serverName: 'Server',
         httpClient: httpClient,
+        storage: () async => storage,
         seedTranscoderVideoSupport: true,
       );
       addTearDown(client.close);
-
+      final savedHubs = await client.fetchGlobalHubs(limit: 12);
+      expect(savedHubs, hasLength(1));
+      expect(savedHubs.single.title, 'Recently Added Movies');
+      expect(httpClient.requests.map((r) => r.url.path), ['/media/providers', '/hubs/saved']);
+      final changed = Completer<void>();
+      client.mediaProvidersVersion.addListener(() => changed.complete());
+      providers.complete(_jsonResponse(_mediaProvidersPayload()));
+      await changed.future;
       final hubs = await client.fetchGlobalHubs(limit: 12);
-
       expect(hubs, hasLength(1));
       expect(hubs.single.title, 'Recently Added Movies');
-      expect(httpClient.requests.map((r) => r.url.path), ['/media/providers', '/hubs/promoted']);
+      expect(httpClient.requests.map((r) => r.url.path), ['/media/providers', '/hubs/saved', '/hubs/promoted']);
       expect(httpClient.requests.last.url.queryParameters['count'], '12');
     });
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_hub.dart';
@@ -66,6 +67,9 @@ MediaHub _hub(
 class _FakeAggregationService extends DataAggregationService {
   _FakeAggregationService(super.serverManager);
 
+  final serverGates = <String, Future<void>>{};
+  final brokenServers = <String>{};
+  final requests = <String, int>{};
   int onDeckCalls = 0;
   int hubCalls = 0;
   Set<String>? lastOnDeckServerIds;
@@ -90,12 +94,18 @@ class _FakeAggregationService extends DataAggregationService {
     Set<String>? serverIds,
   }) async {
     onDeckCalls++;
+    final id = serverIds?.singleOrNull;
+    if (id != null) {
+      requests.update('deck:$id', (n) => n + 1, ifAbsent: () => 1);
+      await serverGates[id];
+      if (brokenServers.contains(id)) throw Exception('offline');
+    }
     lastOnDeckServerIds = serverIds;
     final started = onDeckStarted;
     if (started != null && !started.isCompleted) started.complete();
     final gate = onDeckGate;
     if (gate != null) await gate;
-    final items = onDeckResult();
+    final items = onDeckResult().where((i) => serverIds == null || serverIds.contains(i.serverId)).toList();
     return (
       items: limit != null && items.length > limit ? items.sublist(0, limit) : items,
       observedItems: [for (final item in items) (item: item, clientScope: null)],
@@ -114,12 +124,18 @@ class _FakeAggregationService extends DataAggregationService {
     Set<String>? serverIds,
   }) async {
     hubCalls++;
+    final id = serverIds?.singleOrNull;
+    if (id != null) {
+      requests.update('hubs:$id', (n) => n + 1, ifAbsent: () => 1);
+      await serverGates[id];
+      if (brokenServers.contains(id)) throw Exception('offline');
+    }
     lastHubsServerIds = serverIds;
     final started = hubStarted;
     if (started != null && !started.isCompleted) started.complete();
     final gate = hubGate;
     if (gate != null) await gate;
-    final hubs = hubsResult();
+    final hubs = hubsResult().where((h) => serverIds == null || serverIds.contains(h.serverId)).toList();
     return (
       hubs: hubs,
       observedItems: [
@@ -168,6 +184,49 @@ class _FakeClient implements MediaServerClient {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _HomeServer extends _FakeClient {
+  _HomeServer(String id) : super(serverIdValue: id);
+  @override
+  void close() {}
+  Future<void>? gate;
+  bool fail = false;
+  int deckRequests = 0, hubRequests = 0, libraryRequests = 0;
+
+  @override
+  Future<List<MediaLibrary>> fetchLibraries() async {
+    libraryRequests++;
+    return [
+      MediaLibrary(
+        id: 'movies',
+        backend: MediaBackend.plex,
+        title: serverIdValue,
+        serverId: serverIdValue,
+        kind: MediaKind.movie,
+      ),
+    ];
+  }
+
+  @override
+  Future<List<MediaItem>> fetchContinueWatching({int? count = 20, Set<String> excludedLibraryIds = const {}}) async {
+    deckRequests++;
+    await gate;
+    if (fail) throw Exception('offline');
+    return [_item(serverIdValue, serverId: serverIdValue)];
+  }
+
+  @override
+  Future<List<MediaHub>> fetchGlobalHubs({
+    int limit = defaultHubPreviewLimit,
+    bool includePlaybackHubs = true,
+    HubFetchDiagnostics? diagnostics,
+  }) async {
+    hubRequests++;
+    await gate;
+    if (fail) throw Exception('offline');
+    return [_hub(serverIdValue, serverId: serverIdValue, libraryId: 'movies')];
+  }
 }
 
 class _PushChannel implements LibraryEventChannel {
@@ -240,6 +299,338 @@ void main() {
 
   setUp(initializeFixture);
   tearDown(disposeFixture);
+
+  void twoServers() {
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
+    aggregation.onDeckResult = () => [_item('a'), _item('b', serverId: 'server_2')];
+    aggregation.hubsResult = () => [_hub('a'), _hub('b', serverId: 'server_2')];
+  }
+
+  test('A16: real aggregation publishes fake servers in library order without refetch', () async {
+    provider.dispose();
+    multiServer.dispose();
+    final a = _HomeServer('server_1'), b = _HomeServer('server_2');
+    manager = MultiServerManager()
+      ..debugRegisterClientForTesting(a)
+      ..debugRegisterClientForTesting(b);
+    addTearDown(manager.dispose);
+    multiServer = MultiServerProvider(manager, DataAggregationService(manager));
+    provider = DiscoverProvider(
+      multiServer,
+      hiddenLibraries,
+      libraries,
+      profileId: 'profile-a',
+      isProfileBinding: () => isBinding,
+      syncSystemShelf: (_, _) async {},
+    );
+    await libraries.updateLibraryOrder([
+      MediaLibrary(id: 'movies', backend: MediaBackend.plex, title: 'B', serverId: 'server_2'),
+      MediaLibrary(id: 'movies', backend: MediaBackend.plex, title: 'A', serverId: 'server_1'),
+    ]);
+    fakeAsync((clock) {
+      b.gate = Future<void>.delayed(const Duration(seconds: 5));
+      unawaited(provider.load());
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 300));
+      expect(provider.hubs.map((h) => h.serverId), ['server_1']);
+      expect(provider.onDeck.map((i) => i.serverId), ['server_1']);
+      clock.elapse(const Duration(milliseconds: 4700));
+      expect(provider.hubs.map((h) => h.serverId), ['server_2', 'server_1']);
+      expect(provider.onDeck.map((i) => i.serverId).toSet(), {'server_1', 'server_2'});
+      for (final server in [a, b]) {
+        expect(server.deckRequests, 1);
+        expect(server.hubRequests, 1);
+        expect(server.libraryRequests, 1);
+      }
+    });
+  });
+
+  for (final departure in ['hidden', 'offline', 'removed']) {
+    test('F3: full refresh drops $departure server rows and refetches it on return', () async {
+      provider.dispose();
+      multiServer.dispose();
+      final servers = [for (var n = 1; n <= 3; n++) _HomeServer('server_$n')];
+      manager = MultiServerManager();
+      for (final server in servers) {
+        manager.debugRegisterClientForTesting(server);
+      }
+      addTearDown(manager.dispose);
+      multiServer = MultiServerProvider(manager, DataAggregationService(manager));
+      provider = DiscoverProvider(
+        multiServer,
+        hiddenLibraries,
+        libraries,
+        profileId: 'profile-a',
+        isProfileBinding: () => isBinding,
+        syncSystemShelf: (_, _) async {},
+      );
+      void expectServers(Set<String> ids) {
+        expect(provider.onDeck.map((i) => i.serverId).toSet(), ids);
+        expect(provider.hubs.map((h) => h.serverId).toSet(), ids);
+      }
+
+      await provider.load();
+      expectServers({'server_1', 'server_2', 'server_3'});
+      switch (departure) {
+        case 'hidden':
+          manager.setVisibleServerIds({'server_1', 'server_2'});
+        case 'offline':
+          manager.debugRegisterClientForTesting(servers[2], online: false);
+        case 'removed':
+          manager.removeServer(ServerId('server_3'));
+      }
+      // An eligible but failed server keeps its previous rows (F1/A18).
+      servers[1].fail = true;
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.degraded);
+      expectServers({'server_1', 'server_2'});
+      expect(servers[2].deckRequests, 1);
+      expect(servers[2].hubRequests, 1);
+      // Cross the single-server fallback with its only server failing.
+      manager.setVisibleServerIds({'server_2'});
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.failed);
+      expectServers({'server_2'});
+      // Return to multi-server mode: removed loaded-id credit must not skip
+      // any surface, including the server that failed the previous pass.
+      servers[1].fail = false;
+      manager.debugRegisterClientForTesting(servers[2]);
+      manager.setVisibleServerIds(null);
+      final before = [for (final server in servers) (server.deckRequests, server.hubRequests)];
+      await provider.syncToOnlineServers({'server_1', 'server_2', 'server_3'});
+      expectServers({'server_1', 'server_2', 'server_3'});
+      for (var i = 0; i < servers.length; i++) {
+        expect(servers[i].deckRequests, before[i].$1 + 1);
+        expect(servers[i].hubRequests, before[i].$2 + 1);
+      }
+      manager.setVisibleServerIds({'server_1'});
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.refreshed);
+      expectServers({'server_1'});
+      manager.setVisibleServerIds({});
+      await provider.refreshNow();
+      expectServers({'server_1'});
+      manager.setVisibleServerIds(null);
+      await provider.syncToOnlineServers({'server_1', 'server_2', 'server_3'});
+      expectServers({'server_1', 'server_2', 'server_3'});
+    });
+  }
+
+  for (final departure in ['offline', 'hidden']) {
+    test('F4: all servers $departure keeps Home rows until a fresh full refresh on return', () async {
+      twoServers();
+      await provider.load();
+      final previousDeck = List.of(provider.onDeck);
+      final previousHubs = List.of(provider.hubs);
+
+      if (departure == 'offline') {
+        manager.debugRegisterClientForTesting(client, online: false);
+        manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'), online: false);
+      } else {
+        manager.setVisibleServerIds({});
+      }
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.failed);
+      expect(provider.onDeck, previousDeck);
+      expect(provider.hubs, previousHubs);
+      expect(provider.errorMessage, isNull);
+      expect(provider.isLoading, isFalse);
+      expect(provider.areHubsLoading, isFalse);
+
+      aggregation.onDeckResult = () => [_item('fresh-a'), _item('fresh-b', serverId: 'server_2')];
+      aggregation.hubsResult = () => [_hub('fresh-a'), _hub('fresh-b', serverId: 'server_2')];
+      manager.debugRegisterClientForTesting(client);
+      manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
+      manager.setVisibleServerIds(null);
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.refreshed);
+      expect(provider.onDeck.map((item) => item.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(provider.hubs.map((hub) => hub.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(provider.errorMessage, isNull);
+      expect(provider.isLoading, isFalse);
+      expect(provider.areHubsLoading, isFalse);
+    });
+  }
+
+  test('F3: prune departed rows while an eligible server is pending; keep unscoped hubs', () async {
+    aggregation.onDeckResult = () => [_item('old-a')];
+    aggregation.hubsResult = () => [
+      _hub('old-a'),
+      MediaHub(id: 'unscoped', title: 'unscoped', type: 'movie', items: const [], size: 0),
+    ];
+    await provider.load();
+    twoServers();
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_3'));
+    manager.setVisibleServerIds({'server_2', 'server_3'});
+    aggregation.onDeckResult = () => [_item('b', serverId: 'server_2'), _item('c', serverId: 'server_3')];
+    aggregation.hubsResult = () => [_hub('b', serverId: 'server_2'), _hub('c', serverId: 'server_3')];
+    fakeAsync((clock) {
+      aggregation.serverGates['server_3'] = Future<void>.delayed(const Duration(seconds: 5));
+      unawaited(provider.refreshNow());
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 300));
+      expect(provider.onDeck.map((i) => i.id), ['b']);
+      expect(provider.hubs.map((h) => h.id).toSet(), {'unscoped', 'b'});
+      clock.elapse(const Duration(milliseconds: 4700));
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'b', 'c'});
+      expect(provider.hubs.map((h) => h.id).toSet(), {'unscoped', 'b', 'c'});
+    });
+  });
+
+  test('A16: fast server publishes before 5s server, one request per surface/server', () {
+    twoServers();
+    fakeAsync((clock) {
+      aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(seconds: 5));
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((value) => outcome = value);
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 300));
+      expect(provider.hubs.map((h) => h.id), ['a']);
+      expect(provider.onDeck.map((i) => i.id), ['a']);
+      expect(outcome, isNull);
+      clock.elapse(const Duration(milliseconds: 4700));
+      expect(provider.hubs.map((h) => h.id), ['a', 'b']);
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'a', 'b'});
+      expect(outcome, DiscoverRefreshOutcome.refreshed);
+      expect(aggregation.requests, {'deck:server_1': 1, 'hubs:server_1': 1, 'deck:server_2': 1, 'hubs:server_2': 1});
+    });
+  });
+
+  test('F1: refresh retains pending server rows and replaces only answered server content', () async {
+    twoServers();
+    await provider.load();
+    aggregation.requests.clear();
+    aggregation.onDeckResult = () => [_item('fresh-a'), _item('fresh-b', serverId: 'server_2')];
+    aggregation.hubsResult = () => [_hub('fresh-a'), _hub('fresh-b', serverId: 'server_2')];
+    fakeAsync((clock) {
+      aggregation.serverGates['server_1'] = Future<void>.delayed(const Duration(milliseconds: 500));
+      aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(seconds: 4));
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((value) => outcome = value);
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 800));
+      expect(provider.hubs.map((h) => h.id).toSet(), {'fresh-a', 'b'});
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'fresh-a', 'b'});
+      expect(outcome, isNull);
+      clock.elapse(const Duration(milliseconds: 3100));
+      expect(provider.hubs.map((h) => h.id).toSet(), {'fresh-a', 'b'});
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'fresh-a', 'b'});
+      clock.elapse(const Duration(milliseconds: 100));
+      expect(provider.hubs.map((h) => h.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(outcome, DiscoverRefreshOutcome.refreshed);
+      expect(aggregation.requests, {'deck:server_1': 1, 'hubs:server_1': 1, 'deck:server_2': 1, 'hubs:server_2': 1});
+    });
+  });
+
+  test('R11: close server responses publish content in one update', () {
+    twoServers();
+    fakeAsync((clock) {
+      aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(milliseconds: 200));
+      final published = <List<String>>[];
+      provider.addListener(() {
+        if (provider.hubs.isNotEmpty) published.add(provider.hubs.map((h) => h.id).toList());
+      });
+      unawaited(provider.load());
+      clock.flushMicrotasks();
+      expect(published, isEmpty);
+      clock.elapse(const Duration(milliseconds: 300));
+      expect(published, [
+        ['a', 'b'],
+      ]);
+    });
+  });
+
+  test('A18: late error leaves fast rows and no error state', () {
+    twoServers();
+    fakeAsync((clock) {
+      aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(seconds: 5));
+      aggregation.brokenServers.add('server_2');
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((v) => outcome = v);
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 5));
+      expect(provider.hubs.map((h) => h.id), ['a']);
+      expect(provider.errorMessage, isNull);
+      expect(provider.areHubsLoading, isFalse);
+      expect(outcome, DiscoverRefreshOutcome.degraded);
+    });
+  });
+
+  for (final binding in [false, true]) {
+    test('late rows ignored after ${binding ? "profile binding" : "new full request"}', () {
+      twoServers();
+      fakeAsync((clock) {
+        aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(seconds: 5));
+        unawaited(provider.load());
+        clock.flushMicrotasks();
+        clock.elapse(const Duration(milliseconds: 300));
+        expect(provider.hubs.map((h) => h.id), ['a']);
+        if (binding) {
+          isBinding = true;
+        } else {
+          // Queue the replacement but keep its new requests pending. The old
+          // server B response must never become visible in between passes.
+          aggregation.serverGates['server_1'] = Future<void>.delayed(const Duration(seconds: 10));
+          aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(seconds: 10));
+          unawaited(provider.load());
+        }
+        clock.elapse(const Duration(milliseconds: 4700));
+        expect(provider.hubs.map((h) => h.id), ['a']);
+        clock.elapse(const Duration(seconds: 11));
+      });
+    });
+  }
+
+  test('no successful server preserves previously published content', () {
+    twoServers();
+    fakeAsync((clock) {
+      unawaited(provider.load());
+      clock.flushMicrotasks();
+      expect(provider.hubs.map((h) => h.id), ['a', 'b']);
+      aggregation.brokenServers.addAll({'server_1', 'server_2'});
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((v) => outcome = v);
+      clock.flushMicrotasks();
+      expect(provider.hubs.map((h) => h.id), ['a', 'b']);
+      expect(provider.onDeck, hasLength(2));
+      expect(provider.errorMessage, isNull);
+      expect(outcome, DiscoverRefreshOutcome.failed);
+    });
+  });
+
+  test('multi-server cancellation with no successes keeps initial skeleton and waits for binding', () {
+    twoServers();
+    aggregation.onDeckSucceededServerIds = aggregation.hubSucceededServerIds = {};
+    aggregation.onDeckCancelledServerIds = aggregation.hubCancelledServerIds = {'server_1', 'server_2'};
+    fakeAsync((clock) {
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((v) => outcome = v);
+      clock.flushMicrotasks();
+      expect(provider.hubs, isEmpty);
+      expect(provider.onDeck, isEmpty);
+      expect(provider.isLoading, isTrue);
+      expect(provider.areHubsLoading, isTrue);
+      expect(outcome, DiscoverRefreshOutcome.cancelled);
+      isBinding = true;
+      provider.refreshNow().then((v) => outcome = v);
+      clock.flushMicrotasks();
+      expect(outcome, DiscoverRefreshOutcome.cancelled);
+      expect(aggregation.hubCalls, 2);
+    });
+  });
+
+  test('multi-server settled failures with no successes keep empty loaded state', () {
+    twoServers();
+    aggregation.onDeckSucceededServerIds = aggregation.hubSucceededServerIds = {};
+    aggregation.onDeckFailedServerIds = aggregation.hubFailedServerIds = {'server_1', 'server_2'};
+    fakeAsync((clock) {
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((v) => outcome = v);
+      clock.flushMicrotasks();
+      expect(provider.hubs, isEmpty);
+      expect(provider.onDeck, isEmpty);
+      expect(provider.isLoading, isFalse);
+      expect(provider.areHubsLoading, isFalse);
+      expect(provider.errorMessage, isNull);
+      expect(outcome, DiscoverRefreshOutcome.failed);
+    });
+  });
 
   test('load publishes on-deck and hubs; concurrent calls coalesce', () async {
     aggregation.onDeckResult = () => [_item('a')];

@@ -27,6 +27,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:plezy/providers/discover_provider.dart';
+import 'package:plezy/providers/hidden_libraries_provider.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
@@ -38,6 +39,8 @@ import 'package:plezy/plezytv/tv_ui/components/tv_hero.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
 import 'package:plezy/plezytv/tv_ui/home/tv_home_screen.dart';
+import 'package:plezy/plezytv/tv_ui/home/tv_home_card.dart';
+import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tint_service.dart';
@@ -149,6 +152,15 @@ class _ChangedDetails extends NavigatorObserver {
   }
 }
 
+class _HiddenReady extends ChangeNotifier implements HiddenLibrariesProvider {
+  @override
+  Future<void> ensureInitialized() async {}
+  @override
+  Set<String> get hiddenLibraryKeys => {};
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _Discover extends ChangeNotifier implements DiscoverProvider {
   @override
   List<MediaItem> onDeck = [];
@@ -254,6 +266,8 @@ void main() {
     ActiveProfileProvider? profile,
     MusicPlaybackService? music,
   }) async {
+    final hiddenLibraries = _HiddenReady();
+    addTearDown(hiddenLibraries.dispose);
     final servers = actionClient == null ? null : testMultiServer(clients: [actionClient]);
     final downloads = _NoDownloads();
     final offlineWatch = _OfflineWatch();
@@ -267,6 +281,7 @@ void main() {
         builder: (context, child) => Scaffold(body: child),
         providers: [
           ChangeNotifierProvider<DiscoverProvider>.value(value: provider),
+          ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hiddenLibraries),
           if (music != null) ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
           if (servers != null) ChangeNotifierProvider<MultiServerProvider>.value(value: servers.provider),
           ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
@@ -299,13 +314,92 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  TvHorizontalRowState row(WidgetTester tester, int index) =>
-      tester.state<TvHorizontalRowState>(find.byType(TvHorizontalRow).at(index));
+  Finder rowFinder(int index) {
+    final continuing = provider.onDeck.isNotEmpty;
+    final title = continuing && index == 0
+        ? TvStrings.continueWatching
+        : provider.hubs[index - (continuing ? 1 : 0)].title;
+    return find.byWidgetPredicate((w) => w is TvHorizontalRow && w.title == title, skipOffstage: false);
+  }
+
+  TvHorizontalRowState row(WidgetTester tester, int index) => tester.state<TvHorizontalRowState>(rowFinder(index));
   TvHero hero(WidgetTester tester) => tester.widget<TvHero>(find.byType(TvHero));
   void content() {
     provider.onDeck = items('episode');
     provider.hubs = [hub('movies'), hub('shows'), hub('more')];
   }
+
+  testWidgets('S26: lazy 20x20 Home preserves card memory and S24 far-row reveal', (tester) async {
+    provider.hubs = [for (var i = 0; i < 20; i++) hub('rail$i', 20)];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    // 686px viewport + one viewport on either side; 522px poster rails.
+    expect(find.byType(TvHorizontalRow, skipOffstage: false).evaluate().length, lessThanOrEqualTo(6));
+    expect(find.byType(TvHorizontalRow, skipOffstage: false).evaluate().length, lessThan(20));
+    Finder rail(int i) =>
+        find.byWidgetPredicate((w) => w is TvHorizontalRow && w.title == 'rail$i', skipOffstage: false);
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    for (var i = 2; i < 20; i++) {
+      await key(tester, LogicalKeyboardKey.arrowDown);
+    }
+    expect(rail(1), findsNothing);
+    expect(hero(tester).item!.id, 'rail190');
+    // S24 compact hero 200 + safe top 54: heading aligns at y=254,
+    // including a far-away last row (independent of the offset calculation).
+    expect(tester.getTopLeft(rail(19)).dy, 254);
+    expect(find.byType(TvHorizontalRow, skipOffstage: false).evaluate().length, lessThanOrEqualTo(6));
+    for (var i = 19; i > 1; i--) {
+      await key(tester, LogicalKeyboardKey.arrowUp);
+    }
+    final restored = tester.state<TvHorizontalRowState>(rail(1));
+    expect(restored.focusInside.value, isTrue);
+    expect(restored.focusedIndex, 2);
+    expect(hero(tester).item!.id, 'rail12');
+    expect(tester.getTopLeft(rail(1)).dy, 394);
+    menu.requestFocus();
+    await tester.pumpAndSettle();
+    expect(menu.hasFocus, isTrue);
+    home.currentState!.focusActiveTabIfReady();
+    await tester.pumpAndSettle();
+    expect(restored.focusInside.value, isTrue);
+    expect(restored.focusedIndex, 2);
+  });
+
+  testWidgets('S26: rebuilt offscreen rail restores card 12 scroll before focus', (tester) async {
+    provider.hubs = [for (var i = 0; i < 20; i++) hub('rail$i', 20)];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    Finder rail(int i) =>
+        find.byWidgetPredicate((w) => w is TvHorizontalRow && w.title == 'rail$i', skipOffstage: false);
+    double offset() => tester
+        .state<ScrollableState>(
+          find.descendant(of: rail(1), matching: find.byType(Scrollable, skipOffstage: false), skipOffstage: false),
+        )
+        .position
+        .pixels;
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    for (var i = 0; i < 11; i++) {
+      await key(tester, LogicalKeyboardKey.arrowRight);
+    }
+    final original = offset();
+    expect(original, greaterThan(0));
+    final oldState = tester.state<TvHorizontalRowState>(rail(1));
+    for (var i = 2; i < 20; i++) {
+      await key(tester, LogicalKeyboardKey.arrowDown);
+    }
+    expect(oldState.mounted, isFalse);
+    for (var i = 19; i > 2; i--) {
+      await key(tester, LogicalKeyboardKey.arrowUp);
+    }
+    expect(rail(1), findsOneWidget);
+    expect(tester.state<TvHorizontalRowState>(rail(1)).focusInside.value, isFalse);
+    expect(offset(), original);
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    expect(tester.state<TvHorizontalRowState>(rail(1)).focusedIndex, 11);
+    expect(offset(), original);
+  });
 
   for (final keyCode in [LogicalKeyboardKey.enter, LogicalKeyboardKey.mediaPlayPause]) {
     testWidgets('S17 A7/A16: track $keyCode plays album queue and retains focus', (tester) async {
@@ -358,7 +452,7 @@ void main() {
     await pump(tester);
     await tester.pumpAndSettle();
     expect(find.byType(TvMusicCard), findsNWidgets(2));
-    final rail = tester.widget<TvHorizontalRow>(find.byType(TvHorizontalRow));
+    final rail = tester.widget<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false));
     expect(rail.cardWidth, 216);
     expect(rail.cardHeight, 216 + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight);
     expect(hero(tester).item, tracks.first);
@@ -418,7 +512,7 @@ void main() {
     expect(find.descendant(of: card, matching: find.text('Example series')), findsOneWidget);
     expect(find.descendant(of: card, matching: find.text('S1 E3 · Part III')), findsOneWidget);
     expect(tester.getBottomRight(card).dy, lessThan(1080));
-    final second = find.byType(TvHorizontalRow).at(1);
+    final second = rowFinder(1);
     expect(tester.getTopLeft(second).dy, lessThan(1080));
     final poster = find.descendant(of: second, matching: find.byType(TvPoster)).first;
     final top = tester.getTopLeft(poster).dy;
@@ -437,7 +531,7 @@ void main() {
     final firstPoster = find.byType(TvPoster).first;
     expect(find.descendant(of: firstPoster, matching: find.text('Example series')), findsOneWidget);
     expect(find.descendant(of: firstPoster, matching: find.text('S1 E3 · Part III')), findsOneWidget);
-    final nextPoster = find.descendant(of: find.byType(TvHorizontalRow).at(1), matching: find.byType(TvPoster)).first;
+    final nextPoster = find.descendant(of: rowFinder(1), matching: find.byType(TvPoster)).first;
     expect(1080 - tester.getTopLeft(nextPoster).dy, greaterThan(324 / 4));
   });
 
@@ -457,12 +551,12 @@ void main() {
     expect(hero(tester).item!.id, 'movies4');
     await key(tester, LogicalKeyboardKey.arrowDown);
     expect(hero(tester).compact, isTrue);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 254);
+    expect(tester.getTopLeft(rowFinder(2)).dy, 254);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).compact, isFalse);
     expect(hero(tester).item!.id, 'movies4');
     expect(row(tester, 1).focusedIndex, 4);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 394);
+    expect(tester.getTopLeft(rowFinder(1)).dy, 394);
   });
 
   testWidgets('R1: hide-spoilers preference updates the hero', (tester) async {
@@ -522,7 +616,7 @@ void main() {
     content();
     await pump(tester);
     await tester.pumpAndSettle();
-    final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList();
+    final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList();
     final cards = tester.widgetList<TvEpisode>(find.byType(TvEpisode)).toList();
     var railBuilds = 0, cardBuilds = 0;
     final previous = debugOnRebuildDirtyWidget;
@@ -534,7 +628,10 @@ void main() {
     addTearDown(() => debugOnRebuildDirtyWidget = previous);
     await key(tester, LogicalKeyboardKey.arrowRight);
     expect(hero(tester).item!.id, 'episode1');
-    expect(tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList(), orderedEquals(rails));
+    expect(
+      tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList(),
+      orderedEquals(rails),
+    );
     expect(tester.widgetList<TvEpisode>(find.byType(TvEpisode)).toList(), orderedEquals(cards));
     expect(cards.length, lessThan(12));
     expect(railBuilds, 0);
@@ -551,7 +648,7 @@ void main() {
     await pump(tester, reduced: false);
     await tester.pumpAndSettle();
     await key(tester, LogicalKeyboardKey.arrowDown);
-    final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList();
+    final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList();
     var railBuilds = 0, cardBuilds = 0;
     final previous = debugOnRebuildDirtyWidget;
     debugOnRebuildDirtyWidget = (element, builtOnce) {
@@ -574,16 +671,19 @@ void main() {
       if (frame == 3) await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     }
     await tester.pumpAndSettle();
-    expect(tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList(), orderedEquals(rails));
+    expect(
+      tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList(),
+      orderedEquals(rails),
+    );
     expect(hero(tester).compact, isTrue);
     expect(hero(tester).item!.id, 'shows1');
     expect(row(tester, 2).focusInside.value, isTrue);
     expect(row(tester, 2).focusedIndex, 1);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(2)).dy, 254);
+    expect(tester.getTopLeft(rowFinder(2)).dy, 254);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).compact, isFalse);
     expect(row(tester, 1).focusInside.value, isTrue);
-    expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(1)).dy, 394);
+    expect(tester.getTopLeft(rowFinder(1)).dy, 394);
   });
 
   testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
@@ -693,7 +793,7 @@ void main() {
     final earlyHubs = [hub('early')];
     provider.emit();
     await tester.pump();
-    expect(find.byType(TvHorizontalRow), findsNothing);
+    expect(find.byType(TvHorizontalRow, skipOffstage: false), findsNothing);
     provider.onDeck = items('episode');
     provider.isLoading = false;
     provider.hubs = [];
@@ -705,7 +805,7 @@ void main() {
     provider.ready();
     await tester.pumpAndSettle();
     expect(find.byType(TvRowSkeleton), findsNothing);
-    expect(find.byType(TvHorizontalRow), findsNWidgets(2));
+    expect(find.byType(TvHorizontalRow, skipOffstage: false), findsNWidgets(2));
   });
 
   testWidgets('fast load never paints skeleton', (tester) async {
@@ -729,13 +829,13 @@ void main() {
       expect(button.label, error ? TvStrings.retry : TvStrings.refresh);
       provider.loadStartsLoading = true;
       await key(tester, LogicalKeyboardKey.enter);
-      expect(provider.loads, 2);
+      expect(provider.loads, 1);
       expect(provider.manualRefreshes, 0);
       expect(tester.widget<TvButton>(find.byType(TvButton)).disabled, isTrue);
       expect(find.text(TvStrings.connecting), findsOneWidget);
       provider.loadStartsLoading = true;
       await key(tester, LogicalKeyboardKey.enter);
-      expect(provider.loads, 2);
+      expect(provider.loads, 1);
       expect(provider.manualRefreshes, 0);
       provider.errorMessage = error ? 'Server failed again' : null;
       provider.ready();
@@ -796,6 +896,71 @@ void main() {
     });
   }
 
+  testWidgets('A17: late rows above and below preserve card 2 focus and row screen y', (tester) async {
+    provider.hubs = [hub('a')];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    final focused = FocusManager.instance.primaryFocus;
+    final rail = find.byType(TvHorizontalRow).first;
+    final before = tester.getTopLeft(rail).dy;
+    expect(hero(tester).item!.id, 'a1');
+    provider.hubs = [hub('b-before'), ...provider.hubs, hub('b-after')];
+    provider.emit();
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(focused));
+    expect(hero(tester).item!.id, 'a1');
+    final retained = find.byWidgetPredicate((widget) => widget is TvHorizontalRow && widget.title == 'a');
+    expect(tester.getTopLeft(retained).dy, closeTo(before, 0.01));
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    expect(hero(tester).item!.id, 'b-before0');
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    expect(hero(tester).item!.id, 'b-after0');
+  });
+
+  for (final continuing in [true, false]) {
+    testWidgets('R12: insert before focused card in ${continuing ? "Continue Watching" : "hub"}', (tester) async {
+      final original = items('original', 3);
+      if (continuing) {
+        provider.onDeck = original;
+      } else {
+        provider.hubs = [hub('a').copyWith(items: original)];
+      }
+      await pump(tester);
+      await tester.pumpAndSettle();
+      final focused = FocusManager.instance.primaryFocus;
+      final before = tester.getTopLeft(rowFinder(0)).dy;
+      expect(hero(tester).item!.globalKey, original.first.globalKey);
+      final merged = [items('inserted', 1).single, ...original];
+      if (continuing) {
+        provider.onDeck = merged;
+      } else {
+        provider.hubs = [provider.hubs.single.copyWith(items: merged)];
+      }
+      provider.emit();
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus, same(focused));
+      expect(
+        focused!.context!.findAncestorWidgetOfExactType<TvHomeHubCard>()!.item.globalKey,
+        original.first.globalKey,
+      );
+      final focusedVisuals = tester.widgetList<TvFocusVisual>(find.byType(TvFocusVisual)).where((v) => v.state.focused);
+      expect(focusedVisuals, hasLength(1));
+      final framedCards = find
+          .byType(TvFocusVisual)
+          .evaluate()
+          .where((element) => (element.widget as TvFocusVisual).state.focused)
+          .map((element) => element.findAncestorWidgetOfExactType<TvHomeHubCard>()!.item.globalKey);
+      expect(framedCards, [original.first.globalKey]);
+      expect(merged[row(tester, 0).focusedIndex].globalKey, original.first.globalKey);
+      expect(hero(tester).item!.globalKey, original.first.globalKey);
+      expect(tester.getTopLeft(rowFinder(0)).dy, closeTo(before, 0.01));
+      await key(tester, LogicalKeyboardKey.arrowRight);
+      expect(hero(tester).item!.globalKey, original[1].globalKey);
+    });
+  }
+
   testWidgets('A12/A18: refresh hooks, reorder/removal, removed row fallback', (tester) async {
     content();
     await pump(tester);
@@ -814,12 +979,12 @@ void main() {
     expect(provider.staleChecks, 3);
     provider.isLoadInFlight = true;
     state.primeRefresh();
-    expect(provider.loads, 1);
+    expect(provider.loads, 0);
     provider.isLoadInFlight = false;
     state.primeRefresh();
-    expect(provider.loads, 2);
+    expect(provider.loads, 1);
     state.fullRefresh();
-    expect(provider.loads, 3);
+    expect(provider.loads, 2);
     provider.onDeck = [provider.onDeck[3], ...provider.onDeck.take(3), ...provider.onDeck.skip(4)];
     provider.emit();
     await tester.pumpAndSettle();
@@ -1046,7 +1211,7 @@ void main() {
     await tester.pumpAndSettle();
     provider.loadStartsLoading = true;
     await key(tester, LogicalKeyboardKey.enter);
-    expect(provider.loads, 2);
+    expect(provider.loads, 1);
     expect(provider.manualRefreshes, 0);
     provider.errorMessage = 'Failed again';
     provider.ready();
@@ -1145,7 +1310,7 @@ void main() {
         expect(row(tester, afterIndex).focusInside.value, isTrue);
         expect(hero(tester).item!.globalKey, target);
         expect(hero(tester).compact, afterIndex > 1);
-        expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(afterIndex)).dy, expectedHeight);
+        expect(tester.getTopLeft(rowFinder(afterIndex)).dy, expectedHeight);
       });
     }
   }

@@ -117,3 +117,71 @@ the tested Xiaomi Android 11 device. No root or debug build is needed.
 
 Local tests/build checks do not establish provider commands or cold/warm intent
 behavior on a real TV. Android 9 availability of `content write` remains unverified.
+
+## S26: startup and image measurements
+
+Host requirement: Node 22+ (global WebSocket), Android SDK adb at
+`~/Library/Android/sdk/platform-tools/adb` (override with `ADB`). No device is
+selected implicitly. Install the desired build and sign in first; these commands
+never build, install, or connect to a TV themselves.
+
+```sh
+node scripts/plezytv/measure/measure.mjs cold --device SERIAL --package com.underlow.plezytv --runs 7 --delay 20
+node scripts/plezytv/measure/measure.mjs images --device SERIAL --package com.underlow.plezytv --delay 20
+node scripts/plezytv/measure/measure.mjs laps --device SERIAL --package com.underlow.plezytv --runs 5 --delay 20
+```
+
+`cold` force-stops and launches the installed app for each run, clears logcat,
+then samples `dumpsys meminfo` N seconds after `am start -W` returns. Output is
+JSON lines: PSS and Graphics in MiB, each startup phase in milliseconds relative
+to the first `native_on_create` logcat timestamp, and `bindingToHomeMs` from
+`binding_settled` to `TV home rows ready`. This uses logcat timestamps, not the
+Dart stopwatch's `elapsedMs`. Missing marks are null/absent, never zero; summary
+reports sample/missing counts and min/median/max for each metric. For an original
+Plezy comparison, missing TV readiness is expected. Activity name is
+`PACKAGE/com.edde746.plezy.PlezyActivity` (the fork retains the upstream
+Android namespace; override the class with `--activity CLASS` for another build).
+This also works when the launcher icon alias is disabled.
+
+Home logs `TV home rows ready: visibleRows=N` once per load after both data
+parts finish and every visible row's first poster contains a decoded `RawImage`
+after a frame. Visibility is intersection with the rows viewport; partially
+visible rows count. Hidden Home does not emit. Missing or failed first artwork
+leaves the mark absent rather than claiming readiness from a placeholder.
+This is a Flutter paint-frame proxy, not proof of physical display presentation.
+
+`images` requires an installed **profile** build. It cold-launches with Dart
+profiling enabled, discovers the service in logcat, creates an ephemeral adb
+forward, waits `delay` seconds, and removes its forward on exit. To inspect the
+current screen (search, movie, series, or Home after scrolling), supply
+`--uri http://127.0.0.1:PORT/TOKEN/` from an existing host-forwarded VM service;
+that mode neither launches nor navigates. Keep VM tokens private.
+It requests GC, counts live `dart:ui _Image` instances, ImageCache `_cache` and
+`_liveImages` entries, and mounted `TvHorizontalRowState` instances (all mounted
+screens, including retained hidden sections; non-null `_element` denotes mounted).
+Inspection uses `getInstances(objectId: classId)` and `getObject` map lengths;
+it works without `evaluate`, which profile AOT builds reject.
+`currentSizeMiB`/`maximumSizeMiB` report Flutter cache bytes converted to MiB
+(the reduced-mode budget is 64 MiB). `heldByWidgets` equals `liveEntries`: the
+number of `_liveImages` entries with listeners, used for A2/R2. It is a proxy
+for widget-held images: listeners may belong to non-widget consumers and
+retained hidden screens also contribute. Image wrappers, cache entries and
+native images are not one-to-one, so this cannot prove a precise count of
+offscreen images or native GPU bytes. Cache-only entries are not subtracted
+from `_Image`: distinct but value-equal keys can have different VM object ids.
+Private Flutter fields may change; unsupported layouts fail loudly. Sequential
+reads are not an atomic snapshot: images, listeners and cache membership can
+change during inspection. VM inspection/GC also perturbs the app: measure
+release PSS separately.
+
+`laps` is operator-guided so library identity, focus position and movie selection
+remain explicit. Start on settled Home, confirm baseline, navigate Home → library
+→ movie → back to library → back to Home for each prompt, then confirm. It waits
+`delay` seconds each lap and prints per-lap memory, baseline/final memory and PSS
+delta. Use the same movie and navigation every time. No playback is needed.
+
+Measurement accuracy is limited: content, poster sizes, visible rows, server and
+network state vary. Compare several runs on the same device/server on the same
+day with original Plezy as reference. Record build mode, content and viewport;
+20 seconds is a sampling delay, not a guarantee that Home has finished loading.
+Device acceptance A1/A2/A4/A6/A13 remains a coordinator check.

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../media/ids.dart';
+import '../utils/active_client_scope.dart';
 import '../media/library_filter_selection.dart';
 import '../media/library_query.dart';
 
@@ -24,6 +25,7 @@ class StorageService extends BaseSharedPreferencesService {
   static const String _keyActiveProfileId = 'active_app_profile_id';
 
   // Key prefixes for per-id storage
+  static const String _prefixMediaProviders = 'media_providers_';
   static const String _prefixServerEndpoint = 'server_endpoint_';
   static const String _prefixLibraryFilters = 'library_filters_';
   static const String _prefixLibrarySort = 'library_sort_';
@@ -168,6 +170,20 @@ class StorageService extends BaseSharedPreferencesService {
 
   String? getServerEndpoint(ServerId serverId) {
     return readNullableString('$_prefixServerEndpoint$serverId');
+  }
+
+  /// Durable provider discovery, isolated by server and profile (no credentials).
+  Future<void> saveMediaProviders(PlexProfileScopeId scope, Map<String, dynamic> response) async {
+    await prefs.setString('$_prefixMediaProviders$scope', json.encode(response));
+  }
+
+  Map<String, dynamic>? getMediaProviders(PlexProfileScopeId scope) {
+    final saved = readNullableString('$_prefixMediaProviders$scope');
+    return saved == null ? null : json.decode(saved) as Map<String, dynamic>;
+  }
+
+  Future<void> clearMediaProviders(PlexProfileScopeId scope) async {
+    await prefs.remove('$_prefixMediaProviders$scope');
   }
 
   Future<void> clearServerEndpoint(ServerId serverId) async {
@@ -486,7 +502,12 @@ class StorageService extends BaseSharedPreferencesService {
   }
 
   Future<void> clearMultiServerData() async {
-    await Future.wait([clearServersList(), clearServerOrder(), _clearKeysWithPrefix(_prefixServerEndpoint)]);
+    await Future.wait([
+      clearServersList(),
+      clearServerOrder(),
+      _clearKeysWithPrefix(_prefixServerEndpoint),
+      _clearKeysWithPrefix(_prefixMediaProviders),
+    ]);
   }
 
   /// Clear legacy server order.

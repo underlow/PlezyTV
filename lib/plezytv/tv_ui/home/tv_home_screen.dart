@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +17,7 @@ import '../../../mixins/refreshable.dart';
 import '../../../mixins/tab_visibility_aware.dart';
 import '../../../navigation/main_screen_scope.dart';
 import '../../../providers/discover_provider.dart';
+import '../../../providers/hidden_libraries_provider.dart';
 import '../../../providers/watch_state_store.dart';
 import '../../../services/device_performance.dart';
 import '../../../services/settings_service.dart';
@@ -33,6 +35,7 @@ import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import '../tv_tokens.dart';
 import 'tv_home_card.dart';
+import 'tv_home_ready.dart';
 import 'tv_home_model.dart';
 import 'tv_home_playback.dart';
 
@@ -53,6 +56,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
   final _vertical = ScrollController();
   final _content = FocusScopeNode(debugLabel: 'TV Home');
   final _button = FocusNode(debugLabel: 'Home retry/refresh');
+  final _viewport = GlobalKey();
+  bool _readyLogged = false;
+  bool _loadWasInFlight = false;
+  Timer? _readyProbe;
+
+  final _rowMemory = <String, TvHorizontalRowMemory>{};
   final _rows = <String, GlobalKey<TvHorizontalRowState>>{};
   late DiscoverProvider _provider;
   late TvHomePlayback _playback;
@@ -103,8 +112,69 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _provider.addListener(_changed);
     HardwareKeyboard.instance.addHandler(_observeKey);
     _updateSkeleton();
+    _startReadyProbe();
     _afterFrame(focusActiveTabIfReady);
-    unawaited(_provider.load());
+    unawaited(_loadInitially(context.read<HiddenLibrariesProvider>()));
+  }
+
+  Future<void> _loadInitially(HiddenLibrariesProvider hiddenLibraries) async {
+    // Its initialization notification can start a full pass itself. Let that
+    // notification run first, then avoid queuing a duplicate behind that pass.
+    await hiddenLibraries.ensureInitialized();
+    if (!mounted || _provider.isLoadInFlight || (!_provider.isLoading && !_provider.areHubsLoading)) return;
+    await _provider.load();
+  }
+
+  void _startReadyProbe() {
+    _readyProbe?.cancel();
+    // Timers run between frames; do not drive extra frames while waiting for
+    // network images (or indefinitely when artwork is unavailable).
+    _readyProbe = Timer.periodic(const Duration(milliseconds: 100), (_) => _probeReady());
+  }
+
+  BuildContext? _firstPosterContext(TvHomeRow row) {
+    final rail = _rows[_rowKey(row)]?.currentContext;
+    if (rail == null) return null;
+    Element? first;
+    void visit(Element element) {
+      if (first != null) return;
+      if (element.widget case TvHomeHubCard(:final item)) {
+        if (item.globalKey == row.items.first.globalKey) first = element;
+      } else {
+        element.visitChildren(visit);
+      }
+    }
+
+    // Inspect the first card without a positional GlobalKey: such a key
+    // would transplant focus visuals to a different item inserted at index 0.
+    (rail as Element).visitChildren(visit);
+    return first;
+  }
+
+  void _probeReady() {
+    if (_readyLogged ||
+        !_current ||
+        _model.onDeckState == TvHomePartState.loading ||
+        _model.hubsState == TvHomePartState.loading) {
+      return;
+    }
+    final render = _viewport.currentContext?.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) return;
+    final viewport = render.localToGlobal(Offset.zero) & render.size;
+    var top = viewport.top - (_vertical.hasClients ? _vertical.offset : 0);
+    final bounds = <Rect>[];
+    for (final row in _model.rows) {
+      final height = _rowExtent(row);
+      bounds.add(Rect.fromLTWH(viewport.left, top, viewport.width, height));
+      top += height;
+    }
+    final count = tvHomeReadyRows(viewport, [
+      for (final row in _model.rows) _firstPosterContext(row),
+    ], rowBounds: bounds);
+    if (count == null) return;
+    _readyLogged = true;
+    _readyProbe?.cancel();
+    appLogger.i('TV home rows ready: visibleRows=$count');
   }
 
   void _afterFrame(VoidCallback action) {
@@ -144,9 +214,32 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final ownedContent = _content.hasFocus;
     final previousRows = _model.rows;
     final previousKey = _activeRow;
+    final previousCompact = _compact.value;
+    double? anchorOffset(List<TvHomeRow> rows) {
+      final index = rows.indexWhere((row) => _rowKey(row) == previousKey);
+      return index < 0 ? null : rows.take(index).fold<double>(0, (sum, row) => sum + _rowExtent(row));
+    }
+
+    final oldAnchor = ownedContent ? anchorOffset(previousRows) : null;
     setState(() {
       _model = _builder.build(_provider);
+      if (_model.isLoadInFlight && !_loadWasInFlight) {
+        _readyLogged = false;
+        _startReadyProbe();
+      }
+      _loadWasInFlight = _model.isLoadInFlight;
+      final keys = _model.rows.map(_rowKey).toSet();
+      _rowMemory.removeWhere((key, _) => !keys.contains(key));
+      _rows.removeWhere((key, _) => !keys.contains(key));
       _syncHero();
+      final newAnchor = ownedContent ? anchorOffset(_model.rows) : null;
+      if (oldAnchor != null && newAnchor != null && _vertical.hasClients) {
+        // Compensate before the sliver lays out: the same keyed rail stays
+        // built and retains its FocusNode even when many rows precede it.
+        _compact.value = previousCompact;
+        final delta = newAnchor - oldAnchor;
+        if (delta != 0) _vertical.jumpTo((_vertical.offset + delta).clamp(0.0, double.infinity));
+      }
       _updateSkeleton();
     });
     if (!_current) {
@@ -197,7 +290,10 @@ class TvHomeScreenState extends State<TvHomeScreen>
         .firstOrNull;
     final index = active == null
         ? 0
-        : (_rows[_rowKey(row)]?.currentState?.focusedIndex ?? 0).clamp(0, row.items.length - 1);
+        : (_rows[_rowKey(row)]?.currentState?.focusedIndex ?? _rowMemory[_rowKey(row)]?.index ?? 0).clamp(
+            0,
+            row.items.length - 1,
+          );
     _hero.value = same ?? row.items[index];
     _compact.value = _model.rows.indexOf(row) > 1;
     if (_returnPosition != null) {
@@ -212,7 +308,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
     if (!_content.hasFocus || _returnPosition != null) return;
     final row = _model.rows.where((row) => _rowKey(row) == _activeRow).firstOrNull;
     if (row == null) return;
-    final index = (_rows[_activeRow]?.currentState?.focusedIndex ?? 0).clamp(
+    final index = (_rows[_activeRow]?.currentState?.focusedIndex ?? _rowMemory[_activeRow]?.index ?? 0).clamp(
       0,
       row.items.length - (row.hasMore ? 0 : 1),
     );
@@ -228,7 +324,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
     if (!_content.hasFocus) return;
     if (_model.state == TvHomeState.content && position != null) {
       _activeRow = position.row;
-      _rows[position.row]?.currentState?.requestFocus(itemKey: position.item);
+      _focusRow(position.row, itemKey: position.item);
     } else {
       _focusReady();
     }
@@ -257,9 +353,8 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   void _focusReady() {
     if (_model.state == TvHomeState.content) {
-      final remembered = _rows[_activeRow]?.currentState;
-      if (remembered != null) {
-        remembered.requestFocus();
+      if (_activeRow != null && _model.rows.any((row) => _rowKey(row) == _activeRow)) {
+        _focusRow(_activeRow!);
       } else {
         final first = _rows[_rowKey(_model.rows.first)]?.currentState;
         if (first?.focusStart() ?? false) first?.requestFocus();
@@ -342,10 +437,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   void _focused(TvHomeRow row, int index) {
     if (_returnPosition != null) return;
+    final sameRow = _activeRow == _rowKey(row);
     _activeRow = _rowKey(row);
     _loadingOwner = null;
     _focusCommand++;
     if (index < row.items.length) _hero.value = row.items[index];
+    if (sameRow) return;
     final rowIndex = _model.rows.indexOf(row);
     _compact.value = rowIndex > 1;
     final key = _activeRow!;
@@ -354,17 +451,58 @@ class TvHomeScreenState extends State<TvHomeScreen>
     });
   }
 
-  void _revealRow(String key) {
-    final render = _rows[key]?.currentContext?.findRenderObject();
-    if (render == null || !_vertical.hasClients) return;
-    unawaited(
-      _vertical.position.ensureVisible(
-        render,
-        alignment: 0,
-        duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : TvTokens.motion.rowScroll),
-        curve: Curves.easeOutCubic,
-      ),
-    );
+  double _cardHeight(TvHomeRow row) {
+    final theme = TvTheme.of(context);
+    final captions =
+        (theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
+            theme.px(TvTokens.type.caption.lineHeight).ceilToDouble()) /
+        theme.scale;
+    return (row.kind == TvHomeRowKind.continueWatching
+            ? TvTokens.size.episode.h
+            : row.layout == TvHomeRowLayout.music
+            ? TvTokens.size.poster.w
+            : TvTokens.size.poster.h) +
+        20 +
+        captions;
+  }
+
+  double _rowExtent(TvHomeRow row) {
+    final px = TvTheme.of(context).px;
+    return px(TvTokens.type.title.lineHeight).ceilToDouble() +
+        px(TvTokens.space.rowHeaderToCards + TvTokens.space.cardFocusReserve + TvTokens.space.rowGap) +
+        px(_cardHeight(row));
+  }
+
+  void _revealRow(String key, {bool immediate = false}) {
+    if (!_vertical.hasClients) return;
+    final index = _model.rows.indexWhere((row) => _rowKey(row) == key);
+    if (index < 0) return;
+    final offset = _model.rows.take(index).fold(0.0, (sum, row) => sum + _rowExtent(row));
+    final target = offset.clamp(0.0, _vertical.position.maxScrollExtent);
+    if (immediate || DevicePerformance.isReduced) {
+      _vertical.jumpTo(target);
+    } else {
+      unawaited(
+        _vertical.animateTo(
+          target,
+          duration: Duration(milliseconds: TvTokens.motion.rowScroll),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+  }
+
+  void _focusRow(String key, {String? itemKey}) {
+    final built = _rows[key]?.currentState;
+    if (built != null) {
+      built.requestFocus(itemKey: itemKey);
+      return;
+    }
+    _revealRow(key, immediate: true);
+    final command = ++_focusCommand;
+    _afterFrame(() {
+      if (_current && command == _focusCommand) _rows[key]?.currentState?.requestFocus(itemKey: itemKey);
+    });
   }
 
   KeyEventResult _key(FocusNode node, KeyEvent event) {
@@ -380,7 +518,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
       if (event is KeyDownEvent || event is KeyRepeatEvent) {
         final index = _model.rows.indexWhere((row) => _rowKey(row) == _activeRow);
         final next = index + (event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1);
-        if (next >= 0 && next < _model.rows.length) _rows[_rowKey(_model.rows[next])]?.currentState?.requestFocus();
+        if (next >= 0 && next < _model.rows.length) _focusRow(_rowKey(_model.rows[next]));
       }
       return KeyEventResult.handled;
     }
@@ -417,13 +555,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final wide = row.kind == TvHomeRowKind.continueWatching;
     final music = row.layout == TvHomeRowLayout.music;
     final key = _rowKey(row);
-    final theme = TvTheme.of(context);
-    // Text paragraphs round line heights to whole layout pixels. Reserve
-    // those same rounded heights at fractional design scales.
-    final captions =
-        (theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
-            theme.px(TvTokens.type.caption.lineHeight).ceilToDouble()) /
-        theme.scale;
     return TvHorizontalRow(
       key: _rows.putIfAbsent(key, () => GlobalKey<TvHorizontalRowState>()),
       title: row.title,
@@ -431,14 +562,8 @@ class TvHomeScreenState extends State<TvHomeScreen>
       itemCount: row.items.length + (row.hasMore ? 1 : 0),
       itemKey: (index) => index == row.items.length ? 'all' : TvHomeRow.itemKey(row.items[index]),
       cardWidth: (wide ? TvTokens.size.episode.w : TvTokens.size.poster.w).toDouble(),
-      cardHeight:
-          (wide
-              ? TvTokens.size.episode.h
-              : music
-              ? TvTokens.size.poster.w
-              : TvTokens.size.poster.h) +
-          20 +
-          captions,
+      cardHeight: _cardHeight(row),
+      positionMemory: _rowMemory.putIfAbsent(key, TvHorizontalRowMemory.new),
       onItemFocused: (index) => _focused(row, index),
       cardBuilder: (context, index, node) {
         if (index == row.items.length) {
@@ -499,32 +624,53 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final px = TvTheme.of(context).px;
     Widget content;
     if (_model.state == TvHomeState.content) {
-      // Keep row widget instances stable when the animated hero changes the
-      // viewport constraints. Only the trailing space depends on its height.
-      final railChildren = <Widget>[
-        for (final row in _model.rows) ...[_rail(row), SizedBox(height: px(TvTokens.space.rowGap))],
-        if (_model.hubsState == TvHomePartState.loading && !_model.rows.any((r) => r.kind == TvHomeRowKind.hub))
-          Padding(
-            padding: EdgeInsets.only(
-              left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
-                0.0,
-                double.infinity,
-              ),
-            ),
-            child: const TvRowSkeleton(),
-          ),
-      ];
+      // Cache widget instances across hero constraint changes, but construct
+      // only the rails requested by the sliver's viewport and cache region.
+      final railsByKey = <String, Widget>{};
+      final loadingHubs =
+          _model.hubsState == TvHomePartState.loading && !_model.rows.any((r) => r.kind == TvHomeRowKind.hub);
       final rails = LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
+        builder: (context, constraints) => ListView.builder(
           controller: _vertical,
           physics: const NeverScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ...railChildren,
-              SizedBox(height: constraints.maxHeight),
-            ],
-          ),
+          padding: EdgeInsets.zero,
+          scrollCacheExtent: ScrollCacheExtent.pixels(constraints.maxHeight),
+          addAutomaticKeepAlives: false,
+          findChildIndexCallback: (key) {
+            final index = _model.rows.indexWhere((row) => ValueKey(_rowKey(row)) == key);
+            return index < 0 ? null : index;
+          },
+          itemCount: _model.rows.length + (loadingHubs ? 1 : 0) + 1,
+          itemExtentBuilder: (index, _) => index < _model.rows.length
+              ? _rowExtent(_model.rows[index])
+              : index == _model.rows.length && loadingHubs
+              ? px(80 + TvTokens.size.poster.h + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight)
+              : constraints.maxHeight,
+          itemBuilder: (context, index) {
+            if (index >= _model.rows.length) {
+              return index == _model.rows.length && loadingHubs
+                  ? Padding(
+                      padding: EdgeInsets.only(
+                        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                          0.0,
+                          double.infinity,
+                        ),
+                      ),
+                      child: const TvRowSkeleton(),
+                    )
+                  : const SizedBox();
+            }
+            final row = _model.rows[index];
+            final key = _rowKey(row);
+            return railsByKey.putIfAbsent(
+              key,
+              () => Padding(
+                key: ValueKey(key),
+                padding: EdgeInsets.only(bottom: px(TvTokens.space.rowGap)),
+                child: _rail(row),
+              ),
+            );
+          },
         ),
       );
       content = Column(
@@ -559,7 +705,9 @@ class TvHomeScreenState extends State<TvHomeScreen>
               ),
             ),
           ),
-          Expanded(child: rails),
+          Expanded(
+            child: SizedBox(key: _viewport, child: rails),
+          ),
         ],
       );
     } else if (_model.state == TvHomeState.loading) {
@@ -636,6 +784,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _provider.removeListener(_changed);
     HardwareKeyboard.instance.removeHandler(_observeKey);
     _skeletonTimer?.cancel();
+    _readyProbe?.cancel();
     _hero.dispose();
     _compact.dispose();
     _vertical.dispose();
