@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { VM, sleep } from '../../perf/vmclient.mjs';
+import { countImages } from './vm-images.mjs';
 const [mode, ...args] = process.argv.slice(2);
 const opts = {};
 for (let i = 0; i < args.length; i += 2) {
@@ -97,36 +98,19 @@ if (mode === 'cold') {
   let vm;
   try {
     vm = await VM.connect(uri);
+    const rpc = vm.call.bind(vm);
+    vm.call = async (method, params) => {
+      try {
+        return await rpc(method, params);
+      } catch (error) {
+        if (error.code === 'rpcError') {
+          throw new Error(`VM service rejected ${method}`, { cause: error });
+        }
+        throw error;
+      }
+    };
     const isolateId = await vm.uiIsolate();
-    const call = (method, params = {}) => vm.call(method, { isolateId, ...params });
-    const profile = await call('getAllocationProfile', { gc: true });
-    const classes = profile.members;
-    async function instances(name, libraryUri) {
-      const matches = classes.filter(c => c.class.name === name && (!libraryUri || c.class.library?.uri === libraryUri));
-      if (matches.length !== 1) throw Error(`Expected one class ${name}, found ${matches.length}`);
-      const result = await call('getInstances', { classId: matches[0].class.id, limit: 100000 });
-      if (result.totalCount > result.instances.length) throw Error(`Truncated ${name} instances`);
-      return result;
-    }
-    const images = await instances('_Image', 'dart:ui');
-    const rows = await instances('TvHorizontalRowState');
-    let builtRows = 0;
-    for (const row of rows.instances) {
-      const value = await call('evaluate', { targetId: row.id, expression: 'mounted' });
-      if (value.valueAsString === 'true') builtRows++;
-    }
-    const caches = await instances('ImageCache');
-    if (caches.totalCount !== 1) throw Error('Expected one ImageCache');
-    async function evaluate(expression) {
-      const result = await call('evaluate', { targetId: caches.instances[0].id, expression });
-      const number = Number(result.valueAsString);
-      if (!Number.isFinite(number)) throw Error(`Cannot evaluate ImageCache ${expression}`);
-      return number;
-    }
-    const cacheEntries = await evaluate('_cache.length');
-    const liveEntries = await evaluate('_liveImages.length');
-    const cacheWithoutListeners = await evaluate('_cache.keys.where((key) => !_liveImages.containsKey(key)).length');
-    console.log(JSON.stringify({ images: images.totalCount, cacheEntries, liveEntries, builtRows, cacheWithoutListeners, heldByWidgetsApprox: Math.max(0, images.totalCount-cacheWithoutListeners) }));
+    console.log(JSON.stringify(await countImages(vm, isolateId)));
   } finally {
     vm?.close();
     if (port) adb('forward', '--remove', `tcp:${port}`);

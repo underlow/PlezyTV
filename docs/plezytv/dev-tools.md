@@ -158,13 +158,20 @@ current screen (search, movie, series, or Home after scrolling), supply
 that mode neither launches nor navigates. Keep VM tokens private.
 It requests GC, counts live `dart:ui _Image` instances, ImageCache `_cache` and
 `_liveImages` entries, and mounted `TvHorizontalRowState` instances (all mounted
-screens, including retained hidden sections). `heldByWidgetsApprox` subtracts
+screens, including retained hidden sections; non-null `_element` denotes mounted).
+Inspection uses `getInstances(objectId: classId)` and `getObject`, including paged
+map associations; it works without `evaluate`, which profile AOT builds reject.
+`currentSizeMiB`/`maximumSizeMiB` report Flutter cache bytes converted to MiB
+(the reduced-mode budget is 64 MiB). `heldByWidgetsApprox` subtracts
 cache keys absent from `_liveImages` from `_Image` count. This is approximate:
 cache entries, keys, image wrappers and native images are not one-to-one;
 listeners may belong to non-widget consumers, pending images and other screens
 also contribute. It cannot prove a precise count of offscreen images or native
 GPU bytes. Private Flutter fields may change; unsupported layouts fail loudly.
-VM evaluation/GC also perturbs the app: measure release PSS separately.
+The map comparison uses key object ids. These sequential reads are not an atomic
+snapshot: images, listeners and cache membership can change during inspection;
+detected map size/key inconsistencies fail with a retry message. VM inspection/GC
+also perturbs the app: measure release PSS separately.
 
 `laps` is operator-guided so library identity, focus position and movie selection
 remain explicit. Start on settled Home, confirm baseline, navigate Home → library
