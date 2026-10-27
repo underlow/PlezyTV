@@ -894,6 +894,29 @@ void main() {
     });
   }
 
+  testWidgets('A17: late rows above and below preserve card 2 focus and row screen y', (tester) async {
+    provider.hubs = [hub('a')];
+    await pump(tester);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    final focused = FocusManager.instance.primaryFocus;
+    final rail = find.byType(TvHorizontalRow).first;
+    final before = tester.getTopLeft(rail).dy;
+    expect(hero(tester).item!.id, 'a1');
+    provider.hubs = [hub('b-before'), ...provider.hubs, hub('b-after')];
+    provider.emit();
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(focused));
+    expect(hero(tester).item!.id, 'a1');
+    final retained = find.byWidgetPredicate((widget) => widget is TvHorizontalRow && widget.title == 'a');
+    expect(tester.getTopLeft(retained).dy, closeTo(before, 0.01));
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    expect(hero(tester).item!.id, 'b-before0');
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    expect(hero(tester).item!.id, 'b-after0');
+  });
+
   testWidgets('A12/A18: refresh hooks, reorder/removal, removed row fallback', (tester) async {
     content();
     await pump(tester);
