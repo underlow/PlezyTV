@@ -159,19 +159,20 @@ that mode neither launches nor navigates. Keep VM tokens private.
 It requests GC, counts live `dart:ui _Image` instances, ImageCache `_cache` and
 `_liveImages` entries, and mounted `TvHorizontalRowState` instances (all mounted
 screens, including retained hidden sections; non-null `_element` denotes mounted).
-Inspection uses `getInstances(objectId: classId)` and `getObject`, including paged
-map associations; it works without `evaluate`, which profile AOT builds reject.
+Inspection uses `getInstances(objectId: classId)` and `getObject` map lengths;
+it works without `evaluate`, which profile AOT builds reject.
 `currentSizeMiB`/`maximumSizeMiB` report Flutter cache bytes converted to MiB
-(the reduced-mode budget is 64 MiB). `heldByWidgetsApprox` subtracts
-cache keys absent from `_liveImages` from `_Image` count. This is approximate:
-cache entries, keys, image wrappers and native images are not one-to-one;
-listeners may belong to non-widget consumers, pending images and other screens
-also contribute. It cannot prove a precise count of offscreen images or native
-GPU bytes. Private Flutter fields may change; unsupported layouts fail loudly.
-The map comparison uses key object ids. These sequential reads are not an atomic
-snapshot: images, listeners and cache membership can change during inspection;
-detected map size/key inconsistencies fail with a retry message. VM inspection/GC
-also perturbs the app: measure release PSS separately.
+(the reduced-mode budget is 64 MiB). `heldByWidgets` equals `liveEntries`: the
+number of `_liveImages` entries with listeners, used for A2/R2. It is a proxy
+for widget-held images: listeners may belong to non-widget consumers and
+retained hidden screens also contribute. Image wrappers, cache entries and
+native images are not one-to-one, so this cannot prove a precise count of
+offscreen images or native GPU bytes. Cache-only entries are not subtracted
+from `_Image`: distinct but value-equal keys can have different VM object ids.
+Private Flutter fields may change; unsupported layouts fail loudly. Sequential
+reads are not an atomic snapshot: images, listeners and cache membership can
+change during inspection. VM inspection/GC also perturbs the app: measure
+release PSS separately.
 
 `laps` is operator-guided so library identity, focus position and movie selection
 remain explicit. Start on settled Home, confirm baseline, navigate Home → library
