@@ -34,7 +34,14 @@ void main() {
     const viewport = Rect.fromLTWH(0, 0, 800, 600);
     await draw(false);
     expect(tvHomeReadyRows(viewport, [first.currentContext, second.currentContext]), isNull);
+    // Only the header of the second row intersects: its first poster is
+    // still below the viewport, and missing/unbuilt posters must block ready.
+    final bounds = [const Rect.fromLTWH(0, 0, 800, 80), const Rect.fromLTWH(0, 80, 800, 150)];
+    const partialViewport = Rect.fromLTWH(0, 0, 800, 90);
+    expect(tvHomeReadyRows(partialViewport, [first.currentContext, second.currentContext], rowBounds: bounds), isNull);
+    expect(tvHomeReadyRows(partialViewport, [first.currentContext, null], rowBounds: bounds), isNull);
     await draw(true);
+    expect(tvHomeReadyRows(partialViewport, [first.currentContext, second.currentContext], rowBounds: bounds), 2);
     expect(tvHomeReadyRows(viewport, [first.currentContext, second.currentContext]), 2);
     expect(tvHomeReadyRows(const Rect.fromLTWH(0, 0, 800, 99), [first.currentContext, second.currentContext]), 1);
     await tester.pumpWidget(const SizedBox());

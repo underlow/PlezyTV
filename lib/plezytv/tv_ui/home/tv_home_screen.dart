@@ -136,7 +136,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
   void _probeReady() {
     if (_readyLogged ||
         !_current ||
-        _model.isLoadInFlight ||
         _model.onDeckState == TvHomePartState.loading ||
         _model.hubsState == TvHomePartState.loading) {
       return;
@@ -144,7 +143,16 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final render = _viewport.currentContext?.findRenderObject();
     if (render is! RenderBox || !render.hasSize) return;
     final viewport = render.localToGlobal(Offset.zero) & render.size;
-    final count = tvHomeReadyRows(viewport, [for (final row in _model.rows) _posters[_rowKey(row)]?.currentContext]);
+    var top = viewport.top - (_vertical.hasClients ? _vertical.offset : 0);
+    final bounds = <Rect>[];
+    for (final row in _model.rows) {
+      final height = _rowExtent(row);
+      bounds.add(Rect.fromLTWH(viewport.left, top, viewport.width, height));
+      top += height;
+    }
+    final count = tvHomeReadyRows(viewport, [
+      for (final row in _model.rows) _posters[_rowKey(row)]?.currentContext,
+    ], rowBounds: bounds);
     if (count == null) return;
     _readyLogged = true;
     _readyProbe?.cancel();
@@ -188,6 +196,13 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final ownedContent = _content.hasFocus;
     final previousRows = _model.rows;
     final previousKey = _activeRow;
+    final previousCompact = _compact.value;
+    double? anchorOffset(List<TvHomeRow> rows) {
+      final index = rows.indexWhere((row) => _rowKey(row) == previousKey);
+      return index < 0 ? null : rows.take(index).fold<double>(0, (sum, row) => sum + _rowExtent(row));
+    }
+
+    final oldAnchor = ownedContent ? anchorOffset(previousRows) : null;
     setState(() {
       _model = _builder.build(_provider);
       if (_model.isLoadInFlight && !_loadWasInFlight) {
@@ -200,6 +215,14 @@ class TvHomeScreenState extends State<TvHomeScreen>
       _rows.removeWhere((key, _) => !keys.contains(key));
       _posters.removeWhere((key, _) => !keys.contains(key));
       _syncHero();
+      final newAnchor = ownedContent ? anchorOffset(_model.rows) : null;
+      if (oldAnchor != null && newAnchor != null && _vertical.hasClients) {
+        // Compensate before the sliver lays out: the same keyed rail stays
+        // built and retains its FocusNode even when many rows precede it.
+        _compact.value = previousCompact;
+        final delta = newAnchor - oldAnchor;
+        if (delta != 0) _vertical.jumpTo((_vertical.offset + delta).clamp(0.0, double.infinity));
+      }
       _updateSkeleton();
     });
     if (!_current) {
@@ -397,10 +420,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   void _focused(TvHomeRow row, int index) {
     if (_returnPosition != null) return;
+    final sameRow = _activeRow == _rowKey(row);
     _activeRow = _rowKey(row);
     _loadingOwner = null;
     _focusCommand++;
     if (index < row.items.length) _hero.value = row.items[index];
+    if (sameRow) return;
     final rowIndex = _model.rows.indexOf(row);
     _compact.value = rowIndex > 1;
     final key = _activeRow!;

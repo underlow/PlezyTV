@@ -299,17 +299,21 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     return _loadCoordinator.requestDelta(onlineServerIds.difference(_fullyLoadedServerIds));
   }
 
+  int _fullRequestRevision = 0;
+
   /// Full load of Continue Watching + hubs. Concurrent calls coalesce into
   /// the in-flight pass plus at most one trailing pass (so a request that
   /// arrives mid-load still observes its own fresh fetch). A pass requested
   /// while the profile binder runs ends without fetching or touching state.
   Future<void> load() {
     if (isDisposed) return Future<void>.value();
+    ++_fullRequestRevision;
     return _loadCoordinator.requestFull();
   }
 
   Future<DiscoverRefreshOutcome> refreshNow() async {
     if (isDisposed) return DiscoverRefreshOutcome.cancelled;
+    ++_fullRequestRevision;
     await _loadCoordinator.requestFull();
     if (isDisposed) return DiscoverRefreshOutcome.cancelled;
     return _lastOutcome;
@@ -358,6 +362,198 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }
 
   Future<void> _loadOnce() async {
+    final ids = _multiServer.serverManager.visibleOnlineClients.keys.toSet();
+    // Keep the existing single-server failure/rollback path. With several
+    // servers each aggregation is scoped to one server, so even its library
+    // prefetch cannot hold up a faster server's Home.
+    if (ids.length < 2) return _loadAggregatedOnce();
+    final requestRevision = _fullRequestRevision;
+    final profileEpoch = _watchStateStore?.observationEpoch;
+    var invalidated = false;
+    bool current() {
+      invalidated |=
+          isDisposed ||
+          isProfileBinding() ||
+          requestRevision != _fullRequestRevision ||
+          !identical(profileEpoch, _watchStateStore?.observationEpoch);
+      return !invalidated;
+    }
+
+    await null;
+    if (!current()) {
+      _lastOutcome = DiscoverRefreshOutcome.cancelled;
+      return;
+    }
+    ++_contentRevision;
+    _onDeckState = _hubsState = DiscoverLoadState.loading;
+    _errorMessage = null;
+    safeNotifyListeners();
+    final succeeded = <String>{}, failed = <String>{}, cancelled = <String>{};
+    final deckFailed = <String>{}, deckCancelled = <String>{};
+    final hubFailed = <String>{}, hubCancelled = <String>{};
+    final pending = <({OnDeckAggregationResult deck, HubAggregationResult hubs})>[];
+    var deckCommitted = false, hubsCommitted = false;
+    var graceStarted = false;
+    Timer? grace;
+    Future<void> commits = Future<void>.value();
+    ({int watermark, Object epoch})? observation;
+
+    Future<void> publish() async {
+      if (!current() || pending.isEmpty) return;
+      final batch = List.of(pending);
+      pending.clear();
+      final decks = batch.map((r) => r.deck).toList();
+      final hubs = batch.map((r) => r.hubs).toList();
+      final deckIds = {for (final r in decks) ...r.succeededServerIds};
+      final hubIds = {for (final r in hubs) ...r.succeededServerIds};
+      final revision = _commitRevision;
+      final hadMore = deckCommitted && _hasMoreContinueWatching;
+      final mergedDeck = deckIds.isEmpty
+          ? null
+          : await _multiServer.aggregationService.mergeContinueWatching(deckCommitted ? _onDeck : const [], [
+              for (final r in decks) ...r.items,
+            ], limit: _continueWatchingProbeLimit);
+      if (!current()) return;
+      // A watch/delete mutation made while dedup was awaiting must not be
+      // overwritten or credited as an authoritative observation.
+      if (revision != _commitRevision) {
+        unawaited(load());
+        return;
+      }
+      List<MediaHub>? mergedHubs;
+      if (hubIds.isNotEmpty) {
+        final merged = [
+          if (hubsCommitted) ..._hubs.where((h) => !hubIds.contains(h.serverId)),
+          ..._filterDiscoverHubs([for (final r in hubs) ...r.hubs]),
+        ];
+        sortMediaHubsByLibraryOrder(merged, _libraries.libraries);
+        mergedHubs = _hubsWithoutHiddenLibraries(merged, _hiddenLibraries.hiddenLibraryKeys);
+      }
+
+      if (mergedDeck != null) {
+        final wasEmpty = _onDeck.isEmpty;
+        _applyOnDeck(_withoutHiddenLibraries(mergedDeck, _hiddenLibraries.hiddenLibraryKeys));
+        if (hadMore) _hasMoreContinueWatching = true;
+        if (!deckCommitted && wasEmpty && _onDeck.isNotEmpty) ++_loadGeneration;
+        _loadedOnDeckServerIds = {...(deckCommitted ? _loadedOnDeckServerIds : <String>{}), ...deckIds};
+        deckCommitted = true;
+        _onDeckState = DiscoverLoadState.loaded;
+      }
+      if (mergedHubs != null) {
+        _replaceHubs(mergedHubs);
+        _loadedHubServerIds = {...(hubsCommitted ? _loadedHubServerIds : <String>{}), ...hubIds};
+        hubsCommitted = true;
+        _hubsState = DiscoverLoadState.loaded;
+        _hubsLoadedAt = _now();
+        _libraryEventPacer.notePass();
+      }
+      _recordObservations(observation, [for (final r in decks) ...r.observedItems], deckIds);
+      _recordObservations(observation, [for (final r in hubs) ...r.observedItems], hubIds);
+      if (mergedDeck != null || hubIds.isNotEmpty) {
+        safeNotifyListeners();
+        unawaited(_syncSystemShelf(_onDeck));
+      }
+    }
+
+    void enqueuePublish() {
+      commits = commits.then((_) async {
+        try {
+          await publish();
+        } catch (e) {
+          failed.addAll(ids);
+          appLogger.w('DiscoverProvider: Home merge failed; keeping committed rows', error: e);
+        }
+      });
+    }
+
+    try {
+      if (!_hiddenLibraries.isInitialized) await _hiddenLibraries.ensureInitialized();
+      if (!current()) return;
+      _lastSeenHiddenKeys = Set.of(_hiddenLibraries.hiddenLibraryKeys);
+      final settings = await SettingsService.getInstance();
+      if (!current()) return;
+      final aggregation = _multiServer.aggregationService;
+      final hiddenKeys = Set<String>.of(_hiddenLibraries.hiddenLibraryKeys);
+      observation = _beginObservation();
+      await Future.wait(
+        ids.map((id) async {
+          try {
+            final deckFuture = aggregation.getOnDeckFromAllServers(
+              limit: _continueWatchingProbeLimit,
+              hiddenLibraryKeys: hiddenKeys,
+              serverIds: {id},
+            );
+            final hubsFuture = aggregation.getHubsFromAllServers(
+              hiddenLibraryKeys: hiddenKeys,
+              useGlobalHubs: settings.read(SettingsService.useGlobalHubs),
+              includePlaybackHubs: false,
+              serverIds: {id},
+            );
+            // Install both error handlers immediately; one leg can fail before
+            // the other leg has answered.
+            final results = await (deckFuture, hubsFuture).wait;
+            final deck = results.$1, hubs = results.$2;
+            succeeded.addAll({...deck.succeededServerIds, ...hubs.succeededServerIds});
+            failed.addAll({...deck.failedServerIds, ...hubs.failedServerIds});
+            cancelled.addAll({...deck.cancelledServerIds, ...hubs.cancelledServerIds});
+            deckFailed.addAll(deck.failedServerIds);
+            deckCancelled.addAll(deck.cancelledServerIds);
+            hubFailed.addAll(hubs.failedServerIds);
+            hubCancelled.addAll(hubs.cancelledServerIds);
+            if (!current()) return;
+            pending.add((deck: deck, hubs: hubs));
+            if (deck.succeededServerIds.isEmpty && hubs.succeededServerIds.isEmpty) return;
+            if (!graceStarted) {
+              graceStarted = true;
+              grace = Timer(const Duration(milliseconds: 300), enqueuePublish);
+            } else if (!(grace?.isActive ?? false)) {
+              enqueuePublish();
+            }
+          } catch (e) {
+            failed.add(id);
+            deckFailed.add(id);
+            hubFailed.add(id);
+            appLogger.w('DiscoverProvider: Home fetch failed for $id', error: e);
+          }
+        }),
+      );
+      grace?.cancel();
+      enqueuePublish();
+      await commits;
+      if (!current()) return;
+      if (!deckCommitted) {
+        _loadedOnDeckServerIds = {};
+        if (_onDeck.isNotEmpty || deckCancelled.isEmpty) _onDeckState = DiscoverLoadState.loaded;
+      }
+      if (!hubsCommitted) {
+        _loadedHubServerIds = {};
+        if (_hubs.isNotEmpty || hubCancelled.isEmpty) _hubsState = DiscoverLoadState.loaded;
+      }
+      _loadedOnDeckServerIds = Set.of(_loadedOnDeckServerIds)
+        ..removeAll(deckFailed)
+        ..removeAll(deckCancelled);
+      _loadedHubServerIds = Set.of(_loadedHubServerIds)
+        ..removeAll(hubFailed)
+        ..removeAll(hubCancelled);
+      if (!deckCommitted || !hubsCommitted) safeNotifyListeners();
+    } catch (e) {
+      if (!current()) return;
+      failed.addAll(ids);
+      _errorMessage = _onDeck.isEmpty && _hubs.isEmpty ? e.toString() : null;
+      _onDeckState = _hubsState = _errorMessage == null ? DiscoverLoadState.loaded : DiscoverLoadState.error;
+      safeNotifyListeners();
+    } finally {
+      grace?.cancel();
+      _lastOutcome = _refreshOutcome(
+        succeededServerIds: succeeded,
+        failedServerIds: failed,
+        cancelledServerIds: cancelled,
+        cancelled: !current(),
+      );
+    }
+  }
+
+  Future<void> _loadAggregatedOnce() async {
     var outcome = DiscoverRefreshOutcome.cancelled;
     var passClearedExceptionBoundary = false;
     List<MediaItem>? systemShelfPassToken;
