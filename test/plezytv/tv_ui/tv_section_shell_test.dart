@@ -452,12 +452,16 @@ void main() {
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
         final afterIndex = hubIndex + (hadContinue ? 0 : 1);
-        final restored = tester.state<TvHorizontalRowState>(find.byType(TvHorizontalRow).at(afterIndex));
+        final restoredRail = find.byWidgetPredicate(
+          (widget) => widget is TvHorizontalRow && widget.title == 'Hub $hubIndex',
+          skipOffstage: false,
+        );
+        final restored = tester.state<TvHorizontalRowState>(restoredRail);
         final hero = tester.widget<TvHero>(find.byType(TvHero));
         expect(restored.focusInside.value, isTrue);
         expect(hero.item!.globalKey, target);
         expect(hero.compact, afterIndex > 1);
-        expect(tester.getTopLeft(find.byType(TvHorizontalRow).at(afterIndex)).dy, afterIndex > 1 ? 254 : 394);
+        expect(tester.getTopLeft(restoredRail).dy, afterIndex > 1 ? 254 : 394);
       });
     }
   }
