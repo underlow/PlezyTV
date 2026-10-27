@@ -24,30 +24,12 @@ export async function countImages(vm, isolateId) {
     if (!Number.isSafeInteger(value) || value < 0) throw Error(`Invalid VM integer ${name}`);
     return value;
   }
-  async function mapKeys(ref) {
-    const keys = new Set();
-    let length;
-    for (let offset = 0; length === undefined || offset < length;) {
-      const page = await object(ref.id, { offset, count: 128 });
-      if (!Number.isSafeInteger(page.length) || page.length < 0 ||
-          (length !== undefined && length !== page.length)) {
-        throw Error('VM map changed size during inspection; retry');
-      }
-      length = page.length;
-      const associations = page.associations;
-      if (!Array.isArray(associations) || associations.length > length - offset ||
-          (associations.length === 0 && offset < length)) {
-        throw Error('Incomplete VM map page');
-      }
-      for (const association of associations) {
-        if (typeof association.key?.id !== 'string') throw Error('VM map key has no object id');
-        keys.add(association.key.id);
-      }
-      offset += associations.length;
-      if (offset === length) break;
+  async function mapLength(ref) {
+    const map = await object(ref.id);
+    if (!Number.isSafeInteger(map.length) || map.length < 0) {
+      throw Error('Invalid VM map length');
     }
-    if (keys.size !== length) throw Error('VM map keys changed during inspection; retry');
-    return keys;
+    return map.length;
   }
   const images = await instances('_Image', 'dart:ui');
   const rows = await instances('TvHorizontalRowState');
@@ -60,17 +42,15 @@ export async function countImages(vm, isolateId) {
   const caches = await instances('ImageCache');
   if (caches.totalCount !== 1) throw Error('Expected one ImageCache');
   const cache = await object(caches.instances[0].id);
-  const cachedKeys = await mapKeys(field(cache, '_cache'));
-  const liveKeys = await mapKeys(field(cache, '_liveImages'));
-  const cacheWithoutListeners = [...cachedKeys].filter(key => !liveKeys.has(key)).length;
+  const cacheEntries = await mapLength(field(cache, '_cache'));
+  const liveEntries = await mapLength(field(cache, '_liveImages'));
   const mib = name => +(integer(field(cache, name), name) / 1024 / 1024).toFixed(2);
   return {
     images: images.totalCount,
-    cacheEntries: cachedKeys.size,
-    liveEntries: liveKeys.size,
+    cacheEntries,
+    liveEntries,
     builtRows,
-    cacheWithoutListeners,
-    heldByWidgetsApprox: Math.max(0, images.totalCount - cacheWithoutListeners),
+    heldByWidgets: liveEntries,
     currentSizeMiB: mib('_currentSizeBytes'),
     maximumSizeMiB: mib('_maximumSizeBytes'),
   };
