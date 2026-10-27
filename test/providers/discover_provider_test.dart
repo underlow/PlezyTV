@@ -361,6 +361,33 @@ void main() {
     });
   });
 
+  test('F1: refresh retains pending server rows and replaces only answered server content', () async {
+    twoServers();
+    await provider.load();
+    aggregation.requests.clear();
+    aggregation.onDeckResult = () => [_item('fresh-a'), _item('fresh-b', serverId: 'server_2')];
+    aggregation.hubsResult = () => [_hub('fresh-a'), _hub('fresh-b', serverId: 'server_2')];
+    fakeAsync((clock) {
+      aggregation.serverGates['server_1'] = Future<void>.delayed(const Duration(milliseconds: 500));
+      aggregation.serverGates['server_2'] = Future<void>.delayed(const Duration(seconds: 4));
+      DiscoverRefreshOutcome? outcome;
+      provider.refreshNow().then((value) => outcome = value);
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 800));
+      expect(provider.hubs.map((h) => h.id).toSet(), {'fresh-a', 'b'});
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'fresh-a', 'b'});
+      expect(outcome, isNull);
+      clock.elapse(const Duration(milliseconds: 3100));
+      expect(provider.hubs.map((h) => h.id).toSet(), {'fresh-a', 'b'});
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'fresh-a', 'b'});
+      clock.elapse(const Duration(milliseconds: 100));
+      expect(provider.hubs.map((h) => h.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'fresh-a', 'fresh-b'});
+      expect(outcome, DiscoverRefreshOutcome.refreshed);
+      expect(aggregation.requests, {'deck:server_1': 1, 'hubs:server_1': 1, 'deck:server_2': 1, 'hubs:server_2': 1});
+    });
+  });
+
   test('R11: close server responses publish content in one update', () {
     twoServers();
     fakeAsync((clock) {

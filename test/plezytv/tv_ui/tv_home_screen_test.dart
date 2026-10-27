@@ -39,6 +39,8 @@ import 'package:plezy/plezytv/tv_ui/components/tv_hero.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_skeletons.dart';
 import 'package:plezy/plezytv/tv_ui/home/tv_home_screen.dart';
+import 'package:plezy/plezytv/tv_ui/home/tv_home_card.dart';
+import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tint_service.dart';
@@ -916,6 +918,48 @@ void main() {
     await key(tester, LogicalKeyboardKey.arrowDown);
     expect(hero(tester).item!.id, 'b-after0');
   });
+
+  for (final continuing in [true, false]) {
+    testWidgets('R12: insert before focused card in ${continuing ? "Continue Watching" : "hub"}', (tester) async {
+      final original = items('original', 3);
+      if (continuing) {
+        provider.onDeck = original;
+      } else {
+        provider.hubs = [hub('a').copyWith(items: original)];
+      }
+      await pump(tester);
+      await tester.pumpAndSettle();
+      final focused = FocusManager.instance.primaryFocus;
+      final before = tester.getTopLeft(rowFinder(0)).dy;
+      expect(hero(tester).item!.globalKey, original.first.globalKey);
+      final merged = [items('inserted', 1).single, ...original];
+      if (continuing) {
+        provider.onDeck = merged;
+      } else {
+        provider.hubs = [provider.hubs.single.copyWith(items: merged)];
+      }
+      provider.emit();
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus, same(focused));
+      expect(
+        focused!.context!.findAncestorWidgetOfExactType<TvHomeHubCard>()!.item.globalKey,
+        original.first.globalKey,
+      );
+      final focusedVisuals = tester.widgetList<TvFocusVisual>(find.byType(TvFocusVisual)).where((v) => v.state.focused);
+      expect(focusedVisuals, hasLength(1));
+      final framedCards = find
+          .byType(TvFocusVisual)
+          .evaluate()
+          .where((element) => (element.widget as TvFocusVisual).state.focused)
+          .map((element) => element.findAncestorWidgetOfExactType<TvHomeHubCard>()!.item.globalKey);
+      expect(framedCards, [original.first.globalKey]);
+      expect(merged[row(tester, 0).focusedIndex].globalKey, original.first.globalKey);
+      expect(hero(tester).item!.globalKey, original.first.globalKey);
+      expect(tester.getTopLeft(rowFinder(0)).dy, closeTo(before, 0.01));
+      await key(tester, LogicalKeyboardKey.arrowRight);
+      expect(hero(tester).item!.globalKey, original[1].globalKey);
+    });
+  }
 
   testWidgets('A12/A18: refresh hooks, reorder/removal, removed row fallback', (tester) async {
     content();

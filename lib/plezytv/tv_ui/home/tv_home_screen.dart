@@ -56,7 +56,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
   final _vertical = ScrollController();
   final _content = FocusScopeNode(debugLabel: 'TV Home');
   final _button = FocusNode(debugLabel: 'Home retry/refresh');
-  final _posters = <String, GlobalKey>{};
   final _viewport = GlobalKey();
   bool _readyLogged = false;
   bool _loadWasInFlight = false;
@@ -133,6 +132,25 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _readyProbe = Timer.periodic(const Duration(milliseconds: 100), (_) => _probeReady());
   }
 
+  BuildContext? _firstPosterContext(TvHomeRow row) {
+    final rail = _rows[_rowKey(row)]?.currentContext;
+    if (rail == null) return null;
+    Element? first;
+    void visit(Element element) {
+      if (first != null) return;
+      if (element.widget case TvHomeHubCard(:final item)) {
+        if (item.globalKey == row.items.first.globalKey) first = element;
+      } else {
+        element.visitChildren(visit);
+      }
+    }
+
+    // Inspect the first card without a positional GlobalKey: such a key
+    // would transplant focus visuals to a different item inserted at index 0.
+    (rail as Element).visitChildren(visit);
+    return first;
+  }
+
   void _probeReady() {
     if (_readyLogged ||
         !_current ||
@@ -151,7 +169,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
       top += height;
     }
     final count = tvHomeReadyRows(viewport, [
-      for (final row in _model.rows) _posters[_rowKey(row)]?.currentContext,
+      for (final row in _model.rows) _firstPosterContext(row),
     ], rowBounds: bounds);
     if (count == null) return;
     _readyLogged = true;
@@ -213,7 +231,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
       final keys = _model.rows.map(_rowKey).toSet();
       _rowMemory.removeWhere((key, _) => !keys.contains(key));
       _rows.removeWhere((key, _) => !keys.contains(key));
-      _posters.removeWhere((key, _) => !keys.contains(key));
       _syncHero();
       final newAnchor = ownedContent ? anchorOffset(_model.rows) : null;
       if (oldAnchor != null && newAnchor != null && _vertical.hasClients) {
@@ -553,7 +570,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
           return TvAllCard(episode: wide, square: music, focusNode: node, onSelect: () => unawaited(_openAll(row)));
         }
         return TvHomeHubCard(
-          key: index == 0 ? _posters.putIfAbsent(key, () => GlobalKey()) : null,
           item: row.items[index],
           focusNode: node,
           playback: _playback,
