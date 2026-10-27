@@ -33,6 +33,7 @@ import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import '../tv_tokens.dart';
 import 'tv_home_card.dart';
+import 'tv_home_ready.dart';
 import 'tv_home_model.dart';
 import 'tv_home_playback.dart';
 
@@ -53,6 +54,12 @@ class TvHomeScreenState extends State<TvHomeScreen>
   final _vertical = ScrollController();
   final _content = FocusScopeNode(debugLabel: 'TV Home');
   final _button = FocusNode(debugLabel: 'Home retry/refresh');
+  final _posters = <String, GlobalKey>{};
+  final _viewport = GlobalKey();
+  bool _readyLogged = false;
+  bool _loadWasInFlight = false;
+  Timer? _readyProbe;
+
   final _rows = <String, GlobalKey<TvHorizontalRowState>>{};
   late DiscoverProvider _provider;
   late TvHomePlayback _playback;
@@ -103,8 +110,34 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _provider.addListener(_changed);
     HardwareKeyboard.instance.addHandler(_observeKey);
     _updateSkeleton();
+    _startReadyProbe();
     _afterFrame(focusActiveTabIfReady);
     unawaited(_provider.load());
+  }
+
+  void _startReadyProbe() {
+    _readyProbe?.cancel();
+    // Timers run between frames; do not drive extra frames while waiting for
+    // network images (or indefinitely when artwork is unavailable).
+    _readyProbe = Timer.periodic(const Duration(milliseconds: 100), (_) => _probeReady());
+  }
+
+  void _probeReady() {
+    if (_readyLogged ||
+        !_current ||
+        _model.isLoadInFlight ||
+        _model.onDeckState == TvHomePartState.loading ||
+        _model.hubsState == TvHomePartState.loading) {
+      return;
+    }
+    final render = _viewport.currentContext?.findRenderObject();
+    if (render is! RenderBox || !render.hasSize) return;
+    final viewport = render.localToGlobal(Offset.zero) & render.size;
+    final count = tvHomeReadyRows(viewport, [for (final row in _model.rows) _posters[_rowKey(row)]?.currentContext]);
+    if (count == null) return;
+    _readyLogged = true;
+    _readyProbe?.cancel();
+    appLogger.i('TV home rows ready: visibleRows=$count');
   }
 
   void _afterFrame(VoidCallback action) {
@@ -146,6 +179,11 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final previousKey = _activeRow;
     setState(() {
       _model = _builder.build(_provider);
+      if (_model.isLoadInFlight && !_loadWasInFlight) {
+        _readyLogged = false;
+        _startReadyProbe();
+      }
+      _loadWasInFlight = _model.isLoadInFlight;
       _syncHero();
       _updateSkeleton();
     });
@@ -445,6 +483,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
           return TvAllCard(episode: wide, square: music, focusNode: node, onSelect: () => unawaited(_openAll(row)));
         }
         return TvHomeHubCard(
+          key: index == 0 ? _posters.putIfAbsent(key, () => GlobalKey()) : null,
           item: row.items[index],
           focusNode: node,
           playback: _playback,
@@ -559,7 +598,9 @@ class TvHomeScreenState extends State<TvHomeScreen>
               ),
             ),
           ),
-          Expanded(child: rails),
+          Expanded(
+            child: SizedBox(key: _viewport, child: rails),
+          ),
         ],
       );
     } else if (_model.state == TvHomeState.loading) {
@@ -636,6 +677,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _provider.removeListener(_changed);
     HardwareKeyboard.instance.removeHandler(_observeKey);
     _skeletonTimer?.cancel();
+    _readyProbe?.cancel();
     _hero.dispose();
     _compact.dispose();
     _vertical.dispose();
