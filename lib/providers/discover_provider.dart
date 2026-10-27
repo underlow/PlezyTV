@@ -363,10 +363,8 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   Future<void> _loadOnce() async {
     final ids = _multiServer.serverManager.visibleOnlineClients.keys.toSet();
-    // Keep the existing single-server failure/rollback path. With several
-    // servers each aggregation is scoped to one server, so even its library
-    // prefetch cannot hold up a faster server's Home.
-    if (ids.length < 2) return _loadAggregatedOnce();
+    // Preserve the single-server failure/rollback and coalescing path.
+    if (ids.length < 2) return _loadAggregatedOnce(ids);
     final requestRevision = _fullRequestRevision;
     final profileEpoch = _watchStateStore?.observationEpoch;
     var invalidated = false;
@@ -384,6 +382,10 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       _lastOutcome = DiscoverRefreshOutcome.cancelled;
       return;
     }
+    // Visibility/online membership is authoritative even if every fetch
+    // fails. Prune before either loading path takes its rollback snapshot,
+    // so fallback failures cannot resurrect a server outside this pass.
+    _retainFullPassServers(ids);
     ++_contentRevision;
     _onDeckState = _hubsState = DiscoverLoadState.loading;
     _errorMessage = null;
@@ -541,7 +543,26 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     }
   }
 
-  Future<void> _loadAggregatedOnce() async {
+  void _retainFullPassServers(Set<String> serverIds) {
+    final deck = _onDeck.where((item) => serverIds.contains(item.serverId)).toList();
+    final hubs = _hubs.where((hub) => hub.serverId == null || serverIds.contains(hub.serverId)).toList();
+    _loadedOnDeckServerIds = _loadedOnDeckServerIds.intersection(serverIds);
+    _loadedHubServerIds = _loadedHubServerIds.intersection(serverIds);
+    if (deck.length != _onDeck.length) {
+      _replaceOnDeck(deck, hasMore: _hasMoreContinueWatching && deck.isNotEmpty);
+      unawaited(_syncSystemShelf(_onDeck));
+    }
+    if (hubs.length != _hubs.length) _replaceHubs(hubs);
+  }
+
+  Future<void> _loadAggregatedOnce(Set<String> serverIds) async {
+    // Yield before pruning/notifying a load started during widget build.
+    await null;
+    if (isDisposed || isProfileBinding()) {
+      _lastOutcome = DiscoverRefreshOutcome.cancelled;
+      return;
+    }
+    _retainFullPassServers(serverIds);
     var outcome = DiscoverRefreshOutcome.cancelled;
     var passClearedExceptionBoundary = false;
     List<MediaItem>? systemShelfPassToken;
@@ -591,11 +612,6 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     }
 
     try {
-      // Yield to the microtask queue before the first notify so a load()
-      // kicked off during build (the screen's initState) doesn't mark
-      // listening widgets dirty mid-build.
-      await null;
-      if (isDisposed || isProfileBinding()) return;
       ++_contentRevision;
       appLogger.d('DiscoverProvider: loading content from all servers');
       _onDeckState = DiscoverLoadState.loading;

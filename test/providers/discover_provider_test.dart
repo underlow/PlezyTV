@@ -191,6 +191,7 @@ class _HomeServer extends _FakeClient {
   @override
   void close() {}
   Future<void>? gate;
+  bool fail = false;
   int deckRequests = 0, hubRequests = 0, libraryRequests = 0;
 
   @override
@@ -211,6 +212,7 @@ class _HomeServer extends _FakeClient {
   Future<List<MediaItem>> fetchContinueWatching({int? count = 20, Set<String> excludedLibraryIds = const {}}) async {
     deckRequests++;
     await gate;
+    if (fail) throw Exception('offline');
     return [_item(serverIdValue, serverId: serverIdValue)];
   }
 
@@ -222,6 +224,7 @@ class _HomeServer extends _FakeClient {
   }) async {
     hubRequests++;
     await gate;
+    if (fail) throw Exception('offline');
     return [_hub(serverIdValue, serverId: serverIdValue, libraryId: 'movies')];
   }
 }
@@ -339,6 +342,99 @@ void main() {
         expect(server.hubRequests, 1);
         expect(server.libraryRequests, 1);
       }
+    });
+  });
+
+  for (final departure in ['hidden', 'offline', 'removed']) {
+    test('F3: full refresh drops $departure server rows and refetches it on return', () async {
+      provider.dispose();
+      multiServer.dispose();
+      final servers = [for (var n = 1; n <= 3; n++) _HomeServer('server_$n')];
+      manager = MultiServerManager();
+      for (final server in servers) {
+        manager.debugRegisterClientForTesting(server);
+      }
+      addTearDown(manager.dispose);
+      multiServer = MultiServerProvider(manager, DataAggregationService(manager));
+      provider = DiscoverProvider(
+        multiServer,
+        hiddenLibraries,
+        libraries,
+        profileId: 'profile-a',
+        isProfileBinding: () => isBinding,
+        syncSystemShelf: (_, _) async {},
+      );
+      void expectServers(Set<String> ids) {
+        expect(provider.onDeck.map((i) => i.serverId).toSet(), ids);
+        expect(provider.hubs.map((h) => h.serverId).toSet(), ids);
+      }
+
+      await provider.load();
+      expectServers({'server_1', 'server_2', 'server_3'});
+      switch (departure) {
+        case 'hidden':
+          manager.setVisibleServerIds({'server_1', 'server_2'});
+        case 'offline':
+          manager.debugRegisterClientForTesting(servers[2], online: false);
+        case 'removed':
+          manager.removeServer(ServerId('server_3'));
+      }
+      // An eligible but failed server keeps its previous rows (F1/A18).
+      servers[1].fail = true;
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.degraded);
+      expectServers({'server_1', 'server_2'});
+      expect(servers[2].deckRequests, 1);
+      expect(servers[2].hubRequests, 1);
+      // Cross the single-server fallback with its only server failing.
+      manager.setVisibleServerIds({'server_2'});
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.failed);
+      expectServers({'server_2'});
+      // Return to multi-server mode: removed loaded-id credit must not skip
+      // any surface, including the server that failed the previous pass.
+      servers[1].fail = false;
+      manager.debugRegisterClientForTesting(servers[2]);
+      manager.setVisibleServerIds(null);
+      final before = [for (final server in servers) (server.deckRequests, server.hubRequests)];
+      await provider.syncToOnlineServers({'server_1', 'server_2', 'server_3'});
+      expectServers({'server_1', 'server_2', 'server_3'});
+      for (var i = 0; i < servers.length; i++) {
+        expect(servers[i].deckRequests, before[i].$1 + 1);
+        expect(servers[i].hubRequests, before[i].$2 + 1);
+      }
+      manager.setVisibleServerIds({'server_1'});
+      expect(await provider.refreshNow(), DiscoverRefreshOutcome.refreshed);
+      expectServers({'server_1'});
+      manager.setVisibleServerIds({});
+      await provider.refreshNow();
+      expectServers({});
+      manager.setVisibleServerIds(null);
+      await provider.syncToOnlineServers({'server_1', 'server_2', 'server_3'});
+      expectServers({'server_1', 'server_2', 'server_3'});
+    });
+  }
+
+  test('F3: prune departed rows while an eligible server is pending; keep unscoped hubs', () async {
+    aggregation.onDeckResult = () => [_item('old-a')];
+    aggregation.hubsResult = () => [
+      _hub('old-a'),
+      MediaHub(id: 'unscoped', title: 'unscoped', type: 'movie', items: const [], size: 0),
+    ];
+    await provider.load();
+    twoServers();
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_3'));
+    manager.setVisibleServerIds({'server_2', 'server_3'});
+    aggregation.onDeckResult = () => [_item('b', serverId: 'server_2'), _item('c', serverId: 'server_3')];
+    aggregation.hubsResult = () => [_hub('b', serverId: 'server_2'), _hub('c', serverId: 'server_3')];
+    fakeAsync((clock) {
+      aggregation.serverGates['server_3'] = Future<void>.delayed(const Duration(seconds: 5));
+      unawaited(provider.refreshNow());
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 300));
+      expect(provider.onDeck.map((i) => i.id), ['b']);
+      expect(provider.hubs.map((h) => h.id).toSet(), {'unscoped', 'b'});
+      clock.elapse(const Duration(milliseconds: 4700));
+      expect(provider.onDeck.map((i) => i.id).toSet(), {'b', 'c'});
+      expect(provider.hubs.map((h) => h.id).toSet(), {'unscoped', 'b', 'c'});
     });
   });
 
