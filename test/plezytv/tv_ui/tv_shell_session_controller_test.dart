@@ -27,6 +27,7 @@ import 'package:plezy/providers/offline_mode_provider.dart';
 import 'package:plezy/providers/playback_state_provider.dart';
 import 'package:plezy/screens/main_screen.dart';
 import 'package:plezy/services/data_aggregation_service.dart';
+import 'package:plezy/services/plex_client.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/offline_watch_sync_service.dart';
 import 'package:plezy/services/settings_service.dart';
@@ -62,6 +63,18 @@ class _Binder implements ActiveProfileBinder {
     rebinds++;
   }
 
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TrackedVersion extends ValueNotifier<int> {
+  _TrackedVersion() : super(1);
+  bool get subscribed => hasListeners;
+}
+
+class _VersionedClient implements PlexClient {
+  @override
+  final _TrackedVersion mediaProvidersVersion = _TrackedVersion();
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -352,6 +365,72 @@ Future<void> flush(WidgetTester tester) => tester.pump();
 
 void main() {
   setUp(resetSharedPreferencesForTest);
+
+  testWidgets('provider version changes before and after subscription refresh once; replacement unsubscribes', (
+    tester,
+  ) async {
+    final h = _Harness();
+    final c = h.create();
+    final first = _VersionedClient();
+    h.manager.clients['a'] = first;
+    h.libraries.gate = Completer<void>();
+    await c.start();
+    await tester.pump();
+    expect(h.log, contains('load'));
+    first.mediaProvidersVersion.value++;
+    expect(h.log.where((e) => e == 'librariesRefresh'), isEmpty);
+    h.libraries.gate!.complete();
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(1));
+    first.mediaProvidersVersion.value++;
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(2));
+    h.servers.emit();
+    h.manager.events.add({'a': true});
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(2));
+
+    final replacement = _VersionedClient();
+    h.manager.clients['a'] = replacement;
+    h.servers.emit();
+    await tester.pump();
+    expect(first.mediaProvidersVersion.subscribed, isFalse);
+    expect(replacement.mediaProvidersVersion.subscribed, isTrue);
+    final count = h.log.where((e) => e == 'librariesRefresh').length;
+    first.mediaProvidersVersion.value++;
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(count));
+    replacement.mediaProvidersVersion.value++;
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(count + 1));
+    h.manager.clients.remove('a');
+    h.manager.events.add({'a': false});
+    await tester.pump();
+    expect(replacement.mediaProvidersVersion.subscribed, isFalse);
+    c.dispose();
+  });
+
+  testWidgets('unchanged version during initial load does not refresh; late client subscribes', (tester) async {
+    final h = _Harness();
+    final c = h.create();
+    final first = _VersionedClient();
+    h.manager.clients['a'] = first;
+    await c.start();
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), isEmpty);
+    final late = _VersionedClient();
+    h.manager.clients['b'] = late;
+    h.manager.events.add({'a': true, 'b': true});
+    await tester.pump();
+    expect(late.mediaProvidersVersion.subscribed, isTrue);
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(1));
+    late.mediaProvidersVersion.value++;
+    await tester.pump();
+    expect(h.log.where((e) => e == 'librariesRefresh'), hasLength(2));
+    c.dispose();
+    expect(first.mediaProvidersVersion.subscribed, isFalse);
+    expect(late.mediaProvidersVersion.subscribed, isFalse);
+  });
 
   testWidgets('already-offline provider starts at No connection despite online launch flag', (tester) async {
     final settings = await SettingsService.getInstance();
