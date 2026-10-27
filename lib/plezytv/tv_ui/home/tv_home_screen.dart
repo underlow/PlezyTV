@@ -17,6 +17,7 @@ import '../../../mixins/refreshable.dart';
 import '../../../mixins/tab_visibility_aware.dart';
 import '../../../navigation/main_screen_scope.dart';
 import '../../../providers/discover_provider.dart';
+import '../../../providers/hidden_libraries_provider.dart';
 import '../../../providers/watch_state_store.dart';
 import '../../../services/device_performance.dart';
 import '../../../services/settings_service.dart';
@@ -114,7 +115,15 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _updateSkeleton();
     _startReadyProbe();
     _afterFrame(focusActiveTabIfReady);
-    unawaited(_provider.load());
+    unawaited(_loadInitially(context.read<HiddenLibrariesProvider>()));
+  }
+
+  Future<void> _loadInitially(HiddenLibrariesProvider hiddenLibraries) async {
+    // Its initialization notification can start a full pass itself. Let that
+    // notification run first, then avoid queuing a duplicate behind that pass.
+    await hiddenLibraries.ensureInitialized();
+    if (!mounted || _provider.isLoadInFlight || (!_provider.isLoading && !_provider.areHubsLoading)) return;
+    await _provider.load();
   }
 
   void _startReadyProbe() {

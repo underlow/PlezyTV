@@ -27,6 +27,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:plezy/providers/discover_provider.dart';
+import 'package:plezy/providers/hidden_libraries_provider.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
@@ -149,6 +150,15 @@ class _ChangedDetails extends NavigatorObserver {
   }
 }
 
+class _HiddenReady extends ChangeNotifier implements HiddenLibrariesProvider {
+  @override
+  Future<void> ensureInitialized() async {}
+  @override
+  Set<String> get hiddenLibraryKeys => {};
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _Discover extends ChangeNotifier implements DiscoverProvider {
   @override
   List<MediaItem> onDeck = [];
@@ -254,6 +264,8 @@ void main() {
     ActiveProfileProvider? profile,
     MusicPlaybackService? music,
   }) async {
+    final hiddenLibraries = _HiddenReady();
+    addTearDown(hiddenLibraries.dispose);
     final servers = actionClient == null ? null : testMultiServer(clients: [actionClient]);
     final downloads = _NoDownloads();
     final offlineWatch = _OfflineWatch();
@@ -267,6 +279,7 @@ void main() {
         builder: (context, child) => Scaffold(body: child),
         providers: [
           ChangeNotifierProvider<DiscoverProvider>.value(value: provider),
+          ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hiddenLibraries),
           if (music != null) ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
           if (servers != null) ChangeNotifierProvider<MultiServerProvider>.value(value: servers.provider),
           ChangeNotifierProvider<DownloadProvider>.value(value: downloads),
@@ -814,13 +827,13 @@ void main() {
       expect(button.label, error ? TvStrings.retry : TvStrings.refresh);
       provider.loadStartsLoading = true;
       await key(tester, LogicalKeyboardKey.enter);
-      expect(provider.loads, 2);
+      expect(provider.loads, 1);
       expect(provider.manualRefreshes, 0);
       expect(tester.widget<TvButton>(find.byType(TvButton)).disabled, isTrue);
       expect(find.text(TvStrings.connecting), findsOneWidget);
       provider.loadStartsLoading = true;
       await key(tester, LogicalKeyboardKey.enter);
-      expect(provider.loads, 2);
+      expect(provider.loads, 1);
       expect(provider.manualRefreshes, 0);
       provider.errorMessage = error ? 'Server failed again' : null;
       provider.ready();
@@ -899,12 +912,12 @@ void main() {
     expect(provider.staleChecks, 3);
     provider.isLoadInFlight = true;
     state.primeRefresh();
-    expect(provider.loads, 1);
+    expect(provider.loads, 0);
     provider.isLoadInFlight = false;
     state.primeRefresh();
-    expect(provider.loads, 2);
+    expect(provider.loads, 1);
     state.fullRefresh();
-    expect(provider.loads, 3);
+    expect(provider.loads, 2);
     provider.onDeck = [provider.onDeck[3], ...provider.onDeck.take(3), ...provider.onDeck.skip(4)];
     provider.emit();
     await tester.pumpAndSettle();
@@ -1131,7 +1144,7 @@ void main() {
     await tester.pumpAndSettle();
     provider.loadStartsLoading = true;
     await key(tester, LogicalKeyboardKey.enter);
-    expect(provider.loads, 2);
+    expect(provider.loads, 1);
     expect(provider.manualRefreshes, 0);
     provider.errorMessage = 'Failed again';
     provider.ready();
