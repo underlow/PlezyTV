@@ -31,6 +31,7 @@ import 'bif_thumbnail_service.dart';
 import 'file_info_parser.dart';
 import 'download_artwork_helpers.dart';
 import 'settings_service.dart';
+import 'storage_service.dart';
 import 'library_query_translator.dart';
 import 'scrub_preview_source.dart';
 import '../utils/media_server_http_client.dart';
@@ -485,6 +486,10 @@ class PlexClient
   @override
   List<PlexEpgProvider> _providerEpg = const [];
   int _profileUpdateGeneration = 0;
+  bool _closed = false;
+  final _mediaProvidersVersion = ValueNotifier<int>(0);
+  ValueListenable<int> get mediaProvidersVersion => _mediaProvidersVersion;
+  final Future<StorageService> Function() storage;
 
   /// Server-level preferences fetched from /:/prefs
   Map<String, dynamic> _serverPrefs = {};
@@ -522,6 +527,7 @@ class PlexClient
     VoidCallback? onAllEndpointsExhausted,
     bool? seedTranscoderVideoSupport,
     http.Client? httpClient,
+    Future<StorageService> Function() storage = StorageService.getInstance,
   }) async {
     final client = PlexClient._(
       config,
@@ -532,6 +538,7 @@ class PlexClient
       onEndpointChanged: onEndpointChanged,
       onAllEndpointsExhausted: onAllEndpointsExhausted,
       httpClient: httpClient,
+      storage: storage,
     );
     if (seedTranscoderVideoSupport != null) {
       client._serverTranscoderCached = seedTranscoderVideoSupport;
@@ -556,6 +563,7 @@ class PlexClient
     this._onAllEndpointsExhausted,
     http.Client? httpClient,
     this._endpointProbeHttpClientFactory,
+    this.storage = StorageService.getInstance,
   }) {
     LogRedactionManager.registerServer(config.baseUrl, config.token);
 
@@ -613,11 +621,13 @@ class PlexClient
 
   @override
   void close() {
+    _closed = true;
     _http.close();
   }
 
   @override
   Future<void> closeGracefully({Duration drainTimeout = const Duration(seconds: 2)}) {
+    _closed = true;
     return _http.closeGracefully(drainTimeout: drainTimeout);
   }
 
@@ -660,8 +670,14 @@ class PlexClient
 
   /// Fetch /media/providers and parse libraries + EPG providers from the response.
   /// This discovers individually shared items that don't appear in /library/sections.
-  Future<_PlexMediaProviderState> _fetchMediaProviders({Map<String, String>? headers}) async {
+  Future<({_PlexMediaProviderState state, Map<String, dynamic> response})> _fetchMediaProviders({
+    Map<String, String>? headers,
+  }) async {
     final response = await _getWithFailover('/media/providers', headers: headers);
+    return (state: _parseMediaProviders(response), response: response.data as Map<String, dynamic>);
+  }
+
+  _PlexMediaProviderState _parseMediaProviders(MediaServerResponse response) {
     final container = _getMediaContainer(response);
     if (container == null) return _PlexMediaProviderState.empty;
 
@@ -761,21 +777,65 @@ class PlexClient
   }
 
   void _commitMediaProviders(_PlexMediaProviderState providers) {
+    if (_closed) return;
+    final changed =
+        !listEquals(
+          _providerLibraries.map((l) => (l.key, l.title, l.type, l.isShared)).toList(),
+          providers.libraries.map((l) => (l.key, l.title, l.type, l.isShared)).toList(),
+        ) ||
+        _providerHomeHubKey != providers.homeHubKey ||
+        _providerPromotedHubKey != providers.promotedHubKey ||
+        _providerContinueWatchingHubKey != providers.continueWatchingHubKey ||
+        !listEquals(_providerEpg, providers.epg);
     _providerLibraries = providers.libraries;
     _providerEpg = providers.epg;
     _providerHomeHubKey = providers.homeHubKey;
     _providerPromotedHubKey = providers.promotedHubKey;
     _providerContinueWatchingHubKey = providers.continueWatchingHubKey;
+    if (changed) _mediaProvidersVersion.value++;
     appLogger.d('Media providers: ${providers.libraries.length} libraries, ${providers.epg.length} EPG provider(s)');
   }
 
-  Future<void> _initMediaProviders() async {
+  bool _providersRequestCurrent(PlexProfileScopeId scope, int generation) =>
+      !_closed && profileScopeId == scope && _profileUpdateGeneration == generation;
+
+  Future<void> _saveMediaProviders(Map<String, dynamic> response, PlexProfileScopeId scope, int generation) async {
     try {
-      _commitMediaProviders(await _fetchMediaProviders());
+      final store = await storage();
+      if (!_providersRequestCurrent(scope, generation)) return;
+      await store.saveMediaProviders(scope, response);
     } catch (e) {
-      appLogger.w('Failed to fetch /media/providers, will fall back to /library/sections', error: e);
-      _commitMediaProviders(_PlexMediaProviderState.empty);
+      appLogger.w('Could not save media providers', error: e);
     }
+  }
+
+  Future<void> _refreshMediaProviders(PlexProfileScopeId scope, int generation) async {
+    try {
+      final fresh = await _fetchMediaProviders(headers: Map.of(config.headers));
+      if (!_providersRequestCurrent(scope, generation)) return;
+      _commitMediaProviders(fresh.state);
+      await _saveMediaProviders(fresh.response, scope, generation);
+    } catch (e) {
+      appLogger.w('Failed to fetch /media/providers, keeping current provider state', error: e);
+    }
+  }
+
+  Future<void> _initMediaProviders() async {
+    final scope = profileScopeId;
+    final generation = _profileUpdateGeneration;
+    try {
+      final saved = (await storage()).getMediaProviders(scope);
+      if (saved != null && _providersRequestCurrent(scope, generation)) {
+        _commitMediaProviders(
+          _parseMediaProviders(MediaServerResponse(statusCode: 200, data: saved, headers: const {})),
+        );
+        unawaited(_refreshMediaProviders(scope, generation));
+        return;
+      }
+    } catch (e) {
+      appLogger.w('Could not read saved media providers', error: e);
+    }
+    await _refreshMediaProviders(scope, generation);
   }
 
   /// Update endpoint priority list and optionally hop to the new best endpoint.
@@ -3357,15 +3417,18 @@ class PlexClient
           display: t.profiles.tokenIdentityMismatch,
         );
       }
-      if (generation != _profileUpdateGeneration) return false;
+      if (_closed || generation != _profileUpdateGeneration) return false;
 
       var providers = _PlexMediaProviderState.empty;
+      Map<String, dynamic>? providerResponse;
       try {
-        providers = await _fetchMediaProviders(headers: candidateHeaders);
+        final fresh = await _fetchMediaProviders(headers: candidateHeaders);
+        providers = fresh.state;
+        providerResponse = fresh.response;
       } catch (e) {
         appLogger.w('Profile provider discovery failed; clearing profile-scoped provider state', error: e);
       }
-      if (generation != _profileUpdateGeneration) return false;
+      if (_closed || generation != _profileUpdateGeneration) return false;
 
       final authenticationChanged = config.token != newToken || profileScopeId != newProfileScopeId;
       config = config.copyWith(token: newToken);
@@ -3374,9 +3437,10 @@ class PlexClient
       LogRedactionManager.registerToken(newToken);
       _commitMediaProviders(providers);
       if (authenticationChanged) _authenticationSessionId = Object();
+      if (providerResponse != null) await _saveMediaProviders(providerResponse, newProfileScopeId, generation);
       return true;
     } catch (_) {
-      if (generation != _profileUpdateGeneration) return false;
+      if (_closed || generation != _profileUpdateGeneration) return false;
       rethrow;
     }
   }

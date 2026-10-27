@@ -9,6 +9,17 @@ import '../../../services/device_performance.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 
+/// Owner-held rail position, surviving removal from a lazy vertical list.
+class TvHorizontalRowMemory {
+  int index = 0;
+  String? itemKey;
+  double offset = 0;
+  bool hasScrolled = false;
+}
+
+// Keep one viewport until device measurements justify a smaller cache.
+const double _horizontalCacheViewports = 1;
+
 /// A lazy, fixed-slot rail. Dimensions are design pixels. The builder must
 /// attach the supplied node to its card's focusable (with auto-scroll off).
 class TvHorizontalRow extends StatefulWidget {
@@ -20,6 +31,7 @@ class TvHorizontalRow extends StatefulWidget {
     required this.cardWidth,
     required this.cardHeight,
     this.counter,
+    this.positionMemory,
     this.contentLeft,
     this.onFocusInsideChanged,
     this.itemKey,
@@ -31,6 +43,9 @@ class TvHorizontalRow extends StatefulWidget {
   /// Design-pixel inset; use zero inside an already padded content area.
   final num? contentLeft;
   final String title;
+
+  /// Optional owner-held memory; omit to retain the standalone rail behavior.
+  final TvHorizontalRowMemory? positionMemory;
   final String? counter;
   final int itemCount;
 
@@ -48,13 +63,37 @@ class TvHorizontalRow extends StatefulWidget {
 }
 
 class TvHorizontalRowState extends State<TvHorizontalRow> {
-  final _scroll = ScrollController();
+  late final ScrollController _scroll;
   final _scope = FocusScopeNode(debugLabel: 'TV row');
   final _inside = ValueNotifier(false);
   final _memory = FocusMemoryTracker();
   int _index = 0;
   bool _hasScrolled = false;
   double _extent = 0, _viewport = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final position = widget.positionMemory;
+    _index = (position?.index ?? 0).clamp(0, widget.itemCount > 0 ? widget.itemCount - 1 : 0);
+    if (position?.itemKey != null && widget.itemKey != null) {
+      for (var i = 0; i < widget.itemCount; i++) {
+        if (_key(i) == position!.itemKey) _index = i;
+      }
+    }
+    _hasScrolled = position?.hasScrolled ?? false;
+    _scroll = ScrollController(initialScrollOffset: position?.offset ?? 0, keepScrollOffset: position == null);
+    _scroll.addListener(_savePosition);
+  }
+
+  void _savePosition() {
+    final position = widget.positionMemory;
+    if (position == null) return;
+    position.index = _index;
+    position.itemKey = _index < widget.itemCount ? _key(_index) : null;
+    position.hasScrolled = _hasScrolled;
+    if (_scroll.hasClients) position.offset = _scroll.offset;
+  }
 
   ValueListenable<bool> get focusInside => _inside;
 
@@ -199,6 +238,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
 
   @override
   void dispose() {
+    _savePosition();
     _scope.dispose();
     _memory.dispose();
     _scroll.dispose();
@@ -252,7 +292,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                     scrollDirection: Axis.horizontal,
                     physics: const NeverScrollableScrollPhysics(),
                     clipBehavior: Clip.none,
-                    scrollCacheExtent: ScrollCacheExtent.pixels(_viewport),
+                    scrollCacheExtent: ScrollCacheExtent.pixels(_viewport * _horizontalCacheViewports),
                     padding: EdgeInsets.only(left: left, top: px(TvTokens.space.cardFocusReserve), right: _viewport),
                     itemExtent: _extent,
                     itemCount: widget.itemCount,
@@ -274,6 +314,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                           if (focused) {
                             _index = index;
                             _scrollTo(index);
+                            _savePosition();
                             widget.onItemFocused?.call(index);
                           }
                         },

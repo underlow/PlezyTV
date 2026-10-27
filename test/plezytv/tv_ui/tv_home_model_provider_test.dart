@@ -1,3 +1,9 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:plezy/plezytv/tv_ui/home/tv_home_screen.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_hero.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
+import 'tv_theme_test_helper.dart';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -26,6 +32,9 @@ import 'package:plezy/plezytv/tv_ui/home/tv_home_model.dart';
 class _FakeAggregationService extends DataAggregationService {
   _FakeAggregationService(super.serverManager);
 
+  int onDeckRequests = 0, hubRequests = 0;
+  final hiddenKeysSeen = <Set<String>>[];
+
   List<MediaItem> Function() onDeckResult = () => [];
   Future<void>? onDeckGate;
   Completer<void>? onDeckStarted;
@@ -36,6 +45,8 @@ class _FakeAggregationService extends DataAggregationService {
     Set<String>? hiddenLibraryKeys,
     Set<String>? serverIds,
   }) async {
+    onDeckRequests++;
+    hiddenKeysSeen.add(Set.of(hiddenLibraryKeys ?? {}));
     onDeckStarted?.complete();
     await onDeckGate;
     final items = onDeckResult();
@@ -55,13 +66,16 @@ class _FakeAggregationService extends DataAggregationService {
     bool useGlobalHubs = true,
     bool includePlaybackHubs = true,
     Set<String>? serverIds,
-  }) async => (
-    hubs: <MediaHub>[],
-    observedItems: <({MediaItem item, String? clientScope})>[],
-    succeededServerIds: const {'server_1'},
-    cancelledServerIds: const <String>{},
-    failedServerIds: const <String>{},
-  );
+  }) async {
+    hubRequests++;
+    return (
+      hubs: <MediaHub>[],
+      observedItems: <({MediaItem item, String? clientScope})>[],
+      succeededServerIds: const {'server_1'},
+      cancelledServerIds: const <String>{},
+      failedServerIds: const <String>{},
+    );
+  }
 }
 
 class _FakeClient implements MediaServerClient {
@@ -106,6 +120,23 @@ class _PushChannel implements LibraryEventChannel {
 
   @override
   void dispose() => unawaited(_events.close());
+}
+
+class _DelayedHiddenLibraries extends ChangeNotifier implements HiddenLibrariesProvider {
+  final gate = Completer<void>();
+  Set<String> keys = {};
+  @override
+  Future<void> ensureInitialized() => gate.future;
+  @override
+  Set<String> get hiddenLibraryKeys => keys;
+  void finish(Set<String> result) {
+    keys = result;
+    notifyListeners();
+    gate.complete();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -154,6 +185,57 @@ void main() {
     multiServer.dispose();
     manager.dispose();
   });
+
+  for (final keys in [
+    <String>{},
+    {'server_1:hidden'},
+  ]) {
+    testWidgets('T6: delayed hidden libraries $keys start exactly one full Home pass', (tester) async {
+      provider.dispose();
+      hiddenLibraries.dispose();
+      final delayed = _DelayedHiddenLibraries();
+      hiddenLibraries = delayed;
+      provider = DiscoverProvider(
+        multiServer,
+        hiddenLibraries,
+        libraries,
+        profileId: 'home-test',
+        isProfileBinding: () => false,
+        syncSystemShelf: (_, _) async {},
+        syncServerSources: (_, _) async {},
+      );
+      final requestGate = Completer<void>();
+      aggregation.onDeckGate = requestGate.future;
+      await pumpTvWidget(
+        tester,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<DiscoverProvider>.value(value: provider),
+            ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hiddenLibraries),
+          ],
+          child: const Scaffold(body: TvHomeScreen()),
+        ),
+        reduced: true,
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(aggregation.onDeckRequests, 0);
+      expect(aggregation.hubRequests, 0);
+      expect(find.byType(TvHeroSkeleton), findsOneWidget);
+      expect(find.byType(TvButton), findsNothing);
+      delayed.finish(keys);
+      await tester.pump();
+      expect(aggregation.onDeckRequests, 1);
+      expect(aggregation.hubRequests, 1);
+      expect(aggregation.hiddenKeysSeen.single, keys);
+      requestGate.complete();
+      await tester.pumpAndSettle();
+      expect(aggregation.onDeckRequests, 1);
+      expect(aggregation.hubRequests, 1);
+      expect(find.byType(TvHeroSkeleton), findsNothing);
+      expect(find.byType(TvButton), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   Future<void> coldError() async {
     aggregation.onDeckResult = () => throw Exception('first failure');

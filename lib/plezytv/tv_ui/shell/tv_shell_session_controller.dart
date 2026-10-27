@@ -20,6 +20,7 @@ import '../../../providers/offline_mode_provider.dart';
 import '../../../providers/playback_state_provider.dart';
 import '../../../screens/main_screen.dart';
 import '../../../services/api_cache.dart';
+import '../../../services/plex_client.dart';
 import '../../../services/offline_watch_sync_service.dart';
 import '../../../services/settings_service.dart';
 import '../../../services/system_shelf_service.dart';
@@ -105,6 +106,32 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
   final ContentRefreshResumeGate _contentResumeGate;
   final _profileResumeGate = ProfileSelectionResumeGate();
   final _coveredServers = <String>{};
+  final _providerVersions = <PlexClient, int>{};
+  final _providerSubscriptions = <PlexClient>{};
+  bool _librariesReady = false;
+
+  void _syncProviderSubscriptions() {
+    if (!_alive || !_librariesReady) return;
+    final clients = multiServer.serverManager.onlineClients.values.whereType<PlexClient>().toSet();
+    for (final client in _providerSubscriptions.difference(clients)) {
+      client.mediaProvidersVersion.removeListener(_syncProviderSubscriptions);
+      _providerVersions.remove(client);
+    }
+    var changed = false;
+    for (final client in clients) {
+      if (!_providerSubscriptions.contains(client)) {
+        client.mediaProvidersVersion.addListener(_syncProviderSubscriptions);
+      }
+      final version = client.mediaProvidersVersion.value;
+      if ((_providerVersions[client] ?? 0) != version) changed = true;
+      _providerVersions[client] = version;
+    }
+    _providerSubscriptions
+      ..clear()
+      ..addAll(clients);
+    if (changed) unawaited(_guard(libraries.refresh));
+  }
+
   StreamSubscription<Map<String, bool>>? _serverSubscription;
   Timer? _bindingTimer;
   bool _started = false, _disposed = false, _primingArmed = false, _primed = false;
@@ -195,7 +222,10 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     _bindingTimer = Timer(bindingFallback, () => _primeOnSettle(fromTimeout: true));
     _primeOnSettle();
     _resumeDownloads();
-    _serverSubscription = multiServer.serverManager.statusStream.listen((_) => _resumeDownloads());
+    _serverSubscription = multiServer.serverManager.statusStream.listen((_) {
+      _resumeDownloads();
+      _syncProviderSubscriptions();
+    });
   }
 
   void _primeOnSettle({bool fromTimeout = false}) {
@@ -209,8 +239,13 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     if (!_alive || _isOffline) return;
     if (multiServer.serverManager.onlineServerIds.isNotEmpty && multiServer.hasConnectedServers) {
       libraries.initialize(multiServer.aggregationService);
+      for (final client in multiServer.serverManager.onlineClients.values.whereType<PlexClient>()) {
+        _providerVersions[client] = client.mediaProvidersVersion.value;
+      }
       await libraries.loadLibraries();
       if (!_alive) return;
+      _librariesReady = true;
+      _syncProviderSubscriptions();
       watchSync.onServersConnected();
       unawaited(downloads.refreshMetadataFromCache());
       _resumeDownloads();
@@ -334,6 +369,7 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
 
   void _offlineChanged() {
     if (!_alive) return;
+    _syncProviderSubscriptions();
     if (multiServer.hasConnectedServers) _offlineUntilConnected = false;
     final offline = shouldRenderMainScreenOffline(
       providerOffline: offlineMode.isOffline,
@@ -431,6 +467,11 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
       offlineMode.removeListener(_offlineChanged);
       multiServer.removeListener(_offlineChanged);
     }
+    for (final client in _providerSubscriptions) {
+      client.mediaProvidersVersion.removeListener(_syncProviderSubscriptions);
+    }
+    _providerSubscriptions.clear();
+    _providerVersions.clear();
     _serverSubscription?.cancel();
     _bindingTimer?.cancel();
     if (watchTogether?.navigatorOpener == _openWatch) watchTogether?.navigatorOpener = null;
