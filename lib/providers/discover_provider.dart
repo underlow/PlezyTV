@@ -406,50 +406,38 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       final hubs = batch.map((r) => r.hubs).toList();
       final deckIds = {for (final r in decks) ...r.succeededServerIds};
       final hubIds = {for (final r in hubs) ...r.succeededServerIds};
-      final revision = _commitRevision;
-      final hadMore = deckCommitted && _hasMoreContinueWatching;
-      final mergedDeck = deckIds.isEmpty
-          ? null
-          : await _multiServer.aggregationService.mergeContinueWatching(deckCommitted ? _onDeck : const [], [
-              for (final r in decks) ...r.items,
-            ], limit: _continueWatchingProbeLimit);
-      if (!current()) return;
-      // A watch/delete mutation made while dedup was awaiting must not be
-      // overwritten or credited as an authoritative observation.
-      if (revision != _commitRevision) {
-        unawaited(load());
-        return;
-      }
-      List<MediaHub>? mergedHubs;
-      if (hubIds.isNotEmpty) {
-        final merged = [
-          if (hubsCommitted) ..._hubs.where((h) => !hubIds.contains(h.serverId)),
-          ..._filterDiscoverHubs([for (final r in hubs) ...r.hubs]),
-        ];
-        sortMediaHubsByLibraryOrder(merged, _libraries.libraries);
-        mergedHubs = _hubsWithoutHiddenLibraries(merged, _hiddenLibraries.hiddenLibraryKeys);
-      }
-
-      if (mergedDeck != null) {
-        final wasEmpty = _onDeck.isEmpty;
-        _applyOnDeck(_withoutHiddenLibraries(mergedDeck, _hiddenLibraries.hiddenLibraryKeys));
-        if (hadMore) _hasMoreContinueWatching = true;
+      final wasEmpty = _onDeck.isEmpty;
+      final merged = await _mergeServerResults(
+        deck: (
+          items: [for (final r in decks) ...r.items],
+          observedItems: [for (final r in decks) ...r.observedItems],
+          succeededServerIds: deckIds,
+          failedServerIds: {for (final r in decks) ...r.failedServerIds},
+          cancelledServerIds: {for (final r in decks) ...r.cancelledServerIds},
+        ),
+        hubs: (
+          hubs: [for (final r in hubs) ...r.hubs],
+          observedItems: [for (final r in hubs) ...r.observedItems],
+          succeededServerIds: hubIds,
+          failedServerIds: {for (final r in hubs) ...r.failedServerIds},
+          cancelledServerIds: {for (final r in hubs) ...r.cancelledServerIds},
+        ),
+        observation: observation,
+        current: current,
+      );
+      if (!merged) return;
+      if (deckIds.isNotEmpty) {
         if (!deckCommitted && wasEmpty && _onDeck.isNotEmpty) ++_loadGeneration;
-        _loadedOnDeckServerIds = {...(deckCommitted ? _loadedOnDeckServerIds : <String>{}), ...deckIds};
         deckCommitted = true;
         _onDeckState = DiscoverLoadState.loaded;
       }
-      if (mergedHubs != null) {
-        _replaceHubs(mergedHubs);
-        _loadedHubServerIds = {...(hubsCommitted ? _loadedHubServerIds : <String>{}), ...hubIds};
+      if (hubIds.isNotEmpty) {
         hubsCommitted = true;
         _hubsState = DiscoverLoadState.loaded;
         _hubsLoadedAt = _now();
         _libraryEventPacer.notePass();
       }
-      _recordObservations(observation, [for (final r in decks) ...r.observedItems], deckIds);
-      _recordObservations(observation, [for (final r in hubs) ...r.observedItems], hubIds);
-      if (mergedDeck != null || hubIds.isNotEmpty) {
+      if (deckIds.isNotEmpty || hubIds.isNotEmpty) {
         safeNotifyListeners();
         unawaited(_syncSystemShelf(_onDeck));
       }
@@ -833,53 +821,14 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       final freshOnDeck = await onDeckFuture;
       final freshHubs = await hubsFuture;
       if (isDisposed) return;
-      // Staged, not recorded here: the merge below can still throw, and the
-      // catch keeps the previous rows. Suppressing patches against rows that
-      // were then discarded would strand an older snapshot on screen.
-      final pendingObservations = <({MediaItem item, String? clientScope})>[];
-      final observedServerIds = <String>{};
-
-      if (freshOnDeck != null) {
-        final hadMore = _hasMoreContinueWatching;
-        final mergedOnDeck = await aggregation.mergeContinueWatching(
-          _onDeck,
-          freshOnDeck.items,
-          limit: _continueWatchingProbeLimit,
-        );
-        if (isDisposed) return;
-        _applyOnDeck(mergedOnDeck);
-        // The stored list is already trimmed, so the merge can't see old items
-        // past the cap — a previously-true "more" affordance stays true.
-        if (hadMore) _hasMoreContinueWatching = true;
-        _loadedOnDeckServerIds = {..._loadedOnDeckServerIds, ...freshOnDeck.succeededServerIds}
-          ..removeAll(freshOnDeck.failedServerIds)
-          ..removeAll(freshOnDeck.cancelledServerIds);
-        // No _loadGeneration bump: a delta behaves like the background Continue
-        // Watching refresh (the hero clamps instead of resetting).
+      if (!await _mergeServerResults(
+        deck: freshOnDeck,
+        hubs: freshHubs,
+        observation: observation,
+        current: () => !isDisposed && !isProfileBinding(),
+      )) {
+        return;
       }
-
-      if (freshHubs != null) {
-        final succeededHubIds = freshHubs.succeededServerIds;
-        final mergedHubs = [
-          ..._hubs.where((hub) => hub.serverId == null || !succeededHubIds.contains(hub.serverId)),
-          ..._filterDiscoverHubs(freshHubs.hubs),
-        ];
-        sortMediaHubsByLibraryOrder(mergedHubs, _libraries.libraries);
-        _replaceHubs(mergedHubs);
-        _loadedHubServerIds = {..._loadedHubServerIds, ...succeededHubIds}
-          ..removeAll(freshHubs.failedServerIds)
-          ..removeAll(freshHubs.cancelledServerIds);
-      }
-
-      if (freshOnDeck != null) {
-        pendingObservations.addAll(freshOnDeck.observedItems);
-        observedServerIds.addAll(freshOnDeck.succeededServerIds);
-      }
-      if (freshHubs != null) {
-        pendingObservations.addAll(freshHubs.observedItems);
-        observedServerIds.addAll(freshHubs.succeededServerIds);
-      }
-      _recordObservations(observation, pendingObservations, observedServerIds);
 
       appLogger.d('DiscoverProvider: ${_onDeck.length} on-deck items, ${_hubs.length} hubs after merging $ids');
       safeNotifyListeners();
@@ -889,6 +838,66 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       // Keep the loaded state — stale rows beat an error flash.
       appLogger.w('DiscoverProvider: delta load failed for $ids', error: e);
     }
+  }
+
+  /// Shared commit path for newly-online servers and already-sent full-pass
+  /// responses (both the grace batch and late answers). Only a successful
+  /// server replaces its previous content; pending/failed servers keep theirs.
+  Future<bool> _mergeServerResults({
+    OnDeckAggregationResult? deck,
+    HubAggregationResult? hubs,
+    required ({int watermark, Object epoch})? observation,
+    required bool Function() current,
+  }) async {
+    final revision = _commitRevision;
+    final deckIds = deck == null
+        ? <String>{}
+        : _authoritativeSucceededServerIds(deck.succeededServerIds, deck.failedServerIds, deck.cancelledServerIds);
+    final hubIds = hubs == null
+        ? <String>{}
+        : _authoritativeSucceededServerIds(hubs.succeededServerIds, hubs.failedServerIds, hubs.cancelledServerIds);
+    final hadMore = _hasMoreContinueWatching;
+    final mergedDeck = deckIds.isEmpty
+        ? null
+        : await _multiServer.aggregationService.mergeContinueWatching(
+            _onDeck.where((item) => !deckIds.contains(item.serverId)).toList(),
+            deck!.items,
+            limit: _continueWatchingProbeLimit,
+          );
+    if (!current()) return false;
+    // Do not overwrite a watch/delete mutation made while dedup awaited, or
+    // credit observations against content that never reached the screen.
+    if (revision != _commitRevision) {
+      unawaited(load());
+      return false;
+    }
+    final hiddenKeys = _hiddenLibraries.hiddenLibraryKeys;
+    final mergedHubs = hubIds.isEmpty
+        ? null
+        : [..._hubs.where((hub) => !hubIds.contains(hub.serverId)), ..._filterDiscoverHubs(hubs!.hubs)];
+    if (mergedHubs != null) sortMediaHubsByLibraryOrder(mergedHubs, _libraries.libraries);
+    if (mergedDeck != null) {
+      _applyOnDeck(_withoutHiddenLibraries(mergedDeck, hiddenKeys));
+      // Pending servers may have additional items beyond the preview cap.
+      if (hadMore && _loadedOnDeckServerIds.difference(deckIds).isNotEmpty) _hasMoreContinueWatching = true;
+    }
+    if (mergedHubs != null) _replaceHubs(_hubsWithoutHiddenLibraries(mergedHubs, hiddenKeys));
+    if (deck != null) {
+      _loadedOnDeckServerIds = {..._loadedOnDeckServerIds, ...deckIds}
+        ..removeAll(deck.failedServerIds)
+        ..removeAll(deck.cancelledServerIds);
+    }
+    if (hubs != null) {
+      _loadedHubServerIds = {..._loadedHubServerIds, ...hubIds}
+        ..removeAll(hubs.failedServerIds)
+        ..removeAll(hubs.cancelledServerIds);
+    }
+    _recordObservations(
+      observation,
+      [if (deck != null) ...deck.observedItems, if (hubs != null) ...hubs.observedItems],
+      {...deckIds, ...hubIds},
+    );
+    return true;
   }
 
   /// Playback-progress hubs duplicate the top Continue Watching row.
