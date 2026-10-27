@@ -1,7 +1,8 @@
 {
   "profile": "medium",
-  "phase": "analysis",
+  "phase": "implementation",
   "project": "docs/projects/plezy-tv/project.md",
   "stage": "S26",
-  "codex": ["develop"]
+  "codex": ["develop"],
+  "development_agent": { "platform": "codex", "model": "sol", "effort": "low" }
 }
