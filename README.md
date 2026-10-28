@@ -4,6 +4,14 @@
 PlezyTV installs side by side with Plezy and is not affiliated with its author —
 report issues with the fork here, not upstream. Early work in progress, no releases yet.
 
+<p align="center">
+  <img src="docs/screenshots/home.jpg" alt="PlezyTV home: hero for the focused title above Continue Watching" width="900" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/library-recommended.jpg" alt="PlezyTV library, Recommended tab" width="445" />
+  <img src="docs/screenshots/movie.jpg" alt="PlezyTV movie page" width="445" />
+</p>
+
 ---
 
 **Original Plezy README:**
