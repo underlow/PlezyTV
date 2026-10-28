@@ -493,6 +493,7 @@ season. Playlists, collections, library folders and shuffle keep Plezy's exit
 |---|---|---|---|
 | H8 | `lib/screens/video_player/parts/playback_prompts.dart`, `_onVideoCompleted`: one added line after the live/transition/resolving filters, one changed line in the `exit` branch | `TvUi.playerVideoCompleted` records an end by the sleep timer (C3); `TvUi.playerExitAtEnd` takes the `exit` branch to post-play when R1 holds. It relies on the H9 layer being mounted (it holds the end binding); without it Plezy's `_handleBackButton` runs | Plezy's exit |
 | H9 | `lib/screens/video_player/parts/build.dart`, one line next to H7 in the overlay stack | `TvUi.playerPostPlayExit`: `TvPostPlayExitLayer` with a `TvPlayerEndProbe` of functions read at event time (latch, prompts, next status, Watch Together, offline, `_routeExitOperation`, `_handleBackButton`) | no layer |
+| H10 | `lib/screens/video_player_screen.dart`: `backLeavesPrompt` of the navigation coordinator and the prompt check in `_handleBackButton` | `TvUi.playerBackKeepsPlayNext`: on TV (not Live TV) Back on the Play Next card only closes it, so the next Back reaches post-play; upstream #2686 leaves the player at once | Plezy leaves the player |
 
 **Early Back handler (C4).** While the H9 layer is mounted it registers
 `FocusManager.instance.addEarlyKeyEventHandler`, the only place that can stop

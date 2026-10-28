@@ -11,6 +11,7 @@ import 'package:plezy/plezytv/tv_ui/components/tv_side_menu.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_section_shell.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_section.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_server_client.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_session_controller.dart';
@@ -31,7 +32,7 @@ import 'package:plezy/services/plex_client.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/offline_watch_sync_service.dart';
 import 'package:plezy/services/settings_service.dart';
-import 'package:plezy/services/system_shelf_service.dart';
+import 'package:plezy/services/deep_links/deep_link_service.dart';
 import 'package:plezy/watch_together/watch_together.dart';
 
 import '../../test_helpers/prefs.dart';
@@ -254,19 +255,16 @@ class _Client implements MediaServerClient {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _Shelf implements SystemShelfService {
+class _LinkHost implements DeepLinkProfileHost {
   @override
-  ValueChanged<String>? onShelfItemTap;
-  int coldReads = 0;
+  List<Profile> get profiles => const [];
   @override
-  Future<String?> getInitialDeepLink() async {
-    coldReads++;
-    return 'cold';
-  }
-
+  String? get activeProfileId => null;
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  Future<bool> switchTo(Profile profile) async => false;
 }
+
+const _linkChannel = MethodChannel('test/tv_shell_deep_link');
 
 class _Watch implements WatchTogetherProvider {
   @override
@@ -280,7 +278,9 @@ Profile profile(String id) => Profile.local(id: id, displayName: id, createdAt: 
 class _Harness {
   final active = _Active(), binder = _Binder(), manager = _Manager(), offline = _Offline();
   final home = _Home(), preferences = _Preferences(), downloads = _Downloads();
-  final shelf = _Shelf(), watch = _Watch();
+  final watch = _Watch();
+  final links = DeepLinkService.forTesting(_linkChannel)..host = _LinkHost();
+  int coldReads = 0;
   final log = <String>[];
   late final libraries = _Libraries(log);
   late final servers = _Servers(manager);
@@ -295,6 +295,13 @@ class _Harness {
     Future<SettingsService> Function() settings = SettingsService.getInstance,
   }) {
     manager.clients['a'] = _Client();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_linkChannel, (
+      call,
+    ) async {
+      if (call.method != 'getInitialLink') return null;
+      coldReads++;
+      return 'plezytv://play?content_id=plezy_a_1';
+    });
     controller = TvShellSessionController(
       activeProfile: active,
       binder: binder,
@@ -326,16 +333,12 @@ class _Harness {
       checkForUpdates: () async {
         updates++;
       },
-      supportsShelf: true,
-      launchLiveTv: (link) async {
-        log.add('live:${link.channel}');
-      },
-      openShelfContent: (id) async {
-        log.add('shelf:$id');
+      launchDeepLink: (link, {required isOffline}) async {
+        log.add('link:${link.toUri()}${isOffline ? ' offline' : ''}');
       },
       watchTogether: watch,
       openWatchTogether: (_) async => true,
-      systemShelf: shelf,
+      deepLinks: links,
       clearVolatileCache: () async {
         log.add('clearCache');
       },
@@ -472,8 +475,7 @@ void main() {
     expect(h.downloads.resumes, 0);
     expect(h.hostStarts, 1);
     expect(h.updates, 0);
-    expect(h.shelf.coldReads, 1);
-    expect(h.shelf.onShelfItemTap, isNotNull);
+    expect(h.coldReads, 1);
     expect(h.watch.navigatorOpener, isNotNull);
 
     h.servers.hasConnectedServers = true;
@@ -707,24 +709,23 @@ void main() {
     expect(h.pickers, 1);
   });
 
-  testWidgets('shelf registers and reads cold link; watch opener ownership cleans up', (tester) async {
+  testWidgets('deep links: cold and warm links reach the session; watch opener ownership cleans up', (tester) async {
     final h = _Harness();
     final c = h.create();
     await c.start();
     await flush(tester);
-    expect(h.shelf.coldReads, 1);
-    expect(h.log, contains('shelf:cold'));
-    h.shelf.onShelfItemTap!('warm');
+    expect(h.coldReads, 1);
+    expect(h.log, contains('link:plezytv://play?server=a&id=1'));
+    h.links.receive('plezytv://live?channel=4.1');
     await flush(tester);
-    expect(h.log, contains('shelf:warm'));
-    h.shelf.onShelfItemTap!('plezytv://live?channel=4.1');
-    await flush(tester);
-    expect(h.log, contains('live:4.1'));
-    expect(h.log, isNot(contains('shelf:plezytv://live?channel=4.1')));
+    expect(h.log, contains('link:plezytv://live?channel=4.1'));
     expect(h.watch.navigatorOpener, isNotNull);
     c.dispose();
     expect(h.watch.navigatorOpener, isNull);
-    expect(h.shelf.onShelfItemTap, isNull);
+    h.log.clear();
+    h.links.receive('plezytv://live?channel=5');
+    await flush(tester);
+    expect(h.log, isEmpty);
   });
 
   testWidgets('dispose preserves replacement callbacks and cancels delayed prime', (tester) async {
@@ -733,19 +734,16 @@ void main() {
     h.active.isBinding = true;
     await c.start();
     Future<bool> replacement(WatchCopy _) async => false;
-    void shelfReplacement(String _) {}
     h.watch.navigatorOpener = replacement;
-    h.shelf.onShelfItemTap = shelfReplacement;
     c.dispose();
     h.log.clear();
     await tester.pump(const Duration(seconds: 20));
     expect(h.log, isEmpty);
     expect(h.watch.navigatorOpener, replacement);
-    expect(h.shelf.onShelfItemTap, shelfReplacement);
     expect(await c.retry(), isNull);
   });
 
-  testWidgets('offline startup skips network priming, links, watch, companion and updates', (tester) async {
+  testWidgets('offline startup skips network priming, watch, companion and updates; links act offline', (tester) async {
     final settings = await SettingsService.getInstance();
     await settings.write(SettingsService.enableCompanionRemoteServer, true);
     await settings.write(SettingsService.autoCheckUpdatesOnStartup, true);
@@ -758,10 +756,9 @@ void main() {
     expect(c.isOffline, isTrue);
     expect(h.home.starts, 0);
     expect(h.preferences.loads, 0);
-    expect(h.log, isEmpty);
+    // As upstream MainScreen: links still act, told the session is offline.
+    expect(h.log, ['link:plezytv://play?server=a&id=1 offline']);
     expect(h.downloads.resumes, 0);
-    expect(h.shelf.coldReads, 0);
-    expect(h.shelf.onShelfItemTap, isNull);
     expect(h.watch.navigatorOpener, isNull);
     expect(h.hostStarts, 0);
     expect(h.updates, 0);

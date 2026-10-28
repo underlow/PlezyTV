@@ -22,7 +22,7 @@ import '../../../screens/profile/profile_teardown.dart';
 import '../../../screens/video_player_screen.dart';
 import '../../../services/companion_remote/companion_remote_host_controller.dart';
 import '../../../services/offline_watch_sync_service.dart';
-import '../../../services/system_shelf_service.dart';
+import '../../../services/deep_links/deep_link_launcher.dart';
 import '../../../services/update_service.dart';
 import '../../../utils/platform_detector.dart';
 import '../../../utils/update_dialog.dart';
@@ -90,18 +90,8 @@ TvShellSessionController createTvShellSessionController(
         );
       }
     },
-    supportsShelf: Platform.isAndroid || PlatformDetector.isAppleTV(),
-    launchLiveTv: (link) async {
-      if (alive()) await link.launch(context, context.read<MultiServerProvider>());
-    },
-    openShelfContent: (id) async {
-      if (!alive()) return;
-      final servers = context.read<MultiServerProvider>();
-      final parsed = SystemShelfService.parseContentId(id);
-      if (parsed == null) return;
-      final (serverId, ratingKey) = parsed;
-      final metadata = await servers.getClientForServer(serverId)?.fetchItem(ratingKey);
-      if (context.mounted && metadata != null && alive()) await navigateToVideoPlayer(context, metadata: metadata);
+    launchDeepLink: (link, {required isOffline}) async {
+      if (alive()) await launchDeepLink(context, link, isOffline: isOffline);
     },
     watchTogether: context.read<WatchTogetherProvider?>(),
     openWatchTogether: (copy) => navigateToWatchTogetherPlayback(context, copy),

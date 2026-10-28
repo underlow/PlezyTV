@@ -23,9 +23,9 @@ import '../../../services/api_cache.dart';
 import '../../../services/plex_client.dart';
 import '../../../services/offline_watch_sync_service.dart';
 import '../../../services/settings_service.dart';
-import '../../../services/system_shelf_service.dart';
+import '../../../services/deep_links/deep_link.dart';
+import '../../../services/deep_links/deep_link_service.dart';
 import '../../../utils/app_logger.dart';
-import '../../../utils/live_tv_deep_link.dart';
 import '../../../watch_together/watch_together.dart';
 
 /// The shell maps these to primeRefresh, refresh (+ libraries.refresh), and
@@ -58,19 +58,17 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     required this.isRemoteHost,
     required this.startCompanionHost,
     required this.checkForUpdates,
-    required this.supportsShelf,
-    required this.openShelfContent,
-    required this.launchLiveTv,
+    required this.launchDeepLink,
     required this.watchTogether,
     required this.openWatchTogether,
     this.isOfflineMode = false,
     this.initialPromptHandled = false,
     this.settings = SettingsService.getInstance,
     this.clearVolatileCache = ApiCache.clearRegisteredVolatile,
-    SystemShelfService? systemShelf,
+    DeepLinkService? deepLinks,
     ContentRefreshResumeGate? contentResumeGate,
     this.bindingFallback = const Duration(seconds: 15),
-  }) : systemShelf = systemShelf ?? SystemShelfService(),
+  }) : deepLinks = deepLinks ?? DeepLinkService.instance,
        _contentResumeGate = contentResumeGate ?? ContentRefreshResumeGate(),
        // The shell selects its initial section before start() runs.
        _isOffline = isOfflineMode || offlineMode.isOffline,
@@ -92,16 +90,18 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
   final Future<void> Function() settleSession, pushProfileSelection;
   final Future<void> Function() refreshSeerrUser;
   final bool Function() hasActiveVideoPlayback, hasActiveCompanionSession;
-  final bool isMobilePlatform, isRemoteHost, supportsShelf;
+  final bool isMobilePlatform, isRemoteHost;
   final Future<void> Function() startCompanionHost, checkForUpdates;
-  final Future<void> Function(String) openShelfContent;
-  final Future<void> Function(LiveTvDeepLink) launchLiveTv;
+
+  /// Acts on a `plezytv://` link (launcher shelf rows, live TV, automation).
+  final Future<void> Function(DeepLink link, {required bool isOffline}) launchDeepLink;
   final WatchTogetherProvider? watchTogether;
   final Future<bool> Function(WatchCopy) openWatchTogether;
   final bool isOfflineMode, initialPromptHandled;
   final Future<SettingsService> Function() settings;
   final Future<void> Function() clearVolatileCache;
-  final SystemShelfService systemShelf;
+  final DeepLinkService deepLinks;
+  DeepLinkSession? _deepLinkSession;
   final Duration bindingFallback;
   final ContentRefreshResumeGate _contentResumeGate;
   final _profileResumeGate = ProfileSelectionResumeGate();
@@ -158,10 +158,6 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     // provider. Keep navigation callbacks available after this session recovers.
     if (!isOfflineMode) {
       watchTogether?.navigatorOpener = _openWatch;
-      if (supportsShelf) {
-        systemShelf.onShelfItemTap = _onShelfTap;
-        unawaited(_guard(_readColdShelfLink));
-      }
     }
     if (multiServer.hasConnectedServers) _offlineUntilConnected = false;
     _isOffline = shouldRenderMainScreenOffline(
@@ -191,6 +187,8 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
       }
     }
     if (!_alive) return;
+    // Links act once the profile is settled and its preferences are loaded.
+    _attachDeepLinks();
     // An online route still owes its startup check when bootstrap finds the
     // provider offline. A true offline launch does not acquire that duty.
     _startupUpdatePending = !isOfflineMode || !_isOffline;
@@ -313,11 +311,29 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
   Future<void> _pushPicker() async {
     if (!_alive) return;
     _showingPicker = true;
+    // A link waits for the viewer's choice; a different profile acts on it
+    // in its own session.
+    _detachDeepLinks();
     try {
       await pushProfileSelection();
     } finally {
       _showingPicker = false;
     }
+    _attachDeepLinks();
+  }
+
+  /// Mirrors MainScreen: this profile session owns `plezytv://` links.
+  void _attachDeepLinks() {
+    if (!_alive || _showingPicker) return;
+    final session = _deepLinkSession ??= DeepLinkSession(
+      profileId: activeProfile.activeId,
+      launch: (link) => _guard(() => launchDeepLink(link, isOffline: _isOffline)),
+    );
+    deepLinks.attach(session);
+  }
+
+  void _detachDeepLinks() {
+    if (_deepLinkSession case final session?) deepLinks.detach(session);
   }
 
   Future<void> _invalidate() async {
@@ -437,17 +453,6 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     }
   }
 
-  void _onShelfTap(String id) {
-    if (!_alive) return;
-    final liveLink = LiveTvDeepLink.tryParse(id);
-    unawaited(_guard(() => liveLink == null ? openShelfContent(id) : launchLiveTv(liveLink)));
-  }
-
-  Future<void> _readColdShelfLink() async {
-    final id = await systemShelf.getInitialDeepLink();
-    if (_alive && id != null) _onShelfTap(id);
-  }
-
   Future<bool> _openWatch(WatchCopy copy) async {
     if (!_alive) return false;
     try {
@@ -475,7 +480,7 @@ class TvShellSessionController extends ChangeNotifier with WidgetsBindingObserve
     _serverSubscription?.cancel();
     _bindingTimer?.cancel();
     if (watchTogether?.navigatorOpener == _openWatch) watchTogether?.navigatorOpener = null;
-    if (systemShelf.onShelfItemTap == _onShelfTap) systemShelf.onShelfItemTap = null;
+    _detachDeepLinks();
     super.dispose();
   }
 }

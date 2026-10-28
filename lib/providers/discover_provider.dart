@@ -1279,7 +1279,13 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           if (sourcesOverride != null) {
             await sourcesOverride(owner, _onlineShelfSourceClients());
           } else if (syncOverride == null) {
-            await SystemShelfService().syncServerSources(owner, _onlineShelfSourceClients());
+            final settings = await SettingsService.getInstance();
+            if (isDisposed) return;
+            await SystemShelfService().syncServerSources(
+              owner,
+              _onlineShelfSourceClients(),
+              episodePosterMode: settings.read(SettingsService.episodePosterMode),
+            );
           }
           if (isDisposed) return;
           if (syncOverride != null) {
@@ -1299,6 +1305,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
             syncableOnDeck,
             _clientForShelfItem,
             hideSpoilers: settings.read(SettingsService.hideSpoilers),
+            episodePosterMode: settings.read(SettingsService.episodePosterMode),
           );
         } catch (e) {
           appLogger.w('Failed to sync system shelf', error: e);
