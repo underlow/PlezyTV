@@ -515,7 +515,7 @@ void main() {
       );
       expect(find.descendant(of: header, matching: find.textContaining(RegExp(r'S1 E[34] · e[34]'))), findsOneWidget);
       expect(header, findsOneWidget);
-      expect(tester.getRect(header), const Rect.fromLTWH(200, 324, 900, 340));
+      expect(tester.getRect(header), Rect.fromLTWH(TvTokens.space.contentLeft.toDouble(), 324, 900, 340));
       expect(find.byKey(const ValueKey('show-compact-header')), findsNothing);
       final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
       expect(scrollable.position.maxScrollExtent, 0);

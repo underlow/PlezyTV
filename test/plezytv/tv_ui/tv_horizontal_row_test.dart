@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import '../../test_helpers/media_items.dart';
@@ -156,12 +157,12 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(nodes[30]?.hasFocus, isTrue);
-      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, 200);
+      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, TvTokens.space.contentLeft);
       expect(find.byType(TvPoster).evaluate().length, lessThan(25));
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(nodes[30]!.hasFocus, isTrue);
-      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, 200);
+      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, TvTokens.space.contentLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(nodes[0]!.hasFocus, isTrue);
@@ -210,7 +211,7 @@ void main() {
       );
       final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
       expect(find.byType(TvPoster).evaluate().length, inInclusiveRange(8, 16));
-      expect(tester.getTopLeft(find.text('Recently added')).dx, 200);
+      expect(tester.getTopLeft(find.text('Recently added')).dx, TvTokens.space.contentLeft);
       expect(
         tester.getTopLeft(find.byKey(const ValueKey(0))).dy - tester.getBottomLeft(find.text('Recently added')).dy,
         40,
@@ -241,7 +242,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 75));
         expect(scroll.offset, 1708);
       }
-      expect(tester.getTopLeft(find.byKey(const ValueKey(7))).dx, 200);
+      expect(tester.getTopLeft(find.byKey(const ValueKey(7))).dx, TvTokens.space.contentLeft);
       outside.requestFocus();
       await tester.pumpAndSettle();
       expect(key.currentState!.focusInside.value, isFalse);
@@ -253,7 +254,7 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
         expect(nodes[i]!.hasFocus, isTrue);
-        expect(tester.getTopLeft(find.byKey(ValueKey(i))).dx, 200);
+        expect(tester.getTopLeft(find.byKey(ValueKey(i))).dx, TvTokens.space.contentLeft);
       }
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();

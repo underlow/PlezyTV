@@ -11,6 +11,7 @@ import '../../../media/media_item.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/media_playlist.dart';
 import '../../../media/media_server_client.dart';
+import '../../../navigation/main_screen_scope.dart';
 import '../../../screens/hub_detail_screen.dart';
 import '../../../screens/libraries/libraries_screen.dart';
 import '../../../utils/media_navigation_helper.dart';
@@ -320,7 +321,6 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
       child: TvHorizontalRow(
         key: _rows[index],
         title: hub.title,
-        contentLeft: 0,
         counter: hub.size.toString(),
         itemCount: hub.items.length + (hub.more || hub.size > hub.items.length ? 1 : 0),
         itemKey: (i) => i == hub.items.length ? 'all' : hub.items[i].globalKey,
@@ -421,16 +421,32 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
       );
     }
     if (_recommended) {
-      return SingleChildScrollView(
-        controller: _scroll,
-        child: Column(
-          children: [
-            for (var i = 0; i < _hubs.length; i++) ...[
-              _rail(i),
-              SizedBox(height: TvTheme.of(context).px(TvTokens.space.rowGap)),
-            ],
-          ],
-        ),
+      // Rails span the screen's side margins, as on Home, so the focused
+      // card's scale and ring are not clipped at the sidebar or the safe edge.
+      final px = TvTheme.of(context).px;
+      final left = (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+        0.0,
+        double.infinity,
+      );
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: -left,
+            top: 0,
+            right: -px(TvTokens.space.safeX),
+            bottom: 0,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var i = 0; i < _hubs.length; i++) ...[_rail(i), SizedBox(height: px(TvTokens.space.rowGap))],
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     }
     final size = TvPosterSize.grid.dimensions;
