@@ -378,6 +378,8 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     final root = _root;
     if (_current != root) {
       selectSection(root, focusContent: false);
+      // Keep the open menu's focus on the new current item, as upstream does.
+      _afterSelection(focusMenu);
       return;
     }
     if (_exitTimer?.isActive ?? false) {

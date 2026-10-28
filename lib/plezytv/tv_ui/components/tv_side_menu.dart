@@ -212,7 +212,10 @@ class _TvSideMenuState extends State<TvSideMenu> {
                                 child: ColoredBox(color: TvTokens.color.accent.normal),
                               ),
                             ),
+                          // Keyed: the marker coming or going must not
+                          // recreate the item and drop its focus visual.
                           Positioned(
+                            key: const ValueKey('item'),
                             left: px(sizes.padLeft),
                             top: 0,
                             bottom: 0,

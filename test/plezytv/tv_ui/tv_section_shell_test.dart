@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:plezy/focus/dpad_navigator.dart';
+import 'package:plezy/focus/input_mode_tracker.dart';
 import 'package:plezy/focus/key_event_utils.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/media_backend.dart';
@@ -26,6 +27,7 @@ import 'package:plezy/navigation/profile_navigation_scope.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_side_menu.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_button.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_section_shell.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_section.dart';
 import 'package:plezy/plezytv/tv_ui/shell/tv_shell_session_controller.dart';
@@ -300,27 +302,35 @@ void main() {
   GlobalKey? watchlistKey;
   _WatchlistProbeState watchlistProbe() => watchlistKey!.currentState! as _WatchlistProbeState;
   TvSideMenu menu(WidgetTester tester) => tester.widget(find.byType(TvSideMenu));
+  bool menuShowsFocus(WidgetTester tester, String label) =>
+      tester.widget<Text>(find.text(label)).style?.color == TvTokens.color.text.onFocus;
 
   Future<void> pump(WidgetTester tester) async {
     await SettingsService.getInstance();
+    // Keyboard mode, so menu items draw their focus visuals.
+    await tester.pumpWidget(const InputModeTracker(child: SizedBox.shrink()));
+    InputModeTracker.reportNonPointerInput();
+    await tester.pump();
     await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<DiscoverProvider>.value(value: homeProvider),
-          ChangeNotifierProvider<LibrariesProvider>.value(value: libraries),
-          ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hidden),
-          ChangeNotifierProvider<MultiServerProvider>.value(value: servers),
-          ChangeNotifierProvider<CatalogSourcesProvider>.value(value: sources),
-          ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
-        ],
-        child: MaterialApp(
-          navigatorKey: navigator,
-          navigatorObservers: [observer],
-          home: ProfileNavigationScope(
+      InputModeTracker(
+        child: MultiProvider(
+          providers: [
+            ChangeNotifierProvider<DiscoverProvider>.value(value: homeProvider),
+            ChangeNotifierProvider<LibrariesProvider>.value(value: libraries),
+            ChangeNotifierProvider<HiddenLibrariesProvider>.value(value: hidden),
+            ChangeNotifierProvider<MultiServerProvider>.value(value: servers),
+            ChangeNotifierProvider<CatalogSourcesProvider>.value(value: sources),
+            ChangeNotifierProvider<MusicPlaybackService>.value(value: music),
+          ],
+          child: MaterialApp(
             navigatorKey: navigator,
-            routeObserver: observer,
-            mainScaffoldMessengerKey: GlobalKey<ScaffoldMessengerState>(),
-            child: TvSectionShell(key: shell, isOfflineMode: false, initialPromptHandled: true),
+            navigatorObservers: [observer],
+            home: ProfileNavigationScope(
+              navigatorKey: navigator,
+              routeObserver: observer,
+              mainScaffoldMessengerKey: GlobalKey<ScaffoldMessengerState>(),
+              child: TvSectionShell(key: shell, isOfflineMode: false, initialPromptHandled: true),
+            ),
           ),
         ),
       ),
@@ -712,6 +722,8 @@ void main() {
     expect(find.text(t.common.home), findsOneWidget);
     await key(tester, LogicalKeyboardKey.escape);
     expect(shell.currentState!.currentSection, home);
+    expect(menuShowsFocus(tester, t.common.home), isTrue);
+    expect(menuShowsFocus(tester, movies.title), isFalse);
     expect(binding.exits, 0);
     await key(tester, LogicalKeyboardKey.escape);
     expect(find.text(t.common.pressBackAgainToExit), findsOneWidget);
@@ -721,6 +733,18 @@ void main() {
     expect(binding.exits, 0);
     await key(tester, LogicalKeyboardKey.escape);
     expect(binding.exits, 1);
+  });
+
+  testWidgets('focused menu item keeps its focus visual when the current marker leaves it', (tester) async {
+    await pump(tester);
+    shell.currentState!.selectLibrary(movies.globalKey);
+    await tester.pumpAndSettle();
+    await key(tester, LogicalKeyboardKey.arrowLeft);
+    expect(menuShowsFocus(tester, movies.title), isTrue);
+    shell.currentState!.selectSection(TvShellSection.library(series.globalKey), focusContent: false);
+    await tester.pumpAndSettle();
+    expect(menuShowsFocus(tester, movies.title), isTrue);
+    expect(menuShowsFocus(tester, series.title), isFalse);
   });
 
   testWidgets('M1/M2 live order, duplicate titles, hidden libraries, downloads setting', (tester) async {
