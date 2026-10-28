@@ -3,6 +3,7 @@ import 'package:plezy/media/ids.dart';
 import 'package:plezy/utils/deletion_notifier.dart';
 import 'package:plezy/utils/watch_state_notifier.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
+import 'package:plezy/plezytv/tv_ui/components/tv_hero.dart';
 import 'package:flutter/material.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_controller.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_preferences.dart';
@@ -202,6 +203,44 @@ void main() {
     await fixtures.press(tester, LogicalKeyboardKey.escape);
     await fixtures.settle(tester);
     expect(grid.focusedIndex, 0);
+  });
+
+  testWidgets('recommended hero follows the focused card and compacts below the first row', (tester) async {
+    final client = FakeMediaServerClient()
+      ..hubs = [
+        MediaHub(id: 'a', title: 'Hub A', type: 'movie', items: [fixtures.movie(1), fixtures.movie(2)]),
+        MediaHub(id: 'b', title: 'Hub B', type: 'movie', items: [fixtures.movie(3)]),
+      ];
+    final c = make(client);
+    final hero = ValueNotifier<MediaItem?>(null);
+    addTearDown(hero.dispose);
+    await pumpTvWidget(
+      tester,
+      Scaffold(
+        body: TvLibraryExtraTab(
+          controller: c,
+          tab: LibraryTabType.recommended,
+          ownsTabFocus: () => true,
+          onUp: () {},
+          onLeft: () {},
+          hero: hero,
+        ),
+      ),
+    );
+    await fixtures.settle(tester);
+    TvHero shown() => tester.widget<TvHero>(find.byType(TvHero));
+    expect(hero.value?.id, '1');
+    expect(shown().item?.id, '1');
+    expect(shown().compact, isFalse);
+    await fixtures.press(tester, LogicalKeyboardKey.arrowRight);
+    expect(shown().item?.id, '2');
+    await fixtures.press(tester, LogicalKeyboardKey.arrowDown);
+    expect(hero.value?.id, '3');
+    expect(shown().compact, isTrue);
+    await fixtures.press(tester, LogicalKeyboardKey.arrowUp);
+    expect(shown().item?.id, '2');
+    expect(shown().compact, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('recommended remembers each row and opens All with Plezy hub screen', (tester) async {

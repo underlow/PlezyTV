@@ -27,6 +27,8 @@ import '../components/tv_paged_grid.dart';
 import '../components/tv_skeletons.dart';
 import '../components/tv_tabs.dart';
 import '../tv_strings.dart';
+import '../tv_tint_service.dart';
+import '../tv_tinted_background.dart';
 import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_library_controller.dart';
@@ -68,6 +70,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   final _more = FocusNode(debugLabel: 'Library more');
   final _action = FocusNode(debugLabel: 'Library state action');
   final _position = ValueNotifier(0);
+  final _hero = ValueNotifier<MediaItem?>(null);
   final _menus = <int, GlobalKey<MediaContextMenuState>>{};
   Timer? _timer;
   Widget? _gridWidget;
@@ -264,6 +267,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   Future<void> _selectTab(int index) async {
     if (tabs[index] == tab) return;
     _entryFocusPending = false;
+    _hero.value = null;
     await c.select(tab: tabs[index].name);
     if (mounted) _changed();
   }
@@ -479,6 +483,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
           ownsTabFocus: () => _tabs.hasFocus,
           autoFocusOnLoad: _entryFocusPending,
           onLoaded: () => _entryFocusPending = false,
+          hero: tab == LibraryTabType.recommended ? _hero : null,
         ),
       );
     } else if (c.grouping == 'folders') {
@@ -514,99 +519,110 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
               children: List.generate(12, (_) => const TvPosterSkeleton(size: TvPosterSize.grid)),
             );
     }
+    final page = Padding(
+      padding: EdgeInsets.only(
+        // The shell already reserves its sidebar; routes have no shell offset.
+        left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+          0.0,
+          double.infinity,
+        ),
+        top: px(54),
+        right: px(TvTokens.space.safeX),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(c.library.title, style: theme.headline, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    if (c.totalCount != null) ...[
+                      SizedBox(width: px(TvTokens.space.md)),
+                      Text('${c.totalCount}', style: theme.caption),
+                    ],
+                  ],
+                ),
+              ),
+              TvButton(
+                label: TvStrings.sortBy(c.effectiveSort?.title ?? TvStrings.defaultSort),
+                focusNode: _sort,
+                icon: Icons.swap_vert,
+                variant: TvButtonVariant.secondary,
+                onSelect: () {
+                  if (widget.onSort case final callback?) {
+                    callback(_sort);
+                  } else {
+                    unawaited(showTvLibrarySort(context, _sort, c));
+                  }
+                },
+              ),
+              SizedBox(width: px(16)),
+              TvButton(
+                label: '${t.libraries.filters}${fields == 0 ? '' : ' · $fields'}',
+                focusNode: _filters,
+                icon: Icons.filter_alt,
+                variant: TvButtonVariant.secondary,
+                disabled: c.filtersLoading,
+                onSelect: () {
+                  if (widget.onFilters case final callback?) {
+                    callback(_filters);
+                  } else {
+                    unawaited(showTvLibraryFilters(context, _filters, c));
+                  }
+                },
+              ),
+              SizedBox(width: px(16)),
+              TvButton(
+                label: TvStrings.moreLibraries,
+                focusNode: _more,
+                variant: TvButtonVariant.secondary,
+                onSelect: () => widget.onMore != null
+                    ? widget.onMore!(_more)
+                    : unawaited(showTvLibraryMore(context, _more, c.library, c.client)),
+              ),
+            ],
+          ),
+          SizedBox(height: px(24)),
+          FocusScope(
+            node: _tabs,
+            child: TvTabs(
+              key: _tabBar,
+              tabs: [for (final type in tabs) TvTab(label: _tabLabel(type))],
+              selectedIndex: tabs.indexOf(tab),
+              onSelected: (index) => unawaited(_selectTab(index)),
+            ),
+          ),
+          SizedBox(height: px(38)),
+          Expanded(child: content),
+        ],
+      ),
+    );
     return Focus(
       canRequestFocus: false,
       onKeyEvent: _key,
-      child: ColoredBox(
-        color: TvTokens.color.bg.base,
-        child: Padding(
-          padding: EdgeInsets.only(
-            // The shell already reserves its sidebar; routes have no shell offset.
-            left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
-              0.0,
-              double.infinity,
-            ),
-            top: px(54),
-            right: px(TvTokens.space.safeX),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+      // Recommended tints the whole page under its hero item, as Home does.
+      child: tab == LibraryTabType.recommended
+          ? ValueListenableBuilder<MediaItem?>(
+              valueListenable: _hero,
+              child: page,
+              builder: (context, item, child) => Stack(
+                fit: StackFit.expand,
                 children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            c.library.title,
-                            style: theme.headline,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (c.totalCount != null) ...[
-                          SizedBox(width: px(TvTokens.space.md)),
-                          Text('${c.totalCount}', style: theme.caption),
-                        ],
-                      ],
+                  if (item == null)
+                    const TvPlainBackground()
+                  else
+                    TvTintedBackground(
+                      source: TvArtworkSource(item: item, client: c.client),
                     ),
-                  ),
-                  TvButton(
-                    label: TvStrings.sortBy(c.effectiveSort?.title ?? TvStrings.defaultSort),
-                    focusNode: _sort,
-                    icon: Icons.swap_vert,
-                    variant: TvButtonVariant.secondary,
-                    onSelect: () {
-                      if (widget.onSort case final callback?) {
-                        callback(_sort);
-                      } else {
-                        unawaited(showTvLibrarySort(context, _sort, c));
-                      }
-                    },
-                  ),
-                  SizedBox(width: px(16)),
-                  TvButton(
-                    label: '${t.libraries.filters}${fields == 0 ? '' : ' · $fields'}',
-                    focusNode: _filters,
-                    icon: Icons.filter_alt,
-                    variant: TvButtonVariant.secondary,
-                    disabled: c.filtersLoading,
-                    onSelect: () {
-                      if (widget.onFilters case final callback?) {
-                        callback(_filters);
-                      } else {
-                        unawaited(showTvLibraryFilters(context, _filters, c));
-                      }
-                    },
-                  ),
-                  SizedBox(width: px(16)),
-                  TvButton(
-                    label: TvStrings.moreLibraries,
-                    focusNode: _more,
-                    variant: TvButtonVariant.secondary,
-                    onSelect: () => widget.onMore != null
-                        ? widget.onMore!(_more)
-                        : unawaited(showTvLibraryMore(context, _more, c.library, c.client)),
-                  ),
+                  child!,
                 ],
               ),
-              SizedBox(height: px(24)),
-              FocusScope(
-                node: _tabs,
-                child: TvTabs(
-                  key: _tabBar,
-                  tabs: [for (final type in tabs) TvTab(label: _tabLabel(type))],
-                  selectedIndex: tabs.indexOf(tab),
-                  onSelected: (index) => unawaited(_selectTab(index)),
-                ),
-              ),
-              SizedBox(height: px(38)),
-              Expanded(child: content),
-            ],
-          ),
-        ),
-      ),
+            )
+          : ColoredBox(color: TvTokens.color.bg.base, child: page),
     );
   }
 
@@ -615,6 +631,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     c.removeListener(_changed);
     _timer?.cancel();
     _position.dispose();
+    _hero.dispose();
     for (final node in [_sort, _filters, _more, _action, _tabs]) {
       node.dispose();
     }
