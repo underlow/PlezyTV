@@ -162,6 +162,11 @@ abstract final class TvUi {
     return builder(context, args);
   }
 
+  /// H10 — on TV, Back on the Play Next card only closes it; the next Back
+  /// reaches post-play (S14). Upstream leaves the player at once (#2686),
+  /// which would skip post-play.
+  static bool playerBackKeepsPlayNext({required bool isLive}) => _playerActive(isLive: isLive);
+
   /// H2 — the skip button's look.
   static Widget? playerSkipButton(BuildContext context, SkipMarkerButton plezy) {
     final builder = _player.skipButton;

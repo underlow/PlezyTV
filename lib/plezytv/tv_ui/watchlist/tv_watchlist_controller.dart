@@ -77,6 +77,7 @@ class TvWatchlistController extends ChangeNotifier {
   bool _snapshotLoaded = false;
   Timer? _refetchTimer;
   Timer? _membershipTimer;
+
   /// Items removed from the grid. `seenOff` is set once membership data has
   /// read the item as not listed; only after that can a `true` reading be
   /// newer than the removal and restore it (A34).
