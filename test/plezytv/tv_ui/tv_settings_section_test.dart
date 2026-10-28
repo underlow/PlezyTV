@@ -6,7 +6,7 @@ import 'package:plezy/widgets/settings_section.dart';
 import 'tv_theme_test_helper.dart';
 
 void main() {
-  testWidgets('settings groups start at 200 and use a flat base app bar', (tester) async {
+  testWidgets('settings groups start at the content inset and use a flat base app bar', (tester) async {
     late ThemeData theme;
     await pumpTvWidget(
       tester,
@@ -24,7 +24,7 @@ void main() {
       ),
     );
     final item = tester.getRect(find.byKey(const ValueKey('item')));
-    expect(item.left, 200);
+    expect(item.left, TvTokens.space.contentLeft);
     expect(item.width, lessThanOrEqualTo(1200));
     expect(theme.scaffoldBackgroundColor, TvTokens.color.bg.base);
     expect(theme.appBarTheme.backgroundColor, TvTokens.color.bg.base);

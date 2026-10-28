@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/navigation/main_screen_scope.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
@@ -75,8 +76,8 @@ void main() {
           ),
           reduced: reduced,
         );
-        // No shell/scope here: the default inset must still be 200.
-        expect(tester.getTopLeft(find.text('Section')).dx, 200);
+        // No shell/scope here: the default inset must still be the content inset.
+        expect(tester.getTopLeft(find.text('Section')).dx, TvTokens.space.contentLeft);
         nodes[1]!.requestFocus();
         await tester.pumpAndSettle();
         final ring = paintedRing(tester);
@@ -110,8 +111,8 @@ void main() {
       });
     }
   }
-  for (final offset in [0.0, 136.0]) {
-    testWidgets('row visible content starts at screen x=200 with foreground offset $offset', (tester) async {
+  for (final offset in [0.0, (TvTokens.size.sidebar.collapsedW - TvTokens.space.cardFocusReserve).toDouble()]) {
+    testWidgets('row visible content starts at the content inset with foreground offset $offset', (tester) async {
       await pumpTvWidget(
         tester,
         MainScreenFocusScope(
@@ -136,8 +137,8 @@ void main() {
           ),
         ),
       );
-      expect(tester.getTopLeft(find.text('Section')).dx, 200);
-      expect(tester.getTopLeft(find.byType(TvPoster)).dx, 200);
+      expect(tester.getTopLeft(find.text('Section')).dx, TvTokens.space.contentLeft);
+      expect(tester.getTopLeft(find.byType(TvPoster)).dx, TvTokens.space.contentLeft);
     });
   }
 }

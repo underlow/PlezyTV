@@ -90,7 +90,7 @@ abstract final class TvTokens {
     cardFocusReserve: 24,
     cardGap: 28,
     rowHeaderToCards: 16,
-    contentLeft: 200,
+    contentLeft: 136,
     actionsGap: 24,
   );
   // S24 R2, R8: shared detail header geometry.

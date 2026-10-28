@@ -149,8 +149,8 @@ void main() {
     return key;
   }
 
-  for (final shellInset in [0.0, TvTokens.size.sidebar.collapsedW.toDouble()]) {
-    testWidgets('library edges align at x=200 with shell inset $shellInset', (tester) async {
+  for (final shellInset in [0.0, (TvTokens.size.sidebar.collapsedW - TvTokens.space.cardFocusReserve).toDouble()]) {
+    testWidgets('library edges align at the content inset with shell inset $shellInset', (tester) async {
       final client = FakeMediaServerClient()..items = [movie(0)];
       client.hubs = [
         MediaHub(id: 'a', title: 'First row', type: 'movie', items: [movie(0)]),
@@ -170,14 +170,14 @@ void main() {
         ),
       );
       await settle(tester);
-      expect(tester.getTopLeft(find.text('Movies')).dx, 200);
-      expect(tester.getTopLeft(find.byType(TvTabs)).dx, 200);
-      expect(tester.getTopLeft(find.byType(TvPoster).first).dx, 200);
+      expect(tester.getTopLeft(find.text('Movies')).dx, TvTokens.space.contentLeft);
+      expect(tester.getTopLeft(find.byType(TvTabs)).dx, TvTokens.space.contentLeft);
+      expect(tester.getTopLeft(find.byType(TvPoster).first).dx, TvTokens.space.contentLeft);
       await c.select(tab: 'recommended');
       await settle(tester);
-      expect(tester.getTopLeft(find.text('First row')).dx, 200);
-      expect(tester.getTopLeft(find.text('Second row')).dx, 200);
-      expect(tester.getTopLeft(find.byType(TvPoster).first).dx, 200);
+      expect(tester.getTopLeft(find.text('First row')).dx, TvTokens.space.contentLeft);
+      expect(tester.getTopLeft(find.text('Second row')).dx, TvTokens.space.contentLeft);
+      expect(tester.getTopLeft(find.byType(TvPoster).first).dx, TvTokens.space.contentLeft);
       final rows = find.byType(TvHorizontalRow);
       expect(tester.getTopLeft(rows.at(1)).dy - tester.getBottomLeft(rows.at(0)).dy, TvTokens.space.rowGap);
     });
@@ -349,7 +349,10 @@ void main() {
     expect(layout.columns, 6);
     expect(layout.cellWidth, 228);
     expect(layout.gap, 32);
-    expect(200 + layout.columns * layout.cellWidth + (layout.columns - 1) * layout.gap, lessThanOrEqualTo(1776 - 28));
+    expect(
+      TvTokens.space.contentLeft + layout.columns * layout.cellWidth + (layout.columns - 1) * layout.gap,
+      lessThanOrEqualTo(1776 - 28),
+    );
     client.onPage = (_) async => LibraryPage(items: [movie(2)], totalCount: 1);
     await c.select(
       filters: const [

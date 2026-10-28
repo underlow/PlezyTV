@@ -615,14 +615,17 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
     addTab(NavigationTabId.settings);
     final index = entries.indexWhere((entry) => entry.section == _current);
     final width = TvTheme.of(context).px(TvTokens.size.sidebar.collapsedW);
+    // Content starts at the sidebar edge, so the foreground begins one focus
+    // reserve earlier: a focused card's scale and ring stay unclipped.
+    final foregroundLeft = width - TvTheme.of(context).px(TvTokens.space.cardFocusReserve);
     return MainScreenFocusScope(
       focusSidebar: focusMenu,
       selectLibrary: selectLibrary,
       openSettings: () => selectSection(const TvShellSection.tab(NavigationTabId.settings)),
       sideNavigationWidth: width,
       reservedSideNavigationWidth: width,
-      foregroundLeft: width,
-      foregroundWidth: MediaQuery.sizeOf(context).width - width,
+      foregroundLeft: foregroundLeft,
+      foregroundWidth: MediaQuery.sizeOf(context).width - foregroundLeft,
       viewportWidth: MediaQuery.sizeOf(context).width,
       child: SideNavigationScope(
         child: TvSideMenu(
@@ -631,7 +634,7 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
           currentIndex: index < 0 ? null : index,
           dividerBeforeIndex: entries.length - 1,
           child: Padding(
-            padding: EdgeInsets.only(left: width),
+            padding: EdgeInsets.only(left: foregroundLeft),
             child: FocusScope(
               node: _contentScope,
               child: Column(
