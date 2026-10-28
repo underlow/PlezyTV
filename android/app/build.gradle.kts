@@ -308,6 +308,11 @@ android {
 
   defaultConfig {
     applicationId = "com.underlow.plezytv"
+    // PlezyTV: a build without the release key (any local build) is a separate app,
+    // com.underlow.plezytv.dev "PlezyTV Dev", so it never replaces or wipes the release.
+    val releaseSigned = rootProject.file("key.properties").exists()
+    if (!releaseSigned) applicationIdSuffix = ".dev"
+    manifestPlaceholders["appLabel"] = if (releaseSigned) "PlezyTV" else "PlezyTV Dev"
     minSdk = 25 // Fire OS 6.x (API 25); the mpv-android AAR shares the same floor
     targetSdk = flutter.targetSdkVersion
     versionCode = flutter.versionCode
