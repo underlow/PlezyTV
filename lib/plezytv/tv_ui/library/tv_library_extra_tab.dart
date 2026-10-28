@@ -12,6 +12,8 @@ import '../../../media/media_kind.dart';
 import '../../../media/media_playlist.dart';
 import '../../../media/media_server_client.dart';
 import '../../../navigation/main_screen_scope.dart';
+import '../../../providers/watch_state_store.dart';
+import '../../../services/settings_service.dart';
 import '../../../screens/hub_detail_screen.dart';
 import '../../../screens/libraries/libraries_screen.dart';
 import '../../../utils/media_navigation_helper.dart';
@@ -22,6 +24,7 @@ import '../../../widgets/media_context_menu.dart';
 import '../components/tv_all_card.dart';
 import '../components/tv_button.dart';
 import '../components/tv_cards.dart';
+import '../components/tv_hero.dart';
 import '../components/tv_skeletons.dart';
 import '../components/tv_horizontal_row.dart';
 import '../components/tv_paged_grid.dart';
@@ -44,6 +47,7 @@ class TvLibraryExtraTab extends StatefulWidget {
     this.openItem,
     this.autoFocusOnLoad = true,
     this.onLoaded,
+    this.hero,
   });
   final bool autoFocusOnLoad;
   final VoidCallback? onLoaded;
@@ -52,6 +56,10 @@ class TvLibraryExtraTab extends StatefulWidget {
   final VoidCallback onUp, onLeft;
   final bool Function() ownsTabFocus;
   final Future<void> Function(BuildContext, Object)? openItem;
+
+  /// Recommended's selected item. The host owns it so its tinted background
+  /// can span the header; without one the tab keeps a private notifier.
+  final ValueNotifier<MediaItem?>? hero;
 
   @override
   State<TvLibraryExtraTab> createState() => TvLibraryExtraTabState();
@@ -65,6 +73,8 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
   final _rows = <GlobalKey<TvHorizontalRowState>>[];
   final _scroll = ScrollController();
   final _menus = <int, GlobalKey<MediaContextMenuState>>{};
+  final _ownHero = ValueNotifier<MediaItem?>(null);
+  final _compact = ValueNotifier(false);
   late final TvPagedSource<Object> _source;
   List<MediaHub> _hubs = [];
   bool _loading = true, _failed = false, _opening = false;
@@ -77,6 +87,7 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
   TvLibraryController get c => widget.controller;
   bool get _recommended => widget.tab == LibraryTabType.recommended;
   bool get _empty => _recommended ? _hubs.isEmpty : _source.totalCount == 0;
+  ValueNotifier<MediaItem?> get _hero => widget.hero ?? _ownHero;
 
   @override
   void initState() {
@@ -166,6 +177,7 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         while (_rows.length < hubs.length) {
           _rows.add(GlobalKey<TvHorizontalRowState>());
         }
+        _syncHero();
       } else {
         if (_source.totalCount == null) {
           await _source.requestIndex(0);
@@ -208,6 +220,21 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         });
       }
     }
+  }
+
+  // Keep the shown item across refreshes; otherwise follow the remembered
+  // card of the current row, as Home does.
+  void _syncHero() {
+    if (_hubs.isEmpty) {
+      _hero.value = null;
+      return;
+    }
+    final key = _hero.value?.globalKey;
+    final same = _hubs.expand((hub) => hub.items).where((item) => item.globalKey == key).firstOrNull;
+    final row = _row.clamp(0, _hubs.length - 1);
+    final items = _hubs[row].items;
+    _hero.value = same ?? items[(_rows[row].currentState?.focusedIndex ?? 0).clamp(0, items.length - 1)];
+    _compact.value = row > 0;
   }
 
   void requestFocus() {
@@ -327,7 +354,11 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         cardWidth: TvTokens.size.poster.w.toDouble(),
         cardHeight:
             TvTokens.size.poster.h + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight.toDouble(),
-        onItemFocused: (_) => _row = index,
+        onItemFocused: (i) {
+          _row = index;
+          _compact.value = index > 0;
+          if (i < hub.items.length) _hero.value = hub.items[i];
+        },
         cardBuilder: (context, i, node) => i < hub.items.length
             ? _poster(hub.items[i], node: node, hub: hub)
             : TvAllCard(
@@ -428,22 +459,55 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         0.0,
         double.infinity,
       );
-      return Stack(
-        clipBehavior: Clip.none,
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned(
-            left: -left,
-            top: 0,
-            right: -px(TvTokens.space.safeX),
-            bottom: 0,
-            child: SingleChildScrollView(
-              controller: _scroll,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < _hubs.length; i++) ...[_rail(i), SizedBox(height: px(TvTokens.space.rowGap))],
-                ],
+          // The hero follows the focused card like Home's; the host draws the
+          // matching backdrop behind the whole screen.
+          ValueListenableBuilder<bool>(
+            valueListenable: _compact,
+            builder: (context, compact, _) => ValueListenableBuilder<MediaItem?>(
+              valueListenable: _hero,
+              builder: (context, item, _) => ListenableBuilder(
+                listenable:
+                    SettingsService.instanceOrNull?.listenable(SettingsService.hideSpoilers) ??
+                    const AlwaysStoppedAnimation(false),
+                builder: (context, _) {
+                  final effective = item == null ? null : context.withFreshWatchState(item);
+                  return TvHero(
+                    loadFullRatings: true,
+                    item: effective,
+                    compact: compact,
+                    hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
+                    client: c.client,
+                  );
+                },
               ),
+            ),
+          ),
+          Expanded(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: -left,
+                  top: 0,
+                  right: -px(TvTokens.space.safeX),
+                  bottom: 0,
+                  child: SingleChildScrollView(
+                    controller: _scroll,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var i = 0; i < _hubs.length; i++) ...[
+                          _rail(i),
+                          SizedBox(height: px(TvTokens.space.rowGap)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -482,6 +546,8 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
     _source.dispose();
     _scroll.dispose();
     _scope.dispose();
+    _ownHero.dispose();
+    _compact.dispose();
     super.dispose();
   }
 }
