@@ -49,7 +49,6 @@ class TvHomeHubCard extends StatelessWidget {
     required this.item,
     required this.focusNode,
     required this.playback,
-    this.wide = false,
     this.playDirectly = false,
     this.isInContinueWatching = false,
     this.onRefresh,
@@ -59,7 +58,7 @@ class TvHomeHubCard extends StatelessWidget {
   final MediaItem item;
   final FocusNode focusNode;
   final TvHomePlayback playback;
-  final bool wide, playDirectly, isInContinueWatching;
+  final bool playDirectly, isInContinueWatching;
   final void Function(MediaItem item)? onRefresh;
   final VoidCallback? onRemoveFromContinueWatching;
 
@@ -87,15 +86,6 @@ class TvHomeHubCard extends StatelessWidget {
             ),
             child: {MediaKind.artist, MediaKind.album, MediaKind.track}.contains(item.kind)
                 ? TvMusicCard(item: item, client: client, focusNode: focusNode, onSelect: select, onLongPress: menu)
-                : wide
-                ? TvEpisode(
-                    showSeriesTitle: item.kind == MediaKind.episode,
-                    item: item,
-                    client: client,
-                    focusNode: focusNode,
-                    onSelect: select,
-                    onLongPress: menu,
-                  )
                 : TvPoster(
                     showSeriesTitle: item.kind == MediaKind.episode,
                     item: item,
