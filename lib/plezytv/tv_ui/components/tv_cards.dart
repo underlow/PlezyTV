@@ -273,7 +273,11 @@ class _MediaCardState extends State<_MediaCard> {
           )
         : OptimizedMediaImage.poster(
             client: widget.client,
-            imagePath: widget.music ? widget.item.thumbPath ?? widget.item.parentThumbPath : widget.item.thumbPath,
+            imagePath: widget.music
+                ? widget.item.thumbPath ?? widget.item.parentThumbPath
+                : widget.item.kind == MediaKind.episode
+                ? widget.item.grandparentThumbPath ?? widget.item.thumbPath
+                : widget.item.thumbPath,
             localFilePath: widget.localFilePath,
             width: width,
             height: height,

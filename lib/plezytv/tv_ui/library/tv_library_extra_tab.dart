@@ -273,23 +273,16 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
               if (event is KeyDownEvent) menu();
               return KeyEventResult.handled;
             },
-            child: hub?.isContinueWatchingHub == true
-                ? TvEpisode(
-                    item: media,
-                    client: c.client,
-                    focusNode: node,
-                    onSelect: () => unawaited(_open(item, hub: hub)),
-                    onLongPress: menu,
-                  )
-                : TvPoster(
-                    item: media,
-                    client: c.client,
-                    size: _recommended ? TvPosterSize.row : TvPosterSize.grid,
-                    focusNode: node,
-                    externalFocus: focused,
-                    onSelect: () => unawaited(_open(item, hub: hub)),
-                    onLongPress: menu,
-                  ),
+            child: TvPoster(
+              item: media,
+              showSeriesTitle: media.kind == MediaKind.episode,
+              client: c.client,
+              size: _recommended ? TvPosterSize.row : TvPosterSize.grid,
+              focusNode: node,
+              externalFocus: focused,
+              onSelect: () => unawaited(_open(item, hub: hub)),
+              onLongPress: menu,
+            ),
           );
         },
       ),
@@ -310,7 +303,6 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
 
   Widget _rail(int index) {
     final hub = _hubs[index];
-    final wide = hub.isContinueWatchingHub;
     return Focus(
       canRequestFocus: false,
       onKeyEvent: (_, event) {
@@ -332,17 +324,13 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         counter: hub.size.toString(),
         itemCount: hub.items.length + (hub.more || hub.size > hub.items.length ? 1 : 0),
         itemKey: (i) => i == hub.items.length ? 'all' : hub.items[i].globalKey,
-        cardWidth: (wide ? TvTokens.size.episode.w : TvTokens.size.poster.w).toDouble(),
+        cardWidth: TvTokens.size.poster.w.toDouble(),
         cardHeight:
-            (wide ? TvTokens.size.episode.h : TvTokens.size.poster.h) +
-            20 +
-            TvTokens.type.body.lineHeight +
-            TvTokens.type.caption.lineHeight.toDouble(),
+            TvTokens.size.poster.h + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight.toDouble(),
         onItemFocused: (_) => _row = index,
         cardBuilder: (context, i, node) => i < hub.items.length
             ? _poster(hub.items[i], node: node, hub: hub)
             : TvAllCard(
-                episode: wide,
                 focusNode: node,
                 onSelect: () async {
                   await Navigator.of(context).push(

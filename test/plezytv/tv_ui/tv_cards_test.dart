@@ -105,6 +105,21 @@ void main() {
     }
   });
 
+  testWidgets('episode poster shows the series poster, falling back to its own thumb', (tester) async {
+    for (final (series, expected) in [('/series', '/series'), (null, '/episode')]) {
+      await pumpTvWidget(
+        tester,
+        Center(
+          child: TvPoster(
+            item: testMediaItem(kind: MediaKind.episode, thumbPath: '/episode', grandparentThumbPath: series),
+            showSeriesTitle: true,
+          ),
+        ),
+      );
+      expect(tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage)).imagePath, expected);
+    }
+  });
+
   testWidgets('A11 watched, on-server and aggregate unwatched badges/captions use Plezy state', (tester) async {
     await pumpTvWidget(tester, Center(child: TvPoster(item: testMediaItem(viewCount: 1), onServer: true)));
     expect(find.byIcon(Icons.check), findsOneWidget);

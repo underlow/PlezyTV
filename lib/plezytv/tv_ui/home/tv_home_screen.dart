@@ -457,13 +457,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
         (theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
             theme.px(TvTokens.type.caption.lineHeight).ceilToDouble()) /
         theme.scale;
-    return (row.kind == TvHomeRowKind.continueWatching
-            ? TvTokens.size.episode.h
-            : row.layout == TvHomeRowLayout.music
-            ? TvTokens.size.poster.w
-            : TvTokens.size.poster.h) +
-        20 +
-        captions;
+    return (row.layout == TvHomeRowLayout.music ? TvTokens.size.poster.w : TvTokens.size.poster.h) + 20 + captions;
   }
 
   double _rowExtent(TvHomeRow row) {
@@ -552,7 +546,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
   }
 
   Widget _rail(TvHomeRow row) {
-    final wide = row.kind == TvHomeRowKind.continueWatching;
+    final continuing = row.kind == TvHomeRowKind.continueWatching;
     final music = row.layout == TvHomeRowLayout.music;
     final key = _rowKey(row);
     return TvHorizontalRow(
@@ -561,21 +555,20 @@ class TvHomeScreenState extends State<TvHomeScreen>
       counter: row.count?.toString(),
       itemCount: row.items.length + (row.hasMore ? 1 : 0),
       itemKey: (index) => index == row.items.length ? 'all' : TvHomeRow.itemKey(row.items[index]),
-      cardWidth: (wide ? TvTokens.size.episode.w : TvTokens.size.poster.w).toDouble(),
+      cardWidth: TvTokens.size.poster.w.toDouble(),
       cardHeight: _cardHeight(row),
       positionMemory: _rowMemory.putIfAbsent(key, TvHorizontalRowMemory.new),
       onItemFocused: (index) => _focused(row, index),
       cardBuilder: (context, index, node) {
         if (index == row.items.length) {
-          return TvAllCard(episode: wide, square: music, focusNode: node, onSelect: () => unawaited(_openAll(row)));
+          return TvAllCard(square: music, focusNode: node, onSelect: () => unawaited(_openAll(row)));
         }
         return TvHomeHubCard(
           item: row.items[index],
           focusNode: node,
           playback: _playback,
-          wide: wide,
-          playDirectly: wide || (row.hub?.usesContinueWatchingAction ?? false),
-          isInContinueWatching: wide || (row.hub?.isContinueWatchingHub ?? false),
+          playDirectly: continuing || (row.hub?.usesContinueWatchingAction ?? false),
+          isInContinueWatching: continuing || (row.hub?.isContinueWatchingHub ?? false),
           onRefresh: _provider.updateItem,
           onRemoveFromContinueWatching: _provider.refreshContinueWatching,
         );

@@ -508,7 +508,7 @@ void main() {
     provider.hubs = [hub('movies')];
     await pump(tester);
     await tester.pumpAndSettle();
-    final card = find.byType(TvEpisode).first;
+    final card = find.byType(TvPoster).first;
     expect(find.descendant(of: card, matching: find.text('Example series')), findsOneWidget);
     expect(find.descendant(of: card, matching: find.text('S1 E3 · Part III')), findsOneWidget);
     expect(tester.getBottomRight(card).dy, lessThan(1080));
@@ -617,7 +617,9 @@ void main() {
     await pump(tester);
     await tester.pumpAndSettle();
     final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList();
-    final cards = tester.widgetList<TvEpisode>(find.byType(TvEpisode)).toList();
+    final cards = tester
+        .widgetList<TvPoster>(find.descendant(of: rowFinder(0), matching: find.byType(TvPoster)))
+        .toList();
     var railBuilds = 0, cardBuilds = 0;
     final previous = debugOnRebuildDirtyWidget;
     debugOnRebuildDirtyWidget = (element, builtOnce) {
@@ -632,15 +634,18 @@ void main() {
       tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList(),
       orderedEquals(rails),
     );
-    expect(tester.widgetList<TvEpisode>(find.byType(TvEpisode)).toList(), orderedEquals(cards));
+    expect(
+      tester.widgetList<TvPoster>(find.descendant(of: rowFinder(0), matching: find.byType(TvPoster))).toList(),
+      orderedEquals(cards),
+    );
     expect(cards.length, lessThan(12));
     expect(railBuilds, 0);
     expect(cardBuilds, 0);
     final image = tester.widget<OptimizedMediaImage>(
-      find.descendant(of: find.byType(TvEpisode).first, matching: find.byType(OptimizedMediaImage)),
+      find.descendant(of: find.byType(TvPoster).first, matching: find.byType(OptimizedMediaImage)),
     );
-    expect(image.width, 400);
-    expect(image.height, 225);
+    expect(image.width, 216);
+    expect(image.height, 324);
   });
 
   testWidgets('R10: compact hero animation preserves rails/cards and row focus geometry', (tester) async {
