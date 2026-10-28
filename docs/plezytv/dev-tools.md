@@ -79,6 +79,10 @@ Back returns to the previous screen; shell selection stays unchanged.
 
 ## Settings transfer over adb
 
+Commands below use the release package. A local build is `com.underlow.plezytv.dev`
+(see `release.md`): substitute it in `-p` and in the provider authority. Export from
+one package and import into the other to copy settings between a release and a dev build.
+
 The fixed-file Backup section is available on Android with the TV UI enabled.
 Desktop force-TV keeps Plezy’s file picker; tvOS keeps Backup hidden. Importing
 also updates an existing Search keyboard immediately, including while Search is

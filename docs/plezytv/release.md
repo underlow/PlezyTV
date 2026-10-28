@@ -1,7 +1,11 @@
 # Building and releasing PlezyTV
 
 The Android application ID is `com.underlow.plezytv`; Kotlin classes retain the
-upstream namespace. Keep the signing key safe and backed up: all subsequent
+upstream namespace. A build without `android/key.properties` (every local build:
+debug, profile or release) is `com.underlow.plezytv.dev`, labelled “PlezyTV Dev”.
+It installs next to the release with its own data, so neither replaces or wipes
+the other; in adb commands for it use `-p com.underlow.plezytv.dev` and the
+`com.underlow.plezytv.dev.settings` provider. Keep the signing key safe and backed up: all subsequent
 updates must use the same key. Never commit signing material.
 
 Create your own release key (keytool prompts for passwords):
@@ -113,4 +117,4 @@ done
 
 Both package lines must report `versionCode='200'`. This local build omits
 `PLEZYTV_VERSION`; the tagged workflow supplies it separately. Without local
-`android/key.properties`, these APKs are unsigned and only verify packaging.
+`android/key.properties`, these APKs are unsigned, only verify packaging, and carry the `.dev` application ID.
