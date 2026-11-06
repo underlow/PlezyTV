@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../../../navigation/main_screen_scope.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,11 +16,18 @@ class TvHorizontalRowMemory {
   int index = 0;
   String? itemKey;
   double offset = 0;
-  bool hasScrolled = false;
 }
 
 // Keep one viewport until device measurements justify a smaller cache.
 const double _horizontalCacheViewports = 1;
+
+// Retain the viewport while the card fits; beyond either edge reveal one slot.
+double _rowOffset(int index, double offset, double viewport, double extent, double gap, double maxOffset) {
+  final slots = math.max(1, ((viewport + gap) / extent).floor());
+  final first = index * extent;
+  final last = (index - slots + 1) * extent;
+  return offset.clamp(last, first).clamp(0.0, maxOffset);
+}
 
 /// A lazy, fixed-slot rail. Dimensions are design pixels. The builder must
 /// attach the supplied node to its card's focusable (with auto-scroll off).
@@ -68,7 +77,6 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
   final _inside = ValueNotifier(false);
   final _memory = FocusMemoryTracker();
   int _index = 0;
-  bool _hasScrolled = false;
   double _extent = 0, _viewport = 0;
 
   @override
@@ -81,7 +89,6 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
         if (_key(i) == position!.itemKey) _index = i;
       }
     }
-    _hasScrolled = position?.hasScrolled ?? false;
     _scroll = ScrollController(initialScrollOffset: position?.offset ?? 0, keepScrollOffset: position == null);
     _scroll.addListener(_savePosition);
   }
@@ -91,7 +98,6 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
     if (position == null) return;
     position.index = _index;
     position.itemKey = _index < widget.itemCount ? _key(_index) : null;
-    position.hasScrolled = _hasScrolled;
     if (_scroll.hasClients) position.offset = _scroll.offset;
   }
 
@@ -166,10 +172,14 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
 
   void _scrollTo(int index) {
     if (!_scroll.hasClients) return;
-    final slots = ((_viewport + TvTheme.of(context).px(TvTokens.space.cardGap)) / _extent).floor();
-    if (!_hasScrolled && index < slots) return;
-    _hasScrolled = index != 0;
-    final target = (index * _extent).clamp(0.0, _scroll.position.maxScrollExtent);
+    final target = _rowOffset(
+      index,
+      _scroll.offset,
+      _viewport,
+      _extent,
+      TvTheme.of(context).px(TvTokens.space.cardGap),
+      _scroll.position.maxScrollExtent,
+    );
     // Shared TV scroll policy: change the reduced-tier choice here.
     if (DevicePerformance.isReduced) {
       _scroll.jumpTo(target);
@@ -205,8 +215,7 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
       }
       target += step;
     }
-    // Reveal jumps are speculative: restore the exact viewport, bypassing the
-    // initial-slot optimization and without changing the row scroll policy.
+    // Reveal jumps are speculative: restore the exact original viewport.
     _scroll.jumpTo(originalOffset);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && generation == _seekGeneration) {
@@ -293,8 +302,12 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                     physics: const NeverScrollableScrollPhysics(),
                     clipBehavior: Clip.none,
                     scrollCacheExtent: ScrollCacheExtent.pixels(_viewport * _horizontalCacheViewports),
-                    padding: EdgeInsets.only(left: left, top: px(TvTokens.space.cardFocusReserve), right: _viewport),
-                    itemExtent: _extent,
+                    padding: EdgeInsets.only(
+                      left: left,
+                      top: px(TvTokens.space.cardFocusReserve),
+                      right: px(TvTokens.space.safeX),
+                    ),
+                    itemExtentBuilder: (index, _) => index == widget.itemCount - 1 ? px(widget.cardWidth) : _extent,
                     itemCount: widget.itemCount,
                     findChildIndexCallback: widget.itemKey == null
                         ? null
@@ -319,7 +332,9 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                           }
                         },
                         child: Padding(
-                          padding: EdgeInsets.only(right: px(TvTokens.space.cardGap)),
+                          padding: EdgeInsets.only(
+                            right: index == widget.itemCount - 1 ? 0 : px(TvTokens.space.cardGap),
+                          ),
                           child: widget.cardBuilder(context, index, node),
                         ),
                       );
