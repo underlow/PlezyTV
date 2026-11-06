@@ -52,7 +52,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
     with Refreshable, ManualRefreshable, FullRefreshable, TabVisibilityAware, FocusableTab, WidgetsBindingObserver {
   final _builder = TvHomeModelBuilder();
   final _hero = ValueNotifier<MediaItem?>(null);
-  final _compact = ValueNotifier(false);
   final _vertical = ScrollController();
   final _content = FocusScopeNode(debugLabel: 'TV Home');
   final _button = FocusNode(debugLabel: 'Home retry/refresh');
@@ -214,7 +213,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
     final ownedContent = _content.hasFocus;
     final previousRows = _model.rows;
     final previousKey = _activeRow;
-    final previousCompact = _compact.value;
     double? anchorOffset(List<TvHomeRow> rows) {
       final index = rows.indexWhere((row) => _rowKey(row) == previousKey);
       return index < 0 ? null : rows.take(index).fold<double>(0, (sum, row) => sum + _rowExtent(row));
@@ -236,7 +234,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
       if (oldAnchor != null && newAnchor != null && _vertical.hasClients) {
         // Compensate before the sliver lays out: the same keyed rail stays
         // built and retains its FocusNode even when many rows precede it.
-        _compact.value = previousCompact;
         final delta = newAnchor - oldAnchor;
         if (delta != 0) _vertical.jumpTo((_vertical.offset + delta).clamp(0.0, double.infinity));
       }
@@ -295,7 +292,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
             row.items.length - 1,
           );
     _hero.value = same ?? row.items[index];
-    _compact.value = _model.rows.indexOf(row) > 1;
     if (_returnPosition != null) {
       _returnPosition = (
         row: _rowKey(row),
@@ -335,7 +331,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
       final rowIndex = index < 0 ? 0 : index;
       final key = _rowKey(_model.rows[rowIndex]);
       _activeRow = key;
-      _compact.value = rowIndex > 1;
       _afterFrame(() {
         if (_current && _activeRow == key) _revealRow(key);
       });
@@ -443,8 +438,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _focusCommand++;
     if (index < row.items.length) _hero.value = row.items[index];
     if (sameRow) return;
-    final rowIndex = _model.rows.indexOf(row);
-    _compact.value = rowIndex > 1;
     final key = _activeRow!;
     _afterFrame(() {
       if (_current && _activeRow == key) _revealRow(key);
@@ -462,9 +455,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
 
   double _rowExtent(TvHomeRow row) {
     final px = TvTheme.of(context).px;
-    return px(TvTokens.type.title.lineHeight).ceilToDouble() +
-        px(TvTokens.space.rowHeaderToCards + TvTokens.space.cardFocusReserve + TvTokens.space.rowGap) +
-        px(_cardHeight(row));
+    return tvHeroRowHeight(TvTheme.of(context)) + px(TvTokens.space.rowGap);
   }
 
   void _revealRow(String key, {bool immediate = false}) {
@@ -614,7 +605,14 @@ class TvHomeScreenState extends State<TvHomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(builder: _build);
+
+  Widget _build(BuildContext context, BoxConstraints constraints) {
+    final height = tvHeroHeight(
+      TvTheme.of(context),
+      constraints.maxHeight,
+      safeY: TvTheme.of(context).px(TvTokens.space.safeY),
+    );
     final px = TvTheme.of(context).px;
     Widget content;
     if (_model.state == TvHomeState.content) {
@@ -669,34 +667,31 @@ class TvHomeScreenState extends State<TvHomeScreen>
       );
       content = Column(
         children: [
-          ValueListenableBuilder<bool>(
-            valueListenable: _compact,
-            builder: (context, compact, _) => ValueListenableBuilder<MediaItem?>(
-              valueListenable: _hero,
-              builder: (context, item, _) => ListenableBuilder(
-                listenable:
-                    SettingsService.instanceOrNull?.listenable(SettingsService.hideSpoilers) ??
-                    const AlwaysStoppedAnimation(false),
-                builder: (context, _) {
-                  final effective = item == null ? null : context.withFreshWatchState(item);
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      top: px(TvTokens.space.safeY),
-                      left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
-                        0.0,
-                        double.infinity,
-                      ),
+          ValueListenableBuilder<MediaItem?>(
+            valueListenable: _hero,
+            builder: (context, item, _) => ListenableBuilder(
+              listenable:
+                  SettingsService.instanceOrNull?.listenable(SettingsService.hideSpoilers) ??
+                  const AlwaysStoppedAnimation(false),
+              builder: (context, _) {
+                final effective = item == null ? null : context.withFreshWatchState(item);
+                return Padding(
+                  padding: EdgeInsets.only(
+                    top: px(TvTokens.space.safeY),
+                    left: (px(TvTokens.space.contentLeft) - MainScreenFocusScope.foregroundLeftOf(context)).clamp(
+                      0.0,
+                      double.infinity,
                     ),
-                    child: TvHero(
-                      loadFullRatings: true,
-                      item: effective,
-                      compact: compact,
-                      hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
-                      client: effective == null ? null : context.getMediaClientForItemOrNull(effective),
-                    ),
-                  );
-                },
-              ),
+                  ),
+                  child: TvHero(
+                    loadFullRatings: true,
+                    item: effective,
+                    height: height,
+                    hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
+                    client: effective == null ? null : context.getMediaClientForItemOrNull(effective),
+                  ),
+                );
+              },
             ),
           ),
           Expanded(
@@ -720,7 +715,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
                         double.infinity,
                       ),
                     ),
-                    child: const TvHeroSkeleton(),
+                    child: TvHeroSkeleton(height: height),
                   ),
                   Padding(
                     padding: EdgeInsets.only(
@@ -780,7 +775,6 @@ class TvHomeScreenState extends State<TvHomeScreen>
     _skeletonTimer?.cancel();
     _readyProbe?.cancel();
     _hero.dispose();
-    _compact.dispose();
     _vertical.dispose();
     _content.dispose();
     _button.dispose();

@@ -9,7 +9,6 @@ import '../../../media/media_backend.dart';
 import '../../../media/media_item_types.dart';
 import '../../../media/media_kind.dart';
 import '../../../media/media_server_client.dart';
-import '../../../services/device_performance.dart';
 import '../../../services/plex_client.dart';
 import '../../../providers/catalog_sources_provider.dart';
 import '../../../media/media_rating.dart';
@@ -23,20 +22,34 @@ import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_ratings.dart';
 
+/// Physical height of a poster row, including its heading and focus reserve.
+double tvHeroRowHeight(TvThemeData theme) =>
+    theme.px(TvTokens.type.title.lineHeight).ceilToDouble() +
+    theme.px(TvTokens.space.rowHeaderToCards + TvTokens.space.cardFocusReserve + TvTokens.size.poster.h + 20) +
+    theme.px(TvTokens.type.body.lineHeight).ceilToDouble() +
+    theme.px(TvTokens.type.caption.lineHeight).ceilToDouble();
+
+/// Available height is local to the host; Recommended has already lost its header.
+double tvHeroHeight(TvThemeData theme, double availableHeight, {double safeY = 0}) =>
+    (availableHeight - safeY - tvHeroRowHeight(theme) - theme.px(TvTokens.space.md)).clamp(
+      theme.px(TvTokens.size.hero.h),
+      double.infinity,
+    );
+
 /// Text follows the selected item immediately. The screen owns backdrop debounce.
 /// This component occupies the hero slot; its parent owns the content inset.
 class TvHero extends StatefulWidget {
   const TvHero({
     super.key,
     required this.item,
-    this.compact = false,
+    this.height,
     this.hideSpoilers = false,
     this.client,
     this.loadFullRatings = false,
   });
 
   final MediaItem? item;
-  final bool compact;
+  final double? height;
 
   /// Supplied by the screen; the hero never reads settings.
   final bool hideSpoilers;
@@ -158,7 +171,6 @@ class _TvHeroState extends State<TvHero> {
     final theme = TvTheme.of(context);
     final px = theme.px;
     final media = widget.item;
-    final compact = widget.compact;
     final client = widget.client;
     final hideSpoilers = widget.hideSpoilers;
     final episode = media?.kind == MediaKind.episode;
@@ -200,19 +212,16 @@ class _TvHeroState extends State<TvHero> {
             if (!episode && (media?.contentRating?.isNotEmpty ?? false)) formatContentRating(media!.contentRating),
             if (!episode && (genres?.isNotEmpty ?? false)) genres!.take(3).join(', '),
           ];
-    return AnimatedContainer(
-      height: px(compact ? TvTokens.size.hero.compactH : TvTokens.size.hero.h),
-      duration: Duration(milliseconds: DevicePerformance.isReduced ? 0 : TvTokens.motion.heroCrossfade),
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.topLeft,
+    return Container(
+      height: widget.height ?? px(TvTokens.size.hero.h),
+      alignment: Alignment.bottomLeft,
       clipBehavior: Clip.hardEdge,
       decoration: const BoxDecoration(),
       child: media == null
           ? null
-          // Lay out text at its natural height while the outer slot animates.
-          // The slot clips excess paint without squeezing the Column.
+          // Keep natural text height and anchor it above the row.
           : OverflowBox(
-              alignment: Alignment.topLeft,
+              alignment: Alignment.bottomLeft,
               minHeight: 0,
               maxHeight: double.infinity,
               child: Padding(
@@ -223,7 +232,7 @@ class _TvHeroState extends State<TvHero> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Keep the title baseline fixed while the artwork box shrinks.
+                      // Reserve two full title lines, including when artwork is absent.
                       SizedBox(
                         key: const ValueKey('hero-title-slot'),
                         height: px(TvTokens.type.display.lineHeight * 2),
@@ -232,8 +241,8 @@ class _TvHeroState extends State<TvHero> {
                           child: ClearLogoImage(
                             client: client,
                             logoPath: media.clearLogoPath,
-                            width: px(TvTokens.size.hero.logoMaxW * (compact ? .7 : 1)),
-                            height: px(compact ? TvTokens.size.hero.compactLogoMaxH : TvTokens.size.hero.logoMaxH),
+                            width: px(TvTokens.size.hero.logoMaxW),
+                            height: px(TvTokens.size.hero.logoMaxH),
                             alignment: Alignment.bottomLeft,
                             fallbackWidth: px(TvTokens.size.hero.textMaxW),
                             fadeInDuration: Duration.zero,
@@ -259,12 +268,12 @@ class _TvHeroState extends State<TvHero> {
                         SizedBox(height: px(TvTokens.space.sm)),
                         Text(
                           metadata.join(' · '),
-                          maxLines: compact ? 1 : 2,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.body.copyWith(color: TvTokens.color.text.secondary),
                         ),
                       ],
-                      if (!compact && !music) ...[
+                      if (!music) ...[
                         SizedBox(height: px(reserveRatings ? TvTokens.space.sm : 0)),
                         SizedBox(
                           height: px(reserveRatings ? TvTokens.type.body.lineHeight : 0),
@@ -278,7 +287,7 @@ class _TvHeroState extends State<TvHero> {
                               : null,
                         ),
                       ],
-                      if (!compact && (description?.isNotEmpty ?? false)) ...[
+                      if ((description?.isNotEmpty ?? false)) ...[
                         SizedBox(height: px(TvTokens.space.md)),
                         Text(
                           description!,
@@ -298,8 +307,8 @@ class _TvHeroState extends State<TvHero> {
 
 /// Static, non-focusable loading placeholder with the same hero slot dimensions.
 class TvHeroSkeleton extends StatelessWidget {
-  const TvHeroSkeleton({super.key, this.compact = false});
-  final bool compact;
+  const TvHeroSkeleton({super.key, this.height});
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
@@ -310,10 +319,10 @@ class TvHeroSkeleton extends StatelessWidget {
       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(px(TvTokens.radius.xs))),
     );
     return SizedBox(
-      height: px(compact ? TvTokens.size.hero.compactH : TvTokens.size.hero.h),
+      height: height ?? px(TvTokens.size.hero.h),
       child: ClipRect(
         child: OverflowBox(
-          alignment: Alignment.topLeft,
+          alignment: Alignment.bottomLeft,
           minHeight: 0,
           maxHeight: double.infinity,
           child: Padding(

@@ -127,7 +127,7 @@ abstract final class TvTokens {
     settingsItem: (h: 88, iconSize: 36, maxW: 1200),
     progressBar: (h: 6),
     unwatchedBadge: (minW: 36, h: 32),
-    hero: (h: 340, compactH: 200, textMaxW: 860, logoMaxW: 560, logoMaxH: 120, compactLogoMaxH: 80),
+    hero: (h: 340, textMaxW: 860, logoMaxW: 560, logoMaxH: 120),
     focusRing: (width: 4, offset: 3),
     letters: (w: 48, itemH: 24, focusedH: 32, x: 1776),
     keyboard: (key: 64, gap: 12, columns: 6, panelW: 444, panelX: 200, resultsX: 740),

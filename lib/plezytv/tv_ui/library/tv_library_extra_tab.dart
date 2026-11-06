@@ -74,7 +74,6 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
   final _scroll = ScrollController();
   final _menus = <int, GlobalKey<MediaContextMenuState>>{};
   final _ownHero = ValueNotifier<MediaItem?>(null);
-  final _compact = ValueNotifier(false);
   late final TvPagedSource<Object> _source;
   List<MediaHub> _hubs = [];
   bool _loading = true, _failed = false, _opening = false;
@@ -234,7 +233,6 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
     final row = _row.clamp(0, _hubs.length - 1);
     final items = _hubs[row].items;
     _hero.value = same ?? items[(_rows[row].currentState?.focusedIndex ?? 0).clamp(0, items.length - 1)];
-    _compact.value = row > 0;
   }
 
   void requestFocus() {
@@ -356,7 +354,6 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
             TvTokens.size.poster.h + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight.toDouble(),
         onItemFocused: (i) {
           _row = index;
-          _compact.value = index > 0;
           if (i < hub.items.length) _hero.value = hub.items[i];
         },
         cardBuilder: (context, i, node) => i < hub.items.length
@@ -459,14 +456,13 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         0.0,
         double.infinity,
       );
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // The hero follows the focused card like Home's; the host draws the
-          // matching backdrop behind the whole screen.
-          ValueListenableBuilder<bool>(
-            valueListenable: _compact,
-            builder: (context, compact, _) => ValueListenableBuilder<MediaItem?>(
+      return LayoutBuilder(
+        builder: (context, constraints) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // The hero follows the focused card like Home's; the host draws the
+            // matching backdrop behind the whole screen.
+            ValueListenableBuilder<MediaItem?>(
               valueListenable: _hero,
               builder: (context, item, _) => ListenableBuilder(
                 listenable:
@@ -477,40 +473,40 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
                   return TvHero(
                     loadFullRatings: true,
                     item: effective,
-                    compact: compact,
+                    height: tvHeroHeight(TvTheme.of(context), constraints.maxHeight),
                     hideSpoilers: SettingsService.instanceOrNull?.read(SettingsService.hideSpoilers) ?? false,
                     client: c.client,
                   );
                 },
               ),
             ),
-          ),
-          Expanded(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: -left,
-                  top: 0,
-                  right: -px(TvTokens.space.safeX),
-                  bottom: 0,
-                  child: SingleChildScrollView(
-                    controller: _scroll,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (var i = 0; i < _hubs.length; i++) ...[
-                          _rail(i),
-                          SizedBox(height: px(TvTokens.space.rowGap)),
+            Expanded(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: -left,
+                    top: 0,
+                    right: -px(TvTokens.space.safeX),
+                    bottom: 0,
+                    child: SingleChildScrollView(
+                      controller: _scroll,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var i = 0; i < _hubs.length; i++) ...[
+                            _rail(i),
+                            SizedBox(height: px(TvTokens.space.rowGap)),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     final size = TvPosterSize.grid.dimensions;
@@ -547,7 +543,6 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
     _scroll.dispose();
     _scope.dispose();
     _ownHero.dispose();
-    _compact.dispose();
     super.dispose();
   }
 }

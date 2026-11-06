@@ -205,7 +205,7 @@ void main() {
     expect(grid.focusedIndex, 0);
   });
 
-  testWidgets('recommended hero follows the focused card and compacts below the first row', (tester) async {
+  testWidgets('recommended hero follows the focused card and keeps its height below the first row', (tester) async {
     final client = FakeMediaServerClient()
       ..hubs = [
         MediaHub(id: 'a', title: 'Hub A', type: 'movie', items: [fixtures.movie(1), fixtures.movie(2)]),
@@ -231,17 +231,57 @@ void main() {
     TvHero shown() => tester.widget<TvHero>(find.byType(TvHero));
     expect(hero.value?.id, '1');
     expect(shown().item?.id, '1');
-    expect(shown().compact, isFalse);
+    expect(tester.getSize(find.byType(TvHero)).height, 590);
     await fixtures.press(tester, LogicalKeyboardKey.arrowRight);
     expect(shown().item?.id, '2');
     await fixtures.press(tester, LogicalKeyboardKey.arrowDown);
     expect(hero.value?.id, '3');
-    expect(shown().compact, isTrue);
+    expect(tester.getSize(find.byType(TvHero)).height, 590);
     await fixtures.press(tester, LogicalKeyboardKey.arrowUp);
     expect(shown().item?.id, '2');
-    expect(shown().compact, isFalse);
+    expect(tester.getSize(find.byType(TvHero)).height, 590);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in [const Size(1920, 1080), const Size(1280, 720), const Size(1024, 768), const Size(2560, 1080)]) {
+    testWidgets('R5/R6 Recommended fills its local area at $size', (tester) async {
+      final client = FakeMediaServerClient()
+        ..hubs = [
+          for (var i = 0; i < 4; i++) MediaHub(id: '$i', title: 'Hub $i', type: 'movie', items: [fixtures.movie(i)]),
+        ];
+      final c = TvLibraryController(
+        library: fixtures.library,
+        client: client,
+        store: TvMemoryLibraryPreferences(seed: TvLibraryPreferences(tab: 'recommended')),
+      );
+      addTearDown(c.dispose);
+      // Use the real library host so the header consumes its actual height.
+      await pumpTvWidget(
+        tester,
+        Scaffold(body: TvLibraryScreen(controller: c)),
+        size: size,
+      );
+      await fixtures.settle(tester);
+      // Exercise Recommended inside the actual library header.
+      expect(find.byType(TvHero), findsOneWidget);
+      final height = tester.getSize(find.byType(TvHero)).height;
+      Finder rail(int i) => find.byWidgetPredicate((w) => w is TvHorizontalRow && w.title == 'Hub $i');
+      final top = tester.getTopLeft(rail(0)).dy;
+      final first = find.descendant(of: rail(0), matching: find.byType(TvPoster)).first;
+      expect(tester.getBottomLeft(first).dy, lessThanOrEqualTo(size.height));
+      expect(tester.getTopLeft(rail(1)).dy, greaterThanOrEqualTo(size.height));
+      final extra = tester.state<TvLibraryExtraTabState>(find.byType(TvLibraryExtraTab));
+      extra.requestFocus();
+      await fixtures.settle(tester);
+      await fixtures.press(tester, LogicalKeyboardKey.arrowDown);
+      await fixtures.press(tester, LogicalKeyboardKey.arrowDown);
+      expect(tester.getSize(find.byType(TvHero)).height, height);
+      expect(tester.getTopLeft(rail(2)).dy, closeTo(top, .001));
+      final third = find.descendant(of: rail(2), matching: find.byType(TvPoster)).first;
+      expect(tester.getBottomLeft(third).dy, lessThanOrEqualTo(size.height));
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('recommended remembers each row and opens All with Plezy hub screen', (tester) async {
     final client = FakeMediaServerClient()
