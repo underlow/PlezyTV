@@ -94,7 +94,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
             _collapseAt,
             RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
           );
-    final collapsed = _tab == 0 && _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
+    final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
@@ -363,10 +363,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
     _heroTimer?.cancel();
     setState(() {
       _tab = index;
+      _collapsed = false;
       _selectedSeasonKey = index > 0 ? _key : null;
       _hero = null;
       _backdropEpisode = null;
     });
+    _scrollTop();
     if (index > 0) {
       unawaited(_enterSeason(focus: focus));
     } else if (focus) {
@@ -526,6 +528,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   void _back() {
     if (_tab > 0) {
+      _tabs.currentState?.requestFocus();
       _select(0, focus: true);
       return;
     }
@@ -534,12 +537,11 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   KeyEventResult _contentKeys(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent || event is KeyRepeatEvent) _revealContent();
-    if (_tab == 0 &&
-        (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown)) {
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown) {
       // Each rail owns a focus scope; cross scopes explicitly in display order.
       final c = _controller!;
       final rows = [
-        if (_singleSeason) ...[
+        if (_hasEpisodeRow) ...[
           if (c.episodesFor(_key).isNotEmpty) _episodes,
         ] else if (!c.flattened && c.seasons.isNotEmpty)
           _seasons,
@@ -552,7 +554,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
         if (event is KeyDownEvent || event is KeyRepeatEvent) {
           final next = index + (event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1);
           if (next < 0) {
-            _actionScope.requestFocus();
+            if (_tab == 0) {
+              _actionScope.requestFocus();
+            } else {
+              _tabs.currentState?.requestFocus();
+              _scrollTop();
+            }
           } else if (next < rows.length) {
             rows[next].currentState?.requestFocus();
           }
@@ -763,12 +770,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
                         Focus(
                           canRequestFocus: false,
                           onKeyEvent: _contentKeys,
-                          child: _tab == 0 ? _overview(context) : _season(context),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [_tab == 0 ? _overview(context) : _season(context), ..._lowerContent(context)],
+                          ),
                         ),
                     ],
                   ),
                 ),
-                if (_tab == 0 && _collapsed)
+                if (_collapsed)
                   Positioned(
                     key: const ValueKey('show-compact-header'),
                     top: 0,
@@ -877,16 +887,22 @@ class _TvShowScreenState extends State<TvShowScreen> {
               onSelect: () => _select(i + 1, focus: true),
             ),
           ),
-        for (final (index, row) in _lowerRows(context).indexed) ...[
-          if (index > 0 ||
-              _singleSeason && c.episodesFor(_key).isNotEmpty ||
-              !c.flattened && !_singleSeason && c.seasons.isNotEmpty)
-            SizedBox(height: px(TvTokens.space.sectionGap)),
-          row,
-        ],
-        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
       ],
     );
+  }
+
+  List<Widget> _lowerContent(BuildContext context) {
+    final c = _controller!, px = TvTheme.of(context).px;
+    final hasFirstRow = _hasEpisodeRow ? c.episodesFor(_key).isNotEmpty : !c.flattened && c.seasons.isNotEmpty;
+    final lowerRows = _lowerRows(context);
+    return [
+      for (final (index, row) in lowerRows.indexed) ...[
+        if (index > 0 || hasFirstRow) SizedBox(height: px(TvTokens.space.sectionGap)),
+        row,
+      ],
+      if (_tab == 0 || lowerRows.isNotEmpty)
+        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
+    ];
   }
 
   Future<void> _playExtra(MediaItem item) async {
@@ -900,7 +916,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   void _revealContent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _tab != 0) return;
+      if (!mounted) return;
       if (_actionScope.hasFocus) {
         _scrollTop();
         return;
