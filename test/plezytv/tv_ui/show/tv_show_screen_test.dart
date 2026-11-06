@@ -166,7 +166,7 @@ void main() {
     expect(tester.widget<Text>(metadata).overflow, TextOverflow.ellipsis);
     expect(find.textContaining('Four'), findsNothing);
     final rows = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow)).toList();
-    expect(rows.first.cardHeight, 398);
+    expect(rows.first.cardHeight, TvTokens.size.poster.h + 74);
     expect(rows[1].cardHeight, 274);
     final firstCard = find.byType(TvPoster).first;
     final caption = find.descendant(of: firstCard, matching: find.byType(Text)).last;
@@ -209,7 +209,7 @@ void main() {
     final posters = tester.widgetList<TvPoster>(find.byType(TvPoster)).toList();
     expect(posters.map((poster) => poster.title), ['Season 1', 'Spooks']);
     for (final poster in posters) {
-      expect(poster.size.dimensions, const Size(216, 324));
+      expect(poster.size.dimensions, Size(TvTokens.size.poster.w.toDouble(), TvTokens.size.poster.h.toDouble()));
     }
   });
 

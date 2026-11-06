@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:plezy/plezytv/tv_ui/tv_theme.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/utils/deletion_notifier.dart';
 import 'package:plezy/utils/watch_state_notifier.dart';
@@ -231,15 +232,15 @@ void main() {
     TvHero shown() => tester.widget<TvHero>(find.byType(TvHero));
     expect(hero.value?.id, '1');
     expect(shown().item?.id, '1');
-    expect(tester.getSize(find.byType(TvHero)).height, 590);
+    expect(tester.getSize(find.byType(TvHero)).height, tvHeroHeight(const TvThemeData(1), 1080));
     await fixtures.press(tester, LogicalKeyboardKey.arrowRight);
     expect(shown().item?.id, '2');
     await fixtures.press(tester, LogicalKeyboardKey.arrowDown);
     expect(hero.value?.id, '3');
-    expect(tester.getSize(find.byType(TvHero)).height, 590);
+    expect(tester.getSize(find.byType(TvHero)).height, tvHeroHeight(const TvThemeData(1), 1080));
     await fixtures.press(tester, LogicalKeyboardKey.arrowUp);
     expect(shown().item?.id, '2');
-    expect(tester.getSize(find.byType(TvHero)).height, 590);
+    expect(tester.getSize(find.byType(TvHero)).height, tvHeroHeight(const TvThemeData(1), 1080));
     expect(tester.takeException(), isNull);
   });
 

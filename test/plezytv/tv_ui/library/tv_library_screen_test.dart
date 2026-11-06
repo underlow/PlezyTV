@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/plezytv/tv_ui/library/tv_library_browse_bar.dart';
 import 'package:plezy/media/library_first_character.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/library_change_event.dart';
@@ -149,20 +150,22 @@ void main() {
     return key;
   }
 
-  testWidgets('T7: grid, bar, tabs focus path and first control exits left', (tester) async {
+  testWidgets('T7: bar shares the tab line; grid, bar, tabs focus path', (tester) async {
     final c = make(FakeMediaServerClient()..items = [movie(0)]);
     var sidebar = 0;
     await mount(tester, c, sidebar: () => sidebar++);
     await settle(tester);
-    expect(tester.getTopLeft(find.byType(TvPoster).first).dy, lessThanOrEqualTo(200));
+    expect(tester.getCenter(find.byType(TvLibraryBrowseBar)).dy, tester.getCenter(find.byType(TvTabs)).dy);
+    // The focused card's ring stays clear of the header.
+    final barBottom = tester.getBottomLeft(find.byType(TvLibraryBrowseBar)).dy;
+    expect(tester.getTopLeft(find.byType(TvPoster).first).dy - 25, greaterThan(barBottom));
     await press(tester, LogicalKeyboardKey.arrowUp);
     expect(focus, 'Library filters');
     await press(tester, LogicalKeyboardKey.arrowUp);
-    expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library tabs'), isTrue);
-    await press(tester, LogicalKeyboardKey.arrowDown);
     expect(focus, 'Library filters');
     await press(tester, LogicalKeyboardKey.arrowLeft);
-    expect(sidebar, 1);
+    expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library tabs'), isTrue);
+    expect(sidebar, 0);
     await press(tester, LogicalKeyboardKey.arrowDown);
     expect(focus, 'TV grid 0');
   });
@@ -308,7 +311,7 @@ void main() {
     await mount(tester, c);
     await settle(tester);
     await press(tester, LogicalKeyboardKey.arrowUp);
-    await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
     await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(c.preferences.tab, 'recommended');
     await tester.pump(const Duration(milliseconds: 301));
@@ -336,7 +339,7 @@ void main() {
     await settle(tester);
     expect(focus, 'TV grid 0');
     await press(tester, LogicalKeyboardKey.arrowUp);
-    await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
     for (final key in [
       LogicalKeyboardKey.arrowRight,
       LogicalKeyboardKey.arrowRight,
@@ -387,6 +390,8 @@ void main() {
     await settle(tester);
     await press(tester, LogicalKeyboardKey.arrowDown);
     await press(tester, LogicalKeyboardKey.arrowLeft);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(focus, 'Test sidebar');
     page.complete(LibraryPage(items: [movie(0)], totalCount: 1));
     await settle(tester);
@@ -399,7 +404,7 @@ void main() {
     await mount(tester, c, sidebar: () => sidebar++);
     await settle(tester);
     await press(tester, LogicalKeyboardKey.arrowUp);
-    await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
     await press(tester, LogicalKeyboardKey.arrowRight);
     expect(c.preferences.tab, 'collections');
     await press(tester, LogicalKeyboardKey.arrowLeft);
@@ -419,9 +424,9 @@ void main() {
     expect(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Title'), findsOneWidget);
     expect(find.text('300'), findsOneWidget);
     final layout = tester.widget<TvPagedGrid<MediaItem>>(find.byType(TvPagedGrid<MediaItem>));
-    expect(layout.columns, 6);
-    expect(layout.cellWidth, 228);
-    expect(layout.gap, 32);
+    expect(layout.columns, TvTokens.size.posterGrid.columns);
+    expect(layout.cellWidth, TvTokens.size.posterGrid.w);
+    expect(layout.gap, TvTokens.size.posterGrid.gap);
     expect(
       TvTokens.space.contentLeft + layout.columns * layout.cellWidth + (layout.columns - 1) * layout.gap,
       lessThanOrEqualTo(1776 - 28),

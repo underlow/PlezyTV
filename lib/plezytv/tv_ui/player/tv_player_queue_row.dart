@@ -26,7 +26,7 @@ class TvPlayerQueueRow extends StatefulWidget {
   final ValueChanged<MediaItem> onSelected;
 
   /// Card size including captions, as other episode rows.
-  static const cardHeight = 315.0;
+  static double get cardHeight => TvTokens.size.episode.h + 90.0;
 
   @override
   State<TvPlayerQueueRow> createState() => TvPlayerQueueRowState();

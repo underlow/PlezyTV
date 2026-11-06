@@ -225,7 +225,7 @@ class _TvHeroState extends State<TvHero> {
               minHeight: 0,
               maxHeight: double.infinity,
               child: Padding(
-                padding: EdgeInsets.zero,
+                padding: EdgeInsets.only(bottom: px(TvTokens.space.xl)),
                 child: SizedBox(
                   width: px(TvTokens.size.hero.textMaxW),
                   child: Column(

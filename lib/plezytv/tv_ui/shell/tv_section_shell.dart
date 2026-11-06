@@ -644,6 +644,9 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
                   const AuthErrorBanner(),
                   Expanded(
                     child: IndexedStack(
+                      // Home and Libraries paint their background under the menu
+                      // (TvShellBackdrop) and clip their own content.
+                      clipBehavior: Clip.none,
                       index: _current.isNoConnection
                           ? NavigationTabId.values.length + 1
                           : _current.isWatchlist
@@ -653,12 +656,16 @@ class TvSectionShellState extends State<TvSectionShell> with RouteAware {
                         for (final tab in NavigationTabId.values)
                           TickerMode(
                             enabled: !_current.isNoConnection && _current.tab == tab,
-                            child: _mountedTabs.contains(tab) ? _screen(tab) : const SizedBox.shrink(),
+                            child: !_mountedTabs.contains(tab)
+                                ? const SizedBox.shrink()
+                                : tab == NavigationTabId.discover || tab == NavigationTabId.libraries
+                                ? _screen(tab)
+                                : ClipRect(child: _screen(tab)),
                           ),
                         TickerMode(
                           enabled: _current.isWatchlist,
                           child: _mountedTabs.contains(TvShellSection.watchlistSlot)
-                              ? _watchlistScreen()
+                              ? ClipRect(child: _watchlistScreen())
                               : const SizedBox.shrink(),
                         ),
                         TvNoConnectionScreen(

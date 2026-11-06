@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tinted_background.dart';
 import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/navigation/main_screen_scope.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
@@ -40,15 +41,40 @@ Rect paintedRing(WidgetTester tester) {
 }
 
 void main() {
+  testWidgets('shell backdrop reaches the screen edge; content stays clipped at the shell inset', (tester) async {
+    const inset = 112.0;
+    await pumpTvWidget(
+      tester,
+      MainScreenFocusScope(
+        focusSidebar: () {},
+        sideNavigationWidth: inset,
+        foregroundLeft: inset,
+        child: const Padding(
+          padding: EdgeInsets.only(left: inset),
+          child: TvShellBackdrop(
+            background: SizedBox.expand(key: ValueKey('background')),
+            child: SizedBox.expand(key: ValueKey('content')),
+          ),
+        ),
+      ),
+    );
+    expect(tester.getTopLeft(find.byKey(const ValueKey('background'))).dx, 0);
+    expect(tester.getTopRight(find.byKey(const ValueKey('background'))).dx, 1920);
+    final content = find.ancestor(of: find.byKey(const ValueKey('content')), matching: find.byType(ClipRect)).first;
+    expect(tester.getTopLeft(content).dx, inset);
+    final clip = tester.widget<ClipRect>(content).clipper!.getClip(const Size(100, 100));
+    expect(clip, Rect.fromLTRB(-TvTokens.space.cardFocusReserve.toDouble(), 0, 100, 100));
+  });
+
   for (final shape in ['poster', 'square', 'person', 'episode']) {
     for (final reduced in [false, true]) {
       testWidgets('$shape painted focus clears neighbors, header and caption (reduced=$reduced)', (tester) async {
         final nodes = <int, FocusNode>{};
         final width = shape == 'episode'
-            ? 400.0
+            ? TvTokens.size.episode.w.toDouble()
             : shape == 'person'
             ? 200.0
-            : 216.0;
+            : TvTokens.size.poster.w.toDouble();
         await pumpTvWidget(
           tester,
           Align(
@@ -58,10 +84,12 @@ void main() {
               itemCount: 3,
               cardWidth: width,
               cardHeight: shape == 'poster'
-                  ? 404
+                  ? TvTokens.size.poster.h + 80.0
                   : shape == 'episode'
-                  ? 305
-                  : 296,
+                  ? TvTokens.size.episode.h + 80.0
+                  : shape == 'person'
+                  ? 296
+                  : TvTokens.size.poster.w + 80.0,
               cardBuilder: (_, i, node) {
                 nodes[i] = node;
                 final item = testMediaItem(title: 'Card $i');
@@ -98,12 +126,12 @@ void main() {
         final caption = find.descendant(of: cards.at(1), matching: find.byType(Text)).first;
         expect(ring.bottom, lessThan(tester.getTopLeft(caption).dy));
         final artHeight = shape == 'poster'
-            ? 324.0
+            ? TvTokens.size.poster.h.toDouble()
             : shape == 'episode'
-            ? 225.0
+            ? TvTokens.size.episode.h.toDouble()
             : shape == 'person'
             ? 200.0
-            : 216.0;
+            : TvTokens.size.poster.w.toDouble();
         final scale = shape == 'episode' ? 1.03 : 1.05;
         expect(ring.width, closeTo((width + 14) * scale, .001));
         expect(ring.height, closeTo((artHeight + 14) * scale, .001));
@@ -126,8 +154,8 @@ void main() {
               child: TvHorizontalRow(
                 title: 'Section',
                 itemCount: 1,
-                cardWidth: 216,
-                cardHeight: 404,
+                cardWidth: TvTokens.size.poster.w.toDouble(),
+                cardHeight: TvTokens.size.poster.h + 80.0,
                 cardBuilder: (_, i, node) => TvPoster(
                   item: testMediaItem(title: 'Card'),
                   focusNode: node,

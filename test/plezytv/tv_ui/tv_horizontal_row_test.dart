@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,8 +20,8 @@ void main() {
           child: TvHorizontalRow(
             title: 'Enabled',
             itemCount: 4,
-            cardWidth: 216,
-            cardHeight: 404,
+            cardWidth: TvTokens.size.poster.w.toDouble(),
+            cardHeight: TvTokens.size.poster.h + 80.0,
             cardBuilder: (context, index, node) {
               nodes[index] = node;
               return TvPoster(
@@ -55,8 +57,8 @@ void main() {
               child: TvHorizontalRow(
                 title: 'Sparse',
                 itemCount: 40,
-                cardWidth: 216,
-                cardHeight: 404,
+                cardWidth: TvTokens.size.poster.w.toDouble(),
+                cardHeight: TvTokens.size.poster.h + 80.0,
                 cardBuilder: (context, index, node) {
                   nodes[index] = node;
                   return TvPoster(
@@ -99,8 +101,8 @@ void main() {
             child: TvHorizontalRow(
               title: 'Sparse',
               itemCount: 40,
-              cardWidth: 216,
-              cardHeight: 404,
+              cardWidth: TvTokens.size.poster.w.toDouble(),
+              cardHeight: TvTokens.size.poster.h + 80.0,
               cardBuilder: (context, index, node) {
                 nodes[index] = node;
                 return TvPoster(
@@ -136,8 +138,8 @@ void main() {
           child: TvHorizontalRow(
             title: 'Sparse',
             itemCount: 40,
-            cardWidth: 216,
-            cardHeight: 404,
+            cardWidth: TvTokens.size.poster.w.toDouble(),
+            cardHeight: TvTokens.size.poster.h + 80.0,
             cardBuilder: (context, index, node) {
               nodes[index] = node;
               return TvPoster(
@@ -157,12 +159,15 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(nodes[30]?.hasFocus, isTrue);
-      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, 1600);
+      final card30 = tester.getRect(find.byKey(const ValueKey(30)));
+      expect(card30.left, greaterThanOrEqualTo(TvTokens.space.contentLeft));
+      expect(card30.right, lessThanOrEqualTo(1920));
       expect(find.byType(TvPoster).evaluate().length, lessThan(25));
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pumpAndSettle();
       expect(nodes[30]!.hasFocus, isTrue);
-      expect(tester.getTopLeft(find.byKey(const ValueKey(30))).dx, 1600);
+      final held = tester.getRect(find.byKey(const ValueKey(30)));
+      expect(held.left, card30.left);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pumpAndSettle();
       expect(nodes[0]!.hasFocus, isTrue);
@@ -192,8 +197,8 @@ void main() {
                 title: 'Recently added',
                 counter: '20',
                 itemCount: 20,
-                cardWidth: 216,
-                cardHeight: 404,
+                cardWidth: TvTokens.size.poster.w.toDouble(),
+                cardHeight: TvTokens.size.poster.h + 80.0,
                 onFocusInsideChanged: changes.add,
                 cardBuilder: (context, index, node) {
                   nodes[index] = node;
@@ -210,7 +215,13 @@ void main() {
         reduced: reduced,
       );
       final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
-      expect(find.byType(TvPoster).evaluate().length, inInclusiveRange(8, 16));
+      final pitch = (TvTokens.size.poster.w + TvTokens.space.cardGap).toDouble();
+      final viewport = 1920.0 - TvTokens.space.contentLeft;
+      final slots = ((viewport + TvTokens.space.cardGap) / pitch).floor();
+      // The list ends with the content inset before and the safe margin after.
+      final maxOffset = 20 * pitch - TvTokens.space.cardGap + TvTokens.space.safeX - viewport;
+      final visible = ((1920 - TvTokens.space.contentLeft) / (TvTokens.size.poster.w + TvTokens.space.cardGap)).ceil();
+      expect(find.byType(TvPoster).evaluate().length, inInclusiveRange(visible, 16));
       expect(tester.getTopLeft(find.text('Recently added')).dx, TvTokens.space.contentLeft);
       expect(
         tester.getTopLeft(find.byKey(const ValueKey(0))).dy - tester.getBottomLeft(find.text('Recently added')).dy,
@@ -218,12 +229,12 @@ void main() {
       );
       expect(
         tester.getTopLeft(find.byKey(const ValueKey(1))).dx - tester.getTopLeft(find.byKey(const ValueKey(0))).dx,
-        244,
+        pitch,
       );
       nodes[0]!.requestFocus();
       await tester.pumpAndSettle();
       expect(key.currentState!.focusInside.value, isTrue);
-      for (var i = 1; i <= 6; i++) {
+      for (var i = 1; i < slots; i++) {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
         expect(nodes[i]!.hasFocus, isTrue);
@@ -232,30 +243,30 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump();
       if (reduced) {
-        expect(scroll.offset, 244);
+        expect(scroll.offset, pitch);
         expect(tester.hasRunningAnimations, isFalse);
       } else {
         expect(scroll.offset, 0);
         await tester.pump(const Duration(milliseconds: 75));
         expect(scroll.offset, greaterThan(0));
-        expect(scroll.offset, lessThan(244));
+        expect(scroll.offset, lessThan(pitch));
         await tester.pump(const Duration(milliseconds: 75));
-        expect(scroll.offset, 244);
+        expect(scroll.offset, pitch);
       }
-      expect(tester.getTopLeft(find.byKey(const ValueKey(7))).dx, 1600);
-      expect(tester.getTopLeft(find.byKey(const ValueKey(8))).dx, 1844);
+      expect(tester.getTopLeft(find.byKey(ValueKey(slots))).dx, TvTokens.space.contentLeft + (slots - 1) * pitch);
+      expect(tester.getTopLeft(find.byKey(ValueKey(slots + 1))).dx, TvTokens.space.contentLeft + slots * pitch);
       outside.requestFocus();
       await tester.pumpAndSettle();
       expect(key.currentState!.focusInside.value, isFalse);
       key.currentState!.requestFocus();
       await tester.pumpAndSettle();
-      expect(nodes[7]!.hasFocus, isTrue);
+      expect(nodes[slots]!.hasFocus, isTrue);
       expect(changes, [true, false, true]);
-      for (var i = 8; i < 20; i++) {
+      for (var i = slots + 1; i < 20; i++) {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
         expect(nodes[i]!.hasFocus, isTrue);
-        expect(scroll.offset, i == 19 ? 3164 : (i - 6) * 244);
+        expect(scroll.offset, math.min((i - slots + 1) * pitch, maxOffset));
       }
       expect(tester.getBottomRight(find.byKey(const ValueKey(19))).dx, 1824);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -265,7 +276,7 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
         await tester.pumpAndSettle();
         expect(nodes[i]!.hasFocus, isTrue);
-        expect(scroll.offset, i >= 13 ? 3164 : i * 244);
+        expect(scroll.offset, math.min(i * pitch, maxOffset));
         expect(tester.getTopLeft(find.byKey(ValueKey(i))).dx, greaterThanOrEqualTo(TvTokens.space.contentLeft));
       }
       expect(scroll.offset, 0);
