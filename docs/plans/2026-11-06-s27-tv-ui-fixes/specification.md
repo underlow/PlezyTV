@@ -140,7 +140,7 @@ TvLibraryController (владеет: фильтры, сохранение) ─�
 | Что | Зачем и последствие |
 |---|---|
 | Правки общего кода: `media_context_menu.dart`, `media_navigation_helper.dart`, `appearance_settings_screen.dart` | R1–R4; возможны конфликты при слиянии с апстримом |
-| Ожидания тестов: `tv_layout_geometry_test`, `tv_hero_test`, `tv_home_screen_test`, `tv_horizontal_row_test`, `tv_horizontal_row_home_test`, `tv_library_panels_test`, `tv_library_screen_test`, `tv_library_extra_tab_test`, `tv_show_screen_test` | Меняется только то, что прямо следует из R1–R18; разработчик называет такие правки в отчёте |
+| Ожидания тестов: `tv_layout_geometry_test`, `tv_hero_test`, `tv_home_screen_test`, `tv_horizontal_row_test`, `tv_horizontal_row_home_test`, `tv_library_panels_test`, `tv_library_screen_test`, `tv_library_extra_tab_test`, `tv_show_screen_test`, `tv_section_shell_test` (проверка compact и старых позиций рядов), `tv_tokens_test` (токены compact) | Меняется только то, что прямо следует из R1–R18; разработчик называет такие правки в отчёте |
 | `⋮` библиотеки только на Browse | R18; на других вкладках действия библиотеки недоступны |
 
 ## 5. Согласование
