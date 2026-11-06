@@ -40,6 +40,7 @@ class TvHorizontalRow extends StatefulWidget {
     required this.cardWidth,
     required this.cardHeight,
     this.counter,
+    this.source,
     this.positionMemory,
     this.contentLeft,
     this.onFocusInsideChanged,
@@ -56,6 +57,7 @@ class TvHorizontalRow extends StatefulWidget {
   /// Optional owner-held memory; omit to retain the standalone rail behavior.
   final TvHorizontalRowMemory? positionMemory;
   final String? counter;
+  final String? source;
   final int itemCount;
 
   /// Full card layout size, including captions; headroom is added by the row.
@@ -286,6 +288,17 @@ class TvHorizontalRowState extends State<TvHorizontalRow> {
                   if (widget.counter != null) ...[
                     SizedBox(width: px(16)),
                     Text(widget.counter!, style: theme.caption.copyWith(color: TvTokens.color.text.tertiary)),
+                  ],
+                  if (widget.source != null) ...[
+                    SizedBox(width: px(16)),
+                    Flexible(
+                      child: Text(
+                        widget.source!,
+                        style: theme.caption.copyWith(color: TvTokens.color.text.tertiary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ],
               ),

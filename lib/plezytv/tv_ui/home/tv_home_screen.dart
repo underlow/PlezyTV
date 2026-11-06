@@ -553,6 +553,7 @@ class TvHomeScreenState extends State<TvHomeScreen>
       key: _rows.putIfAbsent(key, () => GlobalKey<TvHorizontalRowState>()),
       title: row.title,
       counter: row.count?.toString(),
+      source: row.source,
       itemCount: row.items.length + (row.hasMore ? 1 : 0),
       itemKey: (index) => index == row.items.length ? 'all' : TvHomeRow.itemKey(row.items[index]),
       cardWidth: TvTokens.size.poster.w.toDouble(),
