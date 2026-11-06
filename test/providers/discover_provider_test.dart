@@ -849,6 +849,126 @@ void main() {
     expect(shelfSyncs.single.$2.first.viewOffsetMs, 30000);
   });
 
+  group('S27: server membership of Continue Watching copies', () {
+    final a = testMediaItem(
+      id: 'a',
+      title: 'Shared',
+      guid: 'plex://movie/shared',
+      serverId: 'server_1',
+      lastViewedAt: 2,
+    );
+    final b = testMediaItem(
+      id: 'b',
+      title: 'Shared',
+      guid: 'plex://movie/shared',
+      serverId: 'server_2',
+      lastViewedAt: 1,
+    );
+
+    Set<String> reachableKeys() => {
+      for (final row in provider.onDeck) ...[
+        row.globalKey,
+        ...provider.continueWatchingCopiesOf(row).map((copy) => copy.globalKey),
+      ],
+    };
+
+    void loadGroup(FakeAsync clock, {bool showB = false}) {
+      manager.debugRegisterClientForTesting(_HomeServer('server_2'));
+      aggregation.onDeckResult = () => [a, showB ? b.copyWith(lastViewedAt: 3) : b];
+      unawaited(provider.load());
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(milliseconds: 300));
+      expect(provider.onDeck.single.globalKey, showB ? b.globalKey : a.globalKey);
+      expect(reachableKeys(), {a.globalKey, b.globalKey});
+    }
+
+    for (final emptyA in [false, true]) {
+      test('pending copy survives A ${emptyA ? 'empty' : 'replacement'} until B answers empty', () {
+        fakeAsync((clock) {
+          loadGroup(clock);
+          final gate = Completer<void>();
+          aggregation.serverGates['server_2'] = gate.future;
+          aggregation.onDeckResult = () => emptyA ? [] : [a.copyWith(viewOffsetMs: 40000)];
+          unawaited(provider.refreshNow());
+          clock.flushMicrotasks();
+          clock.elapse(const Duration(milliseconds: 300));
+          expect(reachableKeys(), emptyA ? {b.globalKey} : {a.globalKey, b.globalKey});
+          if (!emptyA) expect(provider.onDeck.single.viewOffsetMs, 40000);
+          gate.complete();
+          clock.flushMicrotasks();
+          expect(reachableKeys(), emptyA ? isEmpty : {a.globalKey});
+        });
+      });
+    }
+
+    for (final departure in ['hidden', 'offline', 'removed']) {
+      for (final showB in [false, true]) {
+        test('$departure ${showB ? 'representative' : 'absorbed'} copy is pruned before and after A answers', () {
+          fakeAsync((clock) {
+            loadGroup(clock, showB: showB);
+            // Keep the incremental full-pass path active after B leaves.
+            manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_3'));
+            switch (departure) {
+              case 'hidden':
+                manager.setVisibleServerIds({'server_1', 'server_3'});
+              case 'offline':
+                manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'), online: false);
+              case 'removed':
+                manager.removeServer(ServerId('server_2'));
+            }
+            final gate = Completer<void>();
+            aggregation.serverGates['server_1'] = gate.future;
+            aggregation.onDeckResult = () => [a.copyWith(viewOffsetMs: 40000)];
+            unawaited(provider.refreshNow());
+            clock.flushMicrotasks();
+            expect(provider.onDeck.single.globalKey, a.globalKey);
+            expect(reachableKeys(), {a.globalKey});
+            clock.elapse(const Duration(milliseconds: 300));
+            expect(reachableKeys(), {a.globalKey});
+            gate.complete();
+            clock.flushMicrotasks();
+            expect(reachableKeys(), {a.globalKey});
+            expect(provider.onDeck.single.viewOffsetMs, 40000);
+            // An empty A answer must not promote the departed B copy.
+            aggregation.onDeckResult = () => [];
+            unawaited(provider.refreshNow());
+            clock.flushMicrotasks();
+            clock.elapse(const Duration(milliseconds: 300));
+            expect(provider.onDeck, isEmpty);
+          });
+        });
+      }
+    }
+
+    test('single eligible server retains its copy when departed representative is pruned and fetch fails', () {
+      fakeAsync((clock) {
+        loadGroup(clock, showB: true);
+        manager.setVisibleServerIds({'server_1'});
+        aggregation.onDeckSucceededServerIds = {};
+        aggregation.onDeckFailedServerIds = {'server_1'};
+        aggregation.onDeckResult = () => [];
+        unawaited(provider.refreshNow());
+        clock.flushMicrotasks();
+        expect(provider.onDeck.single.globalKey, a.globalKey);
+        expect(reachableKeys(), {a.globalKey});
+      });
+    });
+
+    test('empty eligible server set preserves the row and its copies', () {
+      fakeAsync((clock) {
+        loadGroup(clock);
+        manager.setVisibleServerIds({});
+        aggregation.onDeckSucceededServerIds = {};
+        aggregation.hubSucceededServerIds = {};
+        aggregation.onDeckResult = () => [];
+        unawaited(provider.refreshNow());
+        clock.flushMicrotasks();
+        expect(provider.onDeck.single.globalKey, a.globalKey);
+        expect(reachableKeys(), {a.globalKey, b.globalKey});
+      });
+    });
+  });
+
   group('copies behind a merged Continue Watching row', () {
     final hd = _item('movie-hd', kind: MediaKind.movie).copyWith(durationMs: 100000, viewOffsetMs: 10000);
     final uhd = _item('movie-uhd', kind: MediaKind.movie).copyWith(durationMs: 100000, viewOffsetMs: 20000);

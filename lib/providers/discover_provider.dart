@@ -561,11 +561,32 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }
 
   void _retainFullPassServers(Set<String> serverIds) {
-    final deck = _onDeck.where((item) => serverIds.contains(item.serverId)).toList();
+    final deck = <MediaItem>[];
+    final copies = <String, List<MediaItem>>{};
+    var copiesChanged = false;
+    // Prune every group, including View All entries. A departed representative
+    // must not take its eligible siblings with it or leave stale merge inputs.
+    for (final entry in _continueWatchingCopies.entries) {
+      final kept = entry.value.where((item) => serverIds.contains(item.serverId)).toList();
+      copiesChanged |= kept.length != entry.value.length;
+      if (kept.length > 1) {
+        final key = kept.any((item) => item.globalKey == entry.key) ? entry.key : kept.first.globalKey;
+        copies[key] = kept;
+      }
+    }
+    for (final row in _onDeck) {
+      if (serverIds.contains(row.serverId)) {
+        deck.add(row);
+      } else {
+        final kept = _continueWatchingCopies[row.globalKey]?.where((item) => serverIds.contains(item.serverId));
+        if (kept != null && kept.isNotEmpty) deck.add(kept.first);
+      }
+    }
+    _continueWatchingCopies = copies;
     final hubs = _hubs.where((hub) => hub.serverId == null || serverIds.contains(hub.serverId)).toList();
     _loadedOnDeckServerIds = _loadedOnDeckServerIds.intersection(serverIds);
     _loadedHubServerIds = _loadedHubServerIds.intersection(serverIds);
-    if (deck.length != _onDeck.length) {
+    if (copiesChanged || !listEquals(deck, _onDeck)) {
       _replaceOnDeck(deck, hasMore: _hasMoreContinueWatching && deck.isNotEmpty);
       unawaited(_syncSystemShelf(_onDeck));
     }
