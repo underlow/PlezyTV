@@ -1,6 +1,9 @@
 profile: medium
-phase: implementation
-status: paused
-task: T1
+phase: delivery
+developer: codex sol medium
+code reviewers: codex sol medium
 document reviewers: codex sol medium
 project: docs/projects/plezy-tv/project.md S27
+T10 scope: user shortened device acceptance 2026-11-06 to layout, Plex field names, R14 restart, row smoothness and Back; other A examples accepted as tests or unchecked, release APK pass remains
+cleanup pending: /tmp/s27-t10-acceptance.md after the outcome is recorded
+reviewed: 9f385b170 behavior+performance, code+tests, simplification: no findings
