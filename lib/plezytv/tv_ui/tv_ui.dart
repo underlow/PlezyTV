@@ -26,6 +26,14 @@ abstract final class TvUi {
 
   static bool get enabled => _enabled();
 
+  /// Server-qualified identity of the TV detail page containing this card.
+  static ({String? serverId, String id})? detailSubjectOf(BuildContext context) {
+    final metadata =
+        context.findAncestorWidgetOfExactType<TvShowScreen>()?.metadata ??
+        context.findAncestorWidgetOfExactType<TvMovieScreen>()?.metadata;
+    return metadata == null ? null : (serverId: metadata.serverId, id: metadata.id);
+  }
+
   @visibleForTesting
   static set enabledForTesting(bool Function() value) => _enabled = value;
 

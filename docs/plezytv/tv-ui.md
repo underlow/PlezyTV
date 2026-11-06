@@ -315,9 +315,17 @@ metadata and initial season/episode arguments, falling back to `mediaDetailRoute
 The synchronous lookup returns an opaque TV fade route only for online shows
 when TV UI is enabled; online movies take the S8 branch beside it. Phone,
 offline details and seasons without a known show retain Plezy's route.
-The accepted gap is “go to series” in `media_context_menu.dart`, plus navigation
-inside upstream details: those direct `mediaDetailRoute` calls remain upstream.
-Do not add hooks to those large files.
+On TV the card menu has one “View details” entry, including for episodes and
+seasons. It opens the TV page at the item's season and episode; it is omitted
+for the current page's own show, seasons and episodes, comparing server and ID.
+Online seasons or episodes without a known parent show retain Plezy's fallback.
+Navigation inside upstream detail pages remains upstream; do not add hooks to
+those large files.
+
+OK on Continue Watching and Next Up follows `continueWatchingAction`; elsewhere
+it opens details. Episode rails on the show page still play directly, as do
+offline items and clips. The remote Play key keeps its existing behavior.
+Episode Action is hidden on TV without changing its saved value or phone behavior.
 
 `show/TvShowController` owns server data and paged episodes; `TvShowScreen` owns
 tabs, focus memory, delayed episode headers, Back and player return. The Show tab
@@ -576,8 +584,11 @@ MainScreenFocusScope.foregroundLeftOf(context)`, вне оболочки — 200
 у нижнего края карточки. Компактные шапки деталей должны иметь непрозрачный
 фон `bg.base` на всю высоту (переход экранов выполняется в S24 T3).
 
-Hero главной (S24 T2) начинается под верхним полем 54 и занимает 340,
-после прокрутки — 200. Логотип ограничен 560×120, описание — двумя
+Hero главной и Recommended (S27) получает высоту от доступной области:
+`tvHeroHeight` вычитает верхнее поле, полный слот постерного ряда и нижний
+запас, с минимумом 340. Высота не меняется между рядами; режима compact нет.
+На Home короткие музыкальные ряды занимают тот же слот, поэтому следующий
+ряд не выглядывает. Текст прижат к низу hero. Логотип ограничен 560×120, описание — двумя
 строками. Метаданные фильма: год, длительность, возрастной рейтинг и до
 трёх жанров; сериала: год, число сезонов, возрастной рейтинг и до трёх жанров;
 эпизода: номер и название, длительность либо остаток. Недостающие описание
@@ -612,7 +623,14 @@ and focused items scroll into view on expansion. The last item retains Down.
 Home and search episode cards show the series title above `S1 E3 · episode
 title`; remaining time is represented by the progress bar. Home applies this
 also to episodes in poster hubs. Season, player queue and post-play captions
-retain their existing format. Home uses the 340/200 hero and the 48 section gap.
+retain their existing format. Home uses the viewport-sized hero described above.
+When Home rows come from several servers, each server-owned row shows its server
+name after the count; Continue Watching and rows without a server have no suffix.
+
+Horizontal rails keep the current offset until the focused card reaches an edge,
+then move only enough to reveal it and a sliver of the next card. The last card
+stops at the right safe field. Returning from details restores the card and offset;
+reduced devices move without animation.
 
 ### Movie, show and catalog layout (S24 T5)
 
@@ -628,14 +646,39 @@ remaining rails in order. Multiple seasons use standard 216×324 posters.
 Season tabs and rail titles use the raw season title, falling back to the
 localized season number when empty or equal to the series title.
 
+Multi-season and flattened episode tabs (S27) put actions for the header's episode
+above the rail: Play, or Continue with remaining time and “С начала” when progress
+exists, watched, download and more. Leaving the rail for actions flushes the
+delayed header update, so an immediate Up acts on the newly selected episode.
+Opening a season and returning from playback focus the episode rail. Below it,
+series cast, extras and related rows use the same scrolling and opaque compact
+header as Show; absent rows add no focus stops. Up follows rows → episodes →
+actions → tabs, and Back from a season returns to Show. Single-season shows keep
+their existing actions and episode rail, without the new episode buttons.
+The episode-action header limits its summary to two lines and reserves space
+below the buttons for their overlaid focus captions, keeping them clear of the
+season heading and episode count (S27 T10).
+
 ### Search, library, Watchlist and settings layout (S24 T6)
 
 Search uses the shared 54 top and 96 right fields. The RU and EN digits key
 fills the last two and three keyboard cells respectively. Focusing a result
 reveals its whole horizontal row, including captions.
 
-Library and Watchlist headers show the item count beside the title and
-`Sort: <field>` on the sort button. Poster grids retain 228 pixel cards with
+Watchlist shows the item count beside its title and `Sort: <field>` on the sort
+button. Library (S27) starts with underlined tabs, without a separate title/count.
+Only Browse has a bar: filter summary, grouping when there is a choice, “by”,
+sort, item count, Clear for active filters, and more. Grouping has its own right
+panel; Sort reset also restores grouping. Clear immediately resets all filters.
+The filter panel starts with All, Unwatched and Unmatched when the server exposes
+them, without duplicating those fields below. All removes only the quick filters;
+other filters remain, and other booleans retain Yes/No. Saved negative quick
+filters contribute to the count and can be removed with All or Clear. Filters
+are saved per library across restarts, library switches and detail navigation.
+Up from the grid visits the Browse bar, then tabs; Down reverses that path, and
+Left from the first bar item opens the menu. Recommended, Collections and
+Playlists have no Browse bar or library more action. Browse's grid starts around
+200 design pixels. Poster grids retain 228 pixel cards with
 32 pixel gaps; whole columns fit before `letters.x - cardGap` (six posters,
 or three 400 pixel episode cards). The library alphabet starts at x 1776.
 
@@ -647,9 +690,9 @@ items, routes and nested pages remain owned by upstream.
 
 ### Acceptance refinements (S24 T7)
 
-The compact Home hero contains only its logo/title and one metadata line; its
-logo is capped at 80 design pixels. Scores and description appear in the full
-hero only. Movie, show and catalog detail artwork fades linearly with page
+Home's former compact hero was removed in S27; scores and description remain
+available at the fixed viewport-derived height on every row. Movie, show and
+catalog detail artwork fades linearly with page
 scroll from full strength at 0 to zero at 300 design pixels; the tint remains.
 Show uses the movie's opaque 150 pixel compact header and collapse threshold,
 keeping focused rail headings below it. Show metadata stays on one line with

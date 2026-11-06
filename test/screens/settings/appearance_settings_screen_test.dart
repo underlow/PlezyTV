@@ -1,3 +1,4 @@
+import 'package:plezy/plezytv/tv_ui/tv_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/i18n/strings.g.dart';
@@ -19,6 +20,33 @@ void main() {
     SettingsService.resetForTesting();
     await SettingsService.getInstance();
     LocaleSettings.setLocaleSync(AppLocale.en);
+  });
+
+  testWidgets('Episode Action is phone-only and preserves the saved preference', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 5000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(TvUi.resetForTesting);
+    final settings = SettingsService.instance;
+    await settings.write(SettingsService.episodeAction, EpisodeAction.details);
+    final supporter = SupporterService.forTesting(availability: SupporterAvailability.hidden);
+    final theme = ThemeProvider(supporter: supporter);
+    addTearDown(theme.dispose);
+    addTearDown(supporter.dispose);
+    for (final tv in [true, false]) {
+      TvUi.enabledForTesting = () => tv;
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ThemeProvider>.value(
+          value: theme,
+          child: MaterialApp(theme: monoTheme(MonoPalette.dark), home: const AppearanceSettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.settings.episodeAction), tv ? findsNothing : findsOneWidget);
+      expect(settings.read(SettingsService.episodeAction), EpisodeAction.details);
+    }
   });
 
   testWidgets('appearance screen renders every reorganized group', (tester) async {

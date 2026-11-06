@@ -17,6 +17,8 @@ import 'package:plezy/services/watch_actions.dart';
 import 'package:plezy/utils/watch_state_notifier.dart';
 import '../tv_theme_test_helper.dart';
 import 'tv_show_screen_test.dart' show fixture;
+import 'package:plezy/plezytv/tv_ui/show/tv_episode_actions.dart';
+import 'package:plezy/utils/download_version_utils.dart';
 
 class Source implements CatalogSource {
   @override
@@ -45,6 +47,20 @@ class Source implements CatalogSource {
 }
 
 class Downloads extends ChangeNotifier implements DownloadProvider {
+  final queued = <MediaItem>[];
+  @override
+  Future<int> queueDownload(
+    MediaItem metadata,
+    MediaServerClient client, {
+    DownloadVersionConfig? versionConfig,
+    DownloadFilter filter = DownloadFilter.all,
+    int? maxCount,
+    bool includeSpecials = true,
+  }) async {
+    queued.add(metadata);
+    return 1;
+  }
+
   DownloadProgress? progress;
   MediaItem? episode;
   bool rule = false;
@@ -70,6 +86,73 @@ class Downloads extends ChangeNotifier implements DownloadProvider {
 }
 
 void main() {
+  testWidgets('S27 R9 download queues show on overview and selected episode on episode actions', (tester) async {
+    final client = fixture();
+    final c = TvShowController(client: client, metadata: client.show);
+    final downloads = Downloads();
+    final focus = FocusNode();
+    addTearDown(c.dispose);
+    addTearDown(downloads.dispose);
+    addTearDown(focus.dispose);
+    await c.load();
+    Future<void> mountActions(Widget actions) => pumpTvWidget(
+      tester,
+      ChangeNotifierProvider<DownloadProvider>.value(
+        value: downloads,
+        child: Scaffold(body: actions),
+      ),
+    );
+    await mountActions(
+      TvShowActions(
+        controller: c,
+        primary: TvButton(label: 'Watch'),
+        playExtra: (_) async {},
+      ),
+    );
+    tester.widgetList<TvIconButton>(find.byType(TvIconButton)).firstWhere((b) => b.icon == Icons.download).onSelect!();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.downloads.allEpisodes));
+    await tester.pumpAndSettle();
+    expect(downloads.queued.map((e) => e.id), [c.show.id]);
+    final episode = c.episodesFor('Season 1')[2];
+    await mountActions(
+      TvEpisodeActions(controller: c, item: episode, primaryFocus: focus, play: (_, {bool restart = false}) async {}),
+    );
+    tester.widgetList<TvIconButton>(find.byType(TvIconButton)).firstWhere((b) => b.icon == Icons.download).onSelect!();
+    await tester.pumpAndSettle();
+    expect(downloads.queued.map((e) => e.id), [c.show.id, episode.id]);
+  });
+
+  testWidgets('S27 R9 watched action targets selected episode and refreshes controller', (tester) async {
+    final client = fixture();
+    final c = TvShowController(client: client, metadata: client.show);
+    final focus = FocusNode();
+    addTearDown(c.dispose);
+    addTearDown(focus.dispose);
+    await c.load();
+    final episode = c.episodesFor('Season 1')[2];
+    MediaItem? marked;
+    await pumpTvWidget(
+      tester,
+      TvEpisodeActions(
+        controller: c,
+        item: episode,
+        primaryFocus: focus,
+        play: (_, {bool restart = false}) async {},
+        markWatched: (item, watched) async {
+          marked = item;
+          client.episodes['Season 1']![2] = item.withWatchedFlag(watched);
+          return WatchMarkOutcome.marked;
+        },
+      ),
+    );
+    tester.widgetList<TvIconButton>(find.byType(TvIconButton)).firstWhere((b) => b.icon == Icons.check).onSelect!();
+    await tester.pumpAndSettle();
+    expect(marked?.id, episode.id);
+    expect(c.episodesFor('Season 1')[2].isWatched, true);
+    expect(c.watchStateChanged, true);
+  });
+
   testWidgets('A5 omits unavailable trailer/list, renders available trailer and source membership', (tester) async {
     final client = fixture();
     final c = TvShowController(client: client, metadata: client.show);

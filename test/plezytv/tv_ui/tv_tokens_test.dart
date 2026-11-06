@@ -17,7 +17,10 @@ void main() {
     // S24 specification section 3 supersedes these original design values.
     (source['space'] as Map<String, dynamic>).addAll({'cardGap': 28, 'sectionGap': 48, 'cardFocusReserve': 24});
     (source['focus'] as Map<String, dynamic>).addAll({'cardScale': 1.05, 'episodeScale': 1.03});
-    (source['size']['hero'] as Map<String, dynamic>).addAll({'h': 340, 'compactH': 200, 'logoMaxH': 120});
+    (source['size']['hero'] as Map<String, dynamic>).addAll({'h': 340, 'logoMaxH': 120});
+    // S27 removes compact hero sizing; retain parity for every remaining token.
+    (source['size']['hero'] as Map<String, dynamic>).remove('compactH');
+    (source['size']['hero'] as Map<String, dynamic>).remove('compactLogoMaxH');
     (source['size']['sidebar'] as Map<String, dynamic>).addAll({'minItemH': 48});
     // 2026-10-28: content starts at the collapsed sidebar edge, so the icons
     // have equal space on both sides.
@@ -218,7 +221,6 @@ void main() {
         "unwatchedBadge": {"minW": TvTokens.size.unwatchedBadge.minW, "h": TvTokens.size.unwatchedBadge.h},
         "hero": {
           "h": TvTokens.size.hero.h,
-          "compactH": TvTokens.size.hero.compactH,
           "textMaxW": TvTokens.size.hero.textMaxW,
           "logoMaxW": TvTokens.size.hero.logoMaxW,
           "logoMaxH": TvTokens.size.hero.logoMaxH,

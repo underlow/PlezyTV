@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../plezytv/tv_ui/tv_ui.dart';
 import '../media/ids.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -630,6 +631,14 @@ class MediaContextMenuState extends State<MediaContextMenu> {
         : ancestorMeta?.id;
     // For episodes, the show key is grandparentId; for seasons, it's parentId
     final itemSeriesKey = mediaKind == MediaKind.episode ? mediaItem.grandparentId : mediaItem.parentId;
+    final tv = TvUi.enabled;
+    final tvSubject = TvUi.detailSubjectOf(context);
+    final detailId = switch (mediaKind) {
+      MediaKind.episode || MediaKind.season => itemSeriesKey,
+      _ => mediaItem.id,
+    };
+    final showTvDetails = isVideoKind &&
+        (tvSubject == null || tvSubject != (serverId: mediaItem.serverId, id: detailId));
 
     return [
       if (mediaKind.isMusic) ..._musicMenuActions(context, menu, mediaItem),
@@ -649,7 +658,7 @@ class MediaContextMenuState extends State<MediaContextMenu> {
           icon: Symbols.close_rounded,
           label: t.mediaMenu.removeFromContinueWatching,
         ),
-      if (widget.isInContinueWatching && isVideoKind)
+      if (tv ? showTvDetails : widget.isInContinueWatching && isVideoKind)
         _MenuAction(value: 'details', icon: Symbols.info_rounded, label: t.mediaMenu.viewDetails),
       if (isVideoKind) _MenuAction(value: 'rate', icon: Symbols.star_rounded, label: t.mediaMenu.rate),
       // Edit Metadata — admin-only and backend-capability gated.
@@ -676,7 +685,8 @@ class MediaContextMenuState extends State<MediaContextMenu> {
           icon: Symbols.delete_outline_rounded,
           label: t.collections.removeFromCollection,
         ),
-      if ((mediaKind == MediaKind.episode || mediaKind == MediaKind.season) &&
+      if (!tv &&
+          (mediaKind == MediaKind.episode || mediaKind == MediaKind.season) &&
           itemSeriesKey != null &&
           !widget.isInContinueWatching &&
           ancestorSeriesKey != itemSeriesKey)

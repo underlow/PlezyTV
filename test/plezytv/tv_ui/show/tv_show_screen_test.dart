@@ -12,6 +12,7 @@ import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_hub.dart';
 import 'package:plezy/media/media_role.dart';
+import 'package:plezy/media/media_rating.dart';
 import 'package:plezy/plezytv/tv_ui/tv_focusable.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import 'package:plezy/media/media_kind.dart';
@@ -24,6 +25,7 @@ import 'package:plezy/plezytv/tv_ui/show/tv_show_controller.dart';
 import 'package:plezy/plezytv/tv_ui/show/tv_show_screen.dart';
 import '../tv_theme_test_helper.dart';
 import 'fake_media_server_client.dart';
+import 'package:plezy/plezytv/tv_ui/show/tv_episode_actions.dart';
 
 MediaItem media(String id, MediaKind kind, {int? number, int? watched, int? offset}) => MediaItem(
   id: id,
@@ -81,6 +83,74 @@ String focusedEpisode(WidgetTester tester) =>
     tester.widgetList<TvEpisode>(find.byType(TvEpisode)).firstWhere((e) => e.focusNode!.hasFocus).item.id;
 
 void main() {
+  for (final flattened in [false, true]) {
+    testWidgets('S27 R9 R10 R11 episode buttons refresh immediately and restore rail flattened=$flattened', (
+      tester,
+    ) async {
+      final client = fixture();
+      client.episodes['Season 1']![3] = client.episodes['Season 1']![3].copyWith(
+        viewOffsetMs: 600000,
+        summary: 'First line of the episode description.\nSecond line.\nThird line.',
+        ratings: [const MediaRatingSource(source: 'imdb', value: 8)],
+      );
+      if (flattened) {
+        client.seasons = [];
+        client.episodes[client.show.id] = client.episodes['Season 1']!;
+      }
+      final played = <(String, bool)>[];
+      await mount(
+        tester,
+        client,
+        episodeId: 'e3',
+        play: (_, item, restart) async {
+          played.add((item.id, restart));
+        },
+      );
+      expect(focusedEpisode(tester), 'e3');
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('С начала'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(); // No 300ms header debounce elapsed.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(tester.widget<TvEpisodeActions>(find.byType(TvEpisodeActions)).item.id, 'e4');
+      expect(find.textContaining('Continue'), findsOneWidget);
+      expect(find.text('С начала'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(played, [('e4', false)]);
+      expect(focusedEpisode(tester), 'e4');
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(played.last, ('e4', true));
+      expect(focusedEpisode(tester), 'e4');
+    });
+  }
+
+  testWidgets('S27 R9 episode action caption clears the season heading with a long summary', (tester) async {
+    final client = fixture();
+    client.episodes['Season 1']![3] = client.episodes['Season 1']![3].copyWith(
+      summary: 'First description line.\nSecond description line.\nThird description line.',
+      ratings: [const MediaRatingSource(source: 'imdb', value: 8)],
+    );
+    await mount(tester, client, seasonId: 'Season 1', episodeId: 'e4');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    final watched = tester.widgetList<TvIconButton>(find.byType(TvIconButton)).firstWhere((b) => b.icon == Icons.check);
+    final caption = tester.getRect(find.text(watched.caption));
+    final rail = find.byType(TvHorizontalRow).first;
+    final heading = tester.getRect(find.descendant(of: rail, matching: find.text('Season 1')));
+    expect(caption.bottom, lessThanOrEqualTo(heading.top));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('R9a R9b R2a show compact header and bounded metadata, exact row spacing', (tester) async {
     final client = fixture();
     client.extras = [media('Trailer', MediaKind.movie)];
@@ -182,6 +252,7 @@ void main() {
     tabs(tester).onSelected(1);
     await tester.pumpAndSettle();
     expect(tester.widgetList<TvEpisode>(find.byType(TvEpisode)).map((card) => card.item.id), showItems);
+    expect(find.byType(TvEpisodeActions), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -533,6 +604,81 @@ void main() {
       expectSeasonLayout();
     }
   });
+
+  for (final flattened in [false, true]) {
+    for (final lower in ['all', 'extras only', 'none']) {
+      testWidgets('S27 R12 season rows Down/Up and Back flattened=$flattened lower=$lower', (tester) async {
+        final client = fixture();
+        if (flattened) {
+          client.seasons = [];
+          client.episodes[client.show.id] = client.episodes['Season 1']!;
+        }
+        if (lower == 'all') {
+          client.show = client.show.copyWith(
+            roles: [const MediaRole(id: 'actor', tag: 'Actor')],
+          );
+          client.relatedHubs = [
+            MediaHub(id: 'empty', title: 'Empty', type: 'show', items: []),
+            MediaHub(id: 'similar', title: 'Similar', type: 'show', items: [client.show]),
+          ];
+        }
+        if (lower != 'none') client.extras = [media('Extra', MediaKind.clip)];
+        await mount(tester, client, seasonId: flattened ? null : 'Season 1', episodeId: 'e3');
+        expect(tabs(tester).selectedIndex, 1);
+        expect(focusedEpisode(tester), 'e3');
+        Future<void> key(LogicalKeyboardKey value) async {
+          await tester.sendKeyEvent(value);
+          await tester.pumpAndSettle();
+        }
+
+        String focusedRow() =>
+            FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvHorizontalRow>()!.title;
+        final expected = [
+          if (lower == 'all') 'Cast',
+          if (lower != 'none') 'Trailers & Extras',
+          if (lower == 'all') 'Similar',
+        ];
+        final bar = find.byKey(const ValueKey('show-compact-header'));
+        for (final title in expected) {
+          await key(LogicalKeyboardKey.arrowDown);
+          expect(focusedRow(), title);
+          expect(bar, findsOneWidget);
+          final box = FocusManager.instance.primaryFocus!.context!.findRenderObject()! as RenderBox;
+          expect(box.localToGlobal(Offset.zero).dy, greaterThanOrEqualTo(tester.getBottomLeft(bar).dy));
+          expect(box.localToGlobal(Offset(0, box.size.height)).dy, lessThanOrEqualTo(1080));
+        }
+        await key(LogicalKeyboardKey.arrowDown);
+        if (expected.isEmpty) {
+          expect(focusedEpisode(tester), 'e3', reason: 'No empty lower focus stop');
+        } else {
+          expect(focusedRow(), expected.last, reason: 'No empty hub focus stop');
+        }
+        for (final title in expected.reversed.skip(1)) {
+          await key(LogicalKeyboardKey.arrowUp);
+          expect(focusedRow(), title);
+        }
+        if (expected.isNotEmpty) await key(LogicalKeyboardKey.arrowUp);
+        expect(focusedEpisode(tester), 'e3');
+        await key(LogicalKeyboardKey.arrowUp);
+        expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+        await key(LogicalKeyboardKey.arrowUp);
+        expect(FocusManager.instance.primaryFocus!.context!.findAncestorWidgetOfExactType<TvTabs>(), isNotNull);
+        expect(bar, findsNothing);
+        await key(LogicalKeyboardKey.arrowDown);
+        expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+        await key(LogicalKeyboardKey.arrowDown);
+        expect(focusedEpisode(tester), 'e3');
+        for (final _ in expected) {
+          await key(LogicalKeyboardKey.arrowDown);
+        }
+        await key(LogicalKeyboardKey.escape);
+        expect(tabs(tester).selectedIndex, 0);
+        expect(FocusManager.instance.primaryFocus!.debugLabel, 'Show primary');
+        expect(bar, findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('A7 tabs debounce content for 300ms; A9 Back returns to main action', (tester) async {
     await mount(tester, fixture());

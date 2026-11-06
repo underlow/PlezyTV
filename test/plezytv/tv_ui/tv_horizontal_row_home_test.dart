@@ -62,6 +62,86 @@ void main() {
     });
   }
 
+  for (final reduced in [false, true]) {
+    for (final width in [216.0, 400.0, 280.0]) {
+      testWidgets('row restores card and offset after removal (width=$width, reduced=$reduced)', (tester) async {
+        final memory = TvHorizontalRowMemory();
+        final shown = ValueNotifier(true);
+        addTearDown(shown.dispose);
+        final row = GlobalKey<TvHorizontalRowState>();
+        final nodes = <int, FocusNode>{};
+        await pumpTvWidget(
+          tester,
+          Align(
+            alignment: Alignment.topLeft,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: shown,
+              builder: (_, visible, _) => visible
+                  ? TvHorizontalRow(
+                      key: row,
+                      title: 'Row',
+                      itemCount: 30,
+                      cardWidth: width,
+                      cardHeight: 300,
+                      positionMemory: memory,
+                      itemKey: (i) => 'server:$i',
+                      cardBuilder: (_, i, node) {
+                        nodes[i] = node;
+                        return Focus(
+                          focusNode: node,
+                          child: SizedBox(key: ValueKey('card$i'), width: width, height: 300),
+                        );
+                      },
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+          reduced: reduced,
+        );
+        nodes[0]!.requestFocus();
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 15; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+        }
+        final offset = tester.widget<ListView>(find.byType(ListView)).controller!.offset;
+        final cardX = tester.getTopLeft(find.byKey(const ValueKey('card15'))).dx;
+        expect(offset, greaterThan(0));
+        shown.value = false;
+        await tester.pumpAndSettle();
+        expect(memory.index, 15);
+        expect(memory.itemKey, 'server:15');
+        expect(memory.offset, offset);
+        shown.value = true;
+        await tester.pumpAndSettle();
+        row.currentState!.requestFocus();
+        await tester.pumpAndSettle();
+        expect(nodes[15]!.hasFocus, isTrue);
+        expect(tester.widget<ListView>(find.byType(ListView)).controller!.offset, offset);
+        expect(tester.getTopLeft(find.byKey(const ValueKey('card15'))).dx, cardX);
+        final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+        var previousOffset = scroll.offset;
+        for (var i = 16; i < 30; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+          await tester.pumpAndSettle();
+          expect(nodes[i]!.hasFocus, isTrue);
+          expect(scroll.offset - previousOffset, inInclusiveRange(0, width + 28));
+          expect(tester.getBottomRight(find.byKey(ValueKey('card$i'))).dx, lessThanOrEqualTo(1920));
+          previousOffset = scroll.offset;
+        }
+        expect(tester.getBottomRight(find.byKey(const ValueKey('card29'))).dx, 1824);
+        for (var i = 28; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+          await tester.pumpAndSettle();
+          expect(nodes[i]!.hasFocus, isTrue);
+          expect(previousOffset - scroll.offset, inInclusiveRange(0, width + 28));
+          previousOffset = scroll.offset;
+        }
+        expect(scroll.offset, 0);
+      });
+    }
+  }
+
   testWidgets('key memory survives lazy reorder, removal and outside refresh', (tester) async {
     final row = GlobalKey<TvHorizontalRowState>();
     final outside = FocusNode();

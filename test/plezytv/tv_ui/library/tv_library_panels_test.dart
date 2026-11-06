@@ -20,6 +20,7 @@ import 'package:plezy/plezytv/tv_ui/components/tv_right_panel.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_settings_item.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_controller.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_panels.dart';
+import 'package:plezy/plezytv/tv_ui/library/tv_library_query.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_preferences.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_screen.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
@@ -54,16 +55,88 @@ void main() {
   }
 
   Future<void> button(WidgetTester tester, String label) async {
-    final found = find.byWidgetPredicate((w) => w is TvButton && w.label.startsWith(label));
+    final found = find.byWidgetPredicate(
+      (w) =>
+          w is TvButton &&
+          (label == 'Filters' ? w.focusNode?.debugLabel == 'Library filters' : w.label.startsWith(label)),
+    );
     tester.widget<TvButton>(found).onSelect!();
     await settle(tester);
   }
 
+  for (final unwatchedField in ['unwatched', 'unwatchedLeaves']) {
+    testWidgets('quick $unwatchedField, Unmatched and All preserve genre', (tester) async {
+      MediaFilter field(String name) =>
+          MediaFilter(filter: name, filterType: 'boolean', key: '', title: name, type: 'filter');
+      const genre = LibraryFilter(field: 'genre', values: ['drama']);
+      final client = FakeMediaServerClient()
+        ..items = [movie(0)]
+        ..filters = LibraryFilterResult(
+          filters: [field('unmatched'), field(unwatchedField), field('inProgress')],
+          cachedValues: {},
+        );
+      await mount(tester, client, saved: TvLibraryPreferences(filters: [genre]));
+      await button(tester, 'Filters');
+      List<String> choices() => tester
+          .widgetList<TvSettingsItem>(find.byType(TvSettingsItem))
+          .map((w) => (w.key as ValueKey).value as String)
+          .toList();
+      expect(choices().take(3), ['quick:all', 'quick:unwatched', 'quick:unmatched']);
+      expect(find.text(t.libraries.filterCategories.unwatched), findsOneWidget);
+      expect(find.byKey(ValueKey(unwatchedField)), findsNothing);
+      expect(find.byKey(const ValueKey('unmatched')), findsNothing);
+      await activate(tester, 'quick:unwatched');
+      expect(client.queries.last.filters, [
+        genre,
+        LibraryFilter(field: unwatchedField, values: ['1']),
+      ]);
+      expect(tester.widget<TvSettingsItem>(find.byKey(const ValueKey('quick:unwatched'))).selected, isTrue);
+      await activate(tester, 'quick:unmatched');
+      expect(client.queries.last.filters, [
+        genre,
+        const LibraryFilter(field: 'unmatched', values: ['1']),
+      ]);
+      expect(tester.widget<TvSettingsItem>(find.byKey(const ValueKey('quick:unwatched'))).selected, isFalse);
+      expect(tester.widget<TvSettingsItem>(find.byKey(const ValueKey('quick:unmatched'))).selected, isTrue);
+      await activate(tester, 'quick:all');
+      expect(client.queries.last.filters, [genre]);
+      expect(tester.widget<TvSettingsItem>(find.byKey(const ValueKey('quick:all'))).selected, isTrue);
+    });
+  }
+
+  testWidgets('only discovered quick choices are offered', (tester) async {
+    final client = FakeMediaServerClient()..items = [movie(0)];
+    await mount(tester, client);
+    await button(tester, 'Filters');
+    expect(find.byKey(const ValueKey('quick:all')), findsOneWidget);
+    expect(find.byKey(const ValueKey('quick:unwatched')), findsNothing);
+    expect(find.byKey(const ValueKey('quick:unmatched')), findsNothing);
+  });
+
+  testWidgets('saved negative quick filter is counted and All or Clear removes it', (tester) async {
+    const negative = LibraryFilter(field: 'unwatchedLeaves', op: LibraryFilterOperator.isNot, values: ['1']);
+    const genre = LibraryFilter(field: 'genre', values: ['drama']);
+    final client = FakeMediaServerClient()..items = [movie(0)];
+    final c = await mount(tester, client, saved: TvLibraryPreferences(filters: [negative, genre]));
+    expect(c.activeFilterCount, 2);
+    expect(c.query().filters, [negative, genre]);
+    await button(tester, 'Filters');
+    expect(tester.widget<TvSettingsItem>(find.byKey(const ValueKey('quick:all'))).selected, isFalse);
+    await activate(tester, 'quick:all');
+    expect(c.query().filters, [genre]);
+    expect(c.activeFilterCount, 1);
+    await c.select(filters: [negative, genre]);
+    await settle(tester);
+    await activate(tester, 'clear');
+    expect(c.query().filters, isEmpty);
+    expect(c.activeFilterCount, 0);
+  });
+
   testWidgets('A16: sort default direction, panel refresh, Back anchor and Down first item', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0), movie(1)];
     final c = await mount(tester, client);
-    expect(find.text('Sort: Title'), findsOneWidget);
-    await button(tester, 'Sort: Title');
+    expect(find.text('Title'), findsOneWidget);
+    await button(tester, 'Title');
     expect(
       find.descendant(of: find.byKey(const ValueKey('ascending')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
@@ -82,7 +155,7 @@ void main() {
       find.descendant(of: find.byKey(const ValueKey('direction')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
     );
-    expect(find.text('Sort: Added'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Added'), findsOneWidget);
     expect(c.preferences.descending, isTrue);
     expect(client.queries.last.sort?.field, 'addedAt');
     expect(find.byType(TvRightPanel), findsOneWidget);
@@ -126,7 +199,9 @@ void main() {
       ..items = [movie(0)]
       ..onFilters = () => pending.future;
     await mount(tester, client);
-    TvButton filters() => tester.widget<TvButton>(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Filters'));
+    TvButton filters() => tester.widget<TvButton>(
+      find.byWidgetPredicate((w) => w is TvButton && w.focusNode?.debugLabel == 'Library filters'),
+    );
     expect(filters().disabled, isTrue);
     pending.complete(LibraryFilterResult.empty);
     await settle(tester);
@@ -159,7 +234,7 @@ void main() {
     await settle(tester);
     expect(c.folders.length, 2);
     expect(focus, 'Folder row 0');
-    await button(tester, 'Sort: Title');
+    await button(tester, 'Title');
     final level = c.folders.last;
     await c.refresh();
     await settle(tester);
@@ -201,7 +276,7 @@ void main() {
         filter('title', 'string'),
         filter('duration', 'integer', unit: MediaFilterUnit.duration),
         filter('addedAt', 'date'),
-        filter('unwatched', 'boolean'),
+        filter('inProgress', 'boolean'),
       ],
       cachedValues: {},
     );
@@ -235,22 +310,23 @@ void main() {
     await activate(tester, 'LibraryFilterOperator.atLeast:-30d');
     expect(c.preferences.filters.last.values, ['-30d']);
     await press(tester, LogicalKeyboardKey.escape);
-    await activate(tester, 'unwatched');
+    await activate(tester, 'inProgress');
     await activate(tester, '0');
     expect(c.preferences.filters.last.op, LibraryFilterOperator.isNot);
     expect(c.preferences.filters.last.values, ['1']);
     await activate(tester, 'clear');
-    expect(c.preferences.filters.any((x) => x.field == 'unwatched'), isFalse);
+    expect(c.preferences.filters.any((x) => x.field == 'inProgress'), isFalse);
   });
   testWidgets('grouping page switches grid to folders and reset restores defaults', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0)];
     final c = await mount(tester, client);
-    await button(tester, 'Sort: Title');
-    await activate(tester, 'grouping');
+    await button(tester, tvGroupingLabel(c.grouping));
     await activate(tester, 'group:folders');
     expect(c.grouping, 'folders');
     expect(find.byType(TvRightPanel), findsOneWidget);
     await press(tester, LogicalKeyboardKey.escape);
+    expect(focus, 'Library grouping');
+    await button(tester, 'Title');
     await activate(tester, 'reset');
     expect(c.grouping, 'movies');
     expect(c.selectedSort, isNull);
@@ -336,7 +412,7 @@ void main() {
     expect(focus, 'Library filters');
   });
 
-  testWidgets('real Jellyfin favorite schema offers Any/Yes; unwatched retains No', (tester) async {
+  testWidgets('real Jellyfin favorite schema offers Any/Yes; unwatched applies immediately', (tester) async {
     final backend = JellyfinClient.forTesting(
       connection: testJellyfinConnection(),
       httpClient: MockClient((_) async => http.Response('{}', 200)),
@@ -356,8 +432,9 @@ void main() {
     await activate(tester, 'clear');
     expect(c.preferences.filters, isEmpty);
     await press(tester, LogicalKeyboardKey.escape);
-    await activate(tester, 'unwatched');
-    await activate(tester, '0');
-    expect(c.preferences.filters.single.op, LibraryFilterOperator.isNot);
+    await activate(tester, 'quick:unwatched');
+    expect(c.preferences.filters.single.field, 'unwatched');
+    expect(c.preferences.filters.single.op, LibraryFilterOperator.is_);
+    expect(c.preferences.filters.single.values, ['1']);
   });
 }

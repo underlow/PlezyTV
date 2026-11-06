@@ -259,6 +259,7 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester, {
+    Size size = const Size(1920, 1080),
     bool reduced = true,
     WatchStateStore? watchState,
     List<NavigatorObserver> observers = const [],
@@ -301,6 +302,7 @@ void main() {
           ),
         ),
       ),
+      size: size,
       reduced: reduced,
       appTheme: monoTheme(MonoPalette.dark),
       navigatorObservers: observers,
@@ -329,6 +331,39 @@ void main() {
     provider.hubs = [hub('movies'), hub('shows'), hub('more')];
   }
 
+  for (final size in [const Size(1920, 1080), const Size(1280, 720), const Size(1024, 768), const Size(2560, 1080)]) {
+    testWidgets('R5/R6 Home fills $size and reserves a poster slot under music', (tester) async {
+      provider.hubs = [
+        hub('first'),
+        MediaHub(
+          id: 'music',
+          title: 'Music',
+          type: 'album',
+          items: [testMediaItem(id: 'album', kind: MediaKind.album, title: 'Album')],
+        ),
+        hub('third'),
+        hub('fourth'),
+      ];
+      await pump(tester, size: size);
+      await tester.pumpAndSettle();
+      final initialHeight = tester.getSize(find.byType(TvHero)).height;
+      final initialTop = tester.getTopLeft(rowFinder(0)).dy;
+      final firstCard = tester.getRect(find.byType(TvPoster).first);
+      expect(firstCard.bottom, lessThanOrEqualTo(size.height));
+      expect(tester.getTopLeft(rowFinder(1)).dy, greaterThanOrEqualTo(size.height));
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(tester.getTopLeft(rowFinder(1)).dy, closeTo(initialTop, .001));
+      expect(tester.getBottomLeft(find.byType(TvMusicCard).first).dy, lessThan(size.height));
+      expect(tester.getTopLeft(rowFinder(2)).dy, greaterThanOrEqualTo(size.height));
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(tester.getSize(find.byType(TvHero)).height, initialHeight);
+      expect(tester.getTopLeft(rowFinder(2)).dy, closeTo(initialTop, .001));
+      final poster = find.descendant(of: rowFinder(2), matching: find.byType(TvPoster)).first;
+      expect(tester.getBottomLeft(poster).dy, lessThanOrEqualTo(size.height));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('S26: lazy 20x20 Home preserves card memory and S24 far-row reveal', (tester) async {
     provider.hubs = [for (var i = 0; i < 20; i++) hub('rail$i', 20)];
     await pump(tester);
@@ -346,9 +381,9 @@ void main() {
     }
     expect(rail(1), findsNothing);
     expect(hero(tester).item!.id, 'rail190');
-    // S24 compact hero 200 + safe top 54: heading aligns at y=254,
+    // R5/R6: the row stays at y=590 at every row index,
     // including a far-away last row (independent of the offset calculation).
-    expect(tester.getTopLeft(rail(19)).dy, 254);
+    expect(tester.getTopLeft(rail(19)).dy, 590);
     expect(find.byType(TvHorizontalRow, skipOffstage: false).evaluate().length, lessThanOrEqualTo(6));
     for (var i = 19; i > 1; i--) {
       await key(tester, LogicalKeyboardKey.arrowUp);
@@ -357,7 +392,7 @@ void main() {
     expect(restored.focusInside.value, isTrue);
     expect(restored.focusedIndex, 2);
     expect(hero(tester).item!.id, 'rail12');
-    expect(tester.getTopLeft(rail(1)).dy, 394);
+    expect(tester.getTopLeft(rail(1)).dy, 590);
     menu.requestFocus();
     await tester.pumpAndSettle();
     expect(menu.hasFocus, isTrue);
@@ -492,7 +527,7 @@ void main() {
     });
   }
 
-  testWidgets('S24 R4/R11: Home episode labels and second poster row are visible', (tester) async {
+  testWidgets('S24 R4/R11: Home episode labels remain and second row is below the screen', (tester) async {
     provider.onDeck = [
       testMediaItem(
         id: 'ep',
@@ -513,12 +548,7 @@ void main() {
     expect(find.descendant(of: card, matching: find.text('S1 E3 · Part III')), findsOneWidget);
     expect(tester.getBottomRight(card).dy, lessThan(1080));
     final second = rowFinder(1);
-    expect(tester.getTopLeft(second).dy, lessThan(1080));
-    final poster = find.descendant(of: second, matching: find.byType(TvPoster)).first;
-    final top = tester.getTopLeft(poster).dy;
-    expect(top, lessThan(1080));
-    expect(1080 - top, greaterThan(324 / 4));
-    expect(hero(tester).compact, isFalse);
+    expect(tester.getTopLeft(second).dy, greaterThanOrEqualTo(1080));
     // Episode hubs also use the series/episode labels in poster form.
     final episode = provider.onDeck.single;
     provider.onDeck = [];
@@ -531,11 +561,15 @@ void main() {
     final firstPoster = find.byType(TvPoster).first;
     expect(find.descendant(of: firstPoster, matching: find.text('Example series')), findsOneWidget);
     expect(find.descendant(of: firstPoster, matching: find.text('S1 E3 · Part III')), findsOneWidget);
-    final nextPoster = find.descendant(of: rowFinder(1), matching: find.byType(TvPoster)).first;
-    expect(1080 - tester.getTopLeft(nextPoster).dy, greaterThan(324 / 4));
+    expect(tester.getTopLeft(rowFinder(1)).dy, greaterThanOrEqualTo(1080));
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    expect(
+      tester.getBottomLeft(find.descendant(of: rowFinder(1), matching: find.byType(TvPoster)).first).dy,
+      lessThan(1080),
+    );
   });
 
-  testWidgets('A1/A2/A3: first card, hero, vertical row memory and compact geometry', (tester) async {
+  testWidgets('A1/A2/A3: first card, hero, vertical row memory and constant hero geometry', (tester) async {
     content();
     await pump(tester);
     await tester.pumpAndSettle();
@@ -550,13 +584,11 @@ void main() {
     }
     expect(hero(tester).item!.id, 'movies4');
     await key(tester, LogicalKeyboardKey.arrowDown);
-    expect(hero(tester).compact, isTrue);
-    expect(tester.getTopLeft(rowFinder(2)).dy, 254);
+    expect(tester.getTopLeft(rowFinder(2)).dy, 590);
     await key(tester, LogicalKeyboardKey.arrowUp);
-    expect(hero(tester).compact, isFalse);
     expect(hero(tester).item!.id, 'movies4');
     expect(row(tester, 1).focusedIndex, 4);
-    expect(tester.getTopLeft(rowFinder(1)).dy, 394);
+    expect(tester.getTopLeft(rowFinder(1)).dy, 590);
   });
 
   testWidgets('R1: hide-spoilers preference updates the hero', (tester) async {
@@ -648,18 +680,24 @@ void main() {
     expect(image.height, 324);
   });
 
-  testWidgets('R10: compact hero animation preserves rails/cards and row focus geometry', (tester) async {
+  testWidgets('R10: row changes preserves rails/cards and row focus geometry', (tester) async {
     content();
     await pump(tester, reduced: false);
     await tester.pumpAndSettle();
     await key(tester, LogicalKeyboardKey.arrowDown);
-    final rails = tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList();
+    // Only the two rows involved in the transition must remain mounted;
+    // the smaller R6 viewport may evict the first row from the lazy cache.
+    bool involved(TvHorizontalRow row) => row.title == 'movies' || row.title == 'shows';
+    final rails = tester
+        .widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false))
+        .where(involved)
+        .toList();
     var railBuilds = 0, cardBuilds = 0;
     final previous = debugOnRebuildDirtyWidget;
     debugOnRebuildDirtyWidget = (element, builtOnce) {
       previous?.call(element, builtOnce);
-      if (element.widget is TvHorizontalRow) railBuilds++;
-      if (element.widget is TvEpisode || element.widget is TvPoster) cardBuilds++;
+      if (builtOnce && element.widget is TvHorizontalRow) railBuilds++;
+      if (builtOnce && (element.widget is TvEpisode || element.widget is TvPoster)) cardBuilds++;
     };
     addTearDown(() => debugOnRebuildDirtyWidget = previous);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -669,7 +707,7 @@ void main() {
     for (var frame = 0; frame < 24; frame++) {
       await tester.pump(const Duration(milliseconds: 16));
       if (frame == 0) {
-        expect(tester.getSize(find.byType(TvHero)).height, inExclusiveRange(200, 340));
+        expect(tester.getSize(find.byType(TvHero)).height, 536);
       }
       expect(railBuilds, 0, reason: 'hero animation frame $frame');
       expect(cardBuilds, 0, reason: 'hero animation frame $frame');
@@ -677,18 +715,16 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(
-      tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).toList(),
+      tester.widgetList<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false)).where(involved).toList(),
       orderedEquals(rails),
     );
-    expect(hero(tester).compact, isTrue);
     expect(hero(tester).item!.id, 'shows1');
     expect(row(tester, 2).focusInside.value, isTrue);
     expect(row(tester, 2).focusedIndex, 1);
-    expect(tester.getTopLeft(rowFinder(2)).dy, 254);
+    expect(tester.getTopLeft(rowFinder(2)).dy, 590);
     await key(tester, LogicalKeyboardKey.arrowUp);
-    expect(hero(tester).compact, isFalse);
     expect(row(tester, 1).focusInside.value, isTrue);
-    expect(tester.getTopLeft(rowFinder(1)).dy, 394);
+    expect(tester.getTopLeft(rowFinder(1)).dy, 590);
   });
 
   testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
@@ -805,7 +841,7 @@ void main() {
     provider.emit();
     await tester.pumpAndSettle();
     expect(row(tester, 0).focusInside.value, isTrue);
-    expect(find.byType(TvRowSkeleton), findsOneWidget);
+    expect(find.byType(TvRowSkeleton, skipOffstage: false), findsOneWidget);
     provider.hubs = earlyHubs;
     provider.ready();
     await tester.pumpAndSettle();
@@ -1311,10 +1347,9 @@ void main() {
         navigator.pop();
         await tester.pumpAndSettle();
         final afterIndex = scenario.hubIndex + (scenario.hadContinue ? 0 : 1);
-        final expectedHeight = afterIndex > 1 ? 254.0 : 394.0;
+        final expectedHeight = 590.0;
         expect(row(tester, afterIndex).focusInside.value, isTrue);
         expect(hero(tester).item!.globalKey, target);
-        expect(hero(tester).compact, afterIndex > 1);
         expect(tester.getTopLeft(rowFinder(afterIndex)).dy, expectedHeight);
       });
     }

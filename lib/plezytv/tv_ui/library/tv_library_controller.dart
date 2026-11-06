@@ -5,6 +5,7 @@ import '../../../media/library_first_character.dart';
 import '../../../media/library_query.dart';
 import '../../../media/media_item.dart';
 import '../../../media/media_library.dart';
+import '../../../media/media_filter.dart';
 import '../../../media/media_server_client.dart';
 import '../../../media/media_sort.dart';
 import '../../../providers/libraries_provider.dart';
@@ -19,6 +20,25 @@ import '../../../utils/watch_state_notifier.dart';
 import '../components/tv_paged_source.dart';
 import 'tv_library_preferences.dart';
 import 'tv_library_query.dart';
+
+enum TvLibraryQuickFilter { unwatched, unmatched }
+
+/// Recognize server field identities without depending on translated titles.
+TvLibraryQuickFilter? tvLibraryQuickFilter(String field) => switch (field) {
+  'unwatched' || 'unwatchedLeaves' => TvLibraryQuickFilter.unwatched,
+  'unmatched' => TvLibraryQuickFilter.unmatched,
+  _ => null,
+};
+
+/// One offered field per quick choice, in display order.
+Map<TvLibraryQuickFilter, MediaFilter> tvLibraryQuickFilters(List<MediaFilter> fields) {
+  final result = <TvLibraryQuickFilter, MediaFilter>{};
+  for (final choice in TvLibraryQuickFilter.values) {
+    final field = fields.where((f) => tvLibraryQuickFilter(f.filter) == choice).firstOrNull;
+    if (field != null) result[choice] = field;
+  }
+  return result;
+}
 
 class TvFolderLevel {
   TvFolderLevel({this.folder});
@@ -78,6 +98,20 @@ class TvLibraryController extends ChangeNotifier {
   /// Plezy marks the first server sort when no explicit sort is saved.
   MediaSort? get effectiveSort => selectedSort ?? sorts.firstOrNull;
   LibraryFilterResult filterResult = LibraryFilterResult.empty;
+  Map<TvLibraryQuickFilter, MediaFilter> get quickFilters => tvLibraryQuickFilters(filterResult.filters);
+  List<LibraryFilter> get quickFilterClauses =>
+      preferences.filters.where((f) => tvLibraryQuickFilter(f.field) != null).toList();
+  TvLibraryQuickFilter? get selectedQuickFilter {
+    final clauses = quickFilterClauses;
+    if (clauses.length != 1) return null;
+    final clause = clauses.single;
+    return clause.op == LibraryFilterOperator.is_ && clause.values.length == 1 && clause.values.single == '1'
+        ? tvLibraryQuickFilter(clause.field)
+        : null;
+  }
+
+  /// Count fields, including saved negative quick clauses, for the Browse bar.
+  int get activeFilterCount => preferences.filters.map((f) => f.field).toSet().length;
   List<LibraryFirstCharacter> characters = const [];
   AlphaJumpHelper alphaHelper = AlphaJumpHelper(const []);
   String? alphaPrefix;
@@ -272,6 +306,19 @@ class TvLibraryController extends ChangeNotifier {
   Future<void> resetFilters() async {
     alphaPrefix = null;
     await select(filters: const []);
+  }
+
+  /// All clears only quick fields, including saved fields absent from discovery.
+  Future<void> selectQuickFilter(TvLibraryQuickFilter? choice) async {
+    final field = quickFilters[choice];
+    if (choice != null && field == null) return;
+    await select(
+      filters: [
+        for (final clause in preferences.filters)
+          if (tvLibraryQuickFilter(clause.field) == null) clause,
+        if (field != null) LibraryFilter(field: field.filter, values: const ['1']),
+      ],
+    );
   }
 
   Future<void> setAlphaPrefix(String? prefix) async {

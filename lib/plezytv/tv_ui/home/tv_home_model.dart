@@ -22,6 +22,7 @@ class TvHomeRow {
   final bool hasMore;
   final int? count;
   final MediaHub? hub;
+  final String? source;
 
   const TvHomeRow._({
     required this.kind,
@@ -31,6 +32,7 @@ class TvHomeRow {
     required this.hasMore,
     this.count,
     this.hub,
+    this.source,
   });
 
   /// Uses Plezy's server-qualified identity for focus restoration.
@@ -92,8 +94,11 @@ class TvHomeModelBuilder {
           ),
       ]);
       final rows = <TvHomeRow>[..._continueRows];
-      for (final hub in provider.hubs) {
-        if (hub.isContinueWatchingHub) continue;
+      final displayableHubs = provider.hubs
+          .where((hub) => !hub.isContinueWatchingHub && hub.items.any((item) => _layout(item.kind) != null))
+          .toList();
+      final serverIds = displayableHubs.map((hub) => hub.serverId).whereType<String>().toSet();
+      for (final hub in displayableHubs) {
         final layout = hub.items.map((item) => _layout(item.kind)).whereType<TvHomeRowLayout>().firstOrNull;
         if (layout == null) continue;
         final items = List<MediaItem>.unmodifiable(hub.items.where((item) => _layout(item.kind) == layout));
@@ -106,6 +111,7 @@ class TvHomeModelBuilder {
             hasMore: hub.more,
             count: items.length == hub.items.length ? hub.size : null,
             hub: hub,
+            source: serverIds.length > 1 && hub.serverId != null ? hub.serverName : null,
           ),
         );
       }

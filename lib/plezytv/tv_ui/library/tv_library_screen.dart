@@ -33,8 +33,7 @@ import '../tv_theme.dart';
 import '../tv_tokens.dart';
 import 'tv_library_controller.dart';
 import 'tv_library_extra_tab.dart';
-import 'tv_library_panels.dart';
-import 'tv_library_more.dart';
+import 'tv_library_browse_bar.dart';
 import 'tv_folder_list.dart';
 
 /// Host for one library. The switch owns the controller's lifetime. Header
@@ -65,9 +64,9 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   final _tabBar = GlobalKey<TvTabsState>();
   void _focusTabs() => _tabBar.currentState?.requestFocus();
   final _tabs = FocusScopeNode(debugLabel: 'Library tabs');
-  final _sort = FocusNode(debugLabel: 'Library sort');
-  final _filters = FocusNode(debugLabel: 'Library filters');
-  final _more = FocusNode(debugLabel: 'Library more');
+  final _browseBar = GlobalKey<TvLibraryBrowseBarState>();
+  final _bar = FocusScopeNode(debugLabel: 'Library browse bar');
+  void _focusBar() => _browseBar.currentState?.requestFocus();
   final _action = FocusNode(debugLabel: 'Library state action');
   final _position = ValueNotifier(0);
   final _hero = ValueNotifier<MediaItem?>(null);
@@ -157,8 +156,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       final owned = _tabs.hasFocus || _action.hasFocus;
       _after(() {
         if (owned &&
-            (owner == FocusManager.instance.primaryFocus ||
-                owner?.context?.mounted != true && !_sort.hasFocus && !_filters.hasFocus && !_more.hasFocus)) {
+            (owner == FocusManager.instance.primaryFocus || owner?.context?.mounted != true && !_bar.hasFocus)) {
           _grid.currentState?.jumpTo(c.focusedIndex);
         }
       });
@@ -248,17 +246,29 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       return handleBackKeyAction(event, () => _grid.currentState?.jumpTo(0));
     }
     if (key == LogicalKeyboardKey.arrowLeft &&
-        ((_tabs.hasFocus && (_tabBar.currentState?.focusedIndex ?? 0) == 0) || _action.hasFocus || _sort.hasFocus)) {
+        ((_tabs.hasFocus && (_tabBar.currentState?.focusedIndex ?? 0) == 0) || _action.hasFocus)) {
       if (down) _sidebar();
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowDown &&
-        (_tabs.hasFocus || _sort.hasFocus || _filters.hasFocus || _more.hasFocus)) {
-      if (down) _down();
+    if (key == LogicalKeyboardKey.arrowDown && _tabs.hasFocus) {
+      if (down) {
+        if (tab == LibraryTabType.browse) {
+          _focusBar();
+        } else {
+          _down();
+        }
+      }
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowUp && _tabs.hasFocus) {
-      if (down) _sort.requestFocus();
+    if (key == LogicalKeyboardKey.arrowUp && (_tabs.hasFocus || _action.hasFocus)) {
+      if (down) {
+        if (_action.hasFocus) {
+          _focusBar();
+        } else if (_entryFocusPending) {
+          // Up at the top is an explicit choice to keep focus on the tabs.
+          setState(() => _entryFocusPending = false);
+        }
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -355,7 +365,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
         cellWidth: size.width,
         cellHeight: size.height + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight,
         gap: TvTokens.size.posterGrid.gap.toDouble(),
-        onUp: _focusTabs,
+        onUp: _focusBar,
         onLeft: _sidebar,
         onRight: () => _alpha.currentState?.requestFocus(),
         onItemFocused: (index) {
@@ -468,8 +478,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   };
   @override
   Widget build(BuildContext context) {
-    final theme = TvTheme.of(context), px = TvTheme.of(context).px;
-    final fields = c.preferences.filters.map((f) => f.field).toSet().length;
+    final px = TvTheme.of(context).px;
     Widget content;
     if (tab != LibraryTabType.browse) {
       content = KeyedSubtree(
@@ -490,7 +499,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       content = TvFolderList(
         key: _folders,
         controller: c,
-        onUp: _focusTabs,
+        onUp: _focusBar,
         onLeft: _sidebar,
         openItem: (item) async {
           if (widget.openItem case final open?) {
@@ -532,61 +541,6 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(c.library.title, style: theme.headline, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ),
-                    if (c.totalCount != null) ...[
-                      SizedBox(width: px(TvTokens.space.md)),
-                      Text('${c.totalCount}', style: theme.caption),
-                    ],
-                  ],
-                ),
-              ),
-              TvButton(
-                label: TvStrings.sortBy(c.effectiveSort?.title ?? TvStrings.defaultSort),
-                focusNode: _sort,
-                icon: Icons.swap_vert,
-                variant: TvButtonVariant.secondary,
-                onSelect: () {
-                  if (widget.onSort case final callback?) {
-                    callback(_sort);
-                  } else {
-                    unawaited(showTvLibrarySort(context, _sort, c));
-                  }
-                },
-              ),
-              SizedBox(width: px(16)),
-              TvButton(
-                label: '${t.libraries.filters}${fields == 0 ? '' : ' · $fields'}',
-                focusNode: _filters,
-                icon: Icons.filter_alt,
-                variant: TvButtonVariant.secondary,
-                disabled: c.filtersLoading,
-                onSelect: () {
-                  if (widget.onFilters case final callback?) {
-                    callback(_filters);
-                  } else {
-                    unawaited(showTvLibraryFilters(context, _filters, c));
-                  }
-                },
-              ),
-              SizedBox(width: px(16)),
-              TvButton(
-                label: TvStrings.moreLibraries,
-                focusNode: _more,
-                variant: TvButtonVariant.secondary,
-                onSelect: () => widget.onMore != null
-                    ? widget.onMore!(_more)
-                    : unawaited(showTvLibraryMore(context, _more, c.library, c.client)),
-              ),
-            ],
-          ),
-          SizedBox(height: px(24)),
           FocusScope(
             node: _tabs,
             child: TvTabs(
@@ -596,7 +550,24 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
               onSelected: (index) => unawaited(_selectTab(index)),
             ),
           ),
-          SizedBox(height: px(38)),
+          if (tab == LibraryTabType.browse) ...[
+            SizedBox(height: px(16)),
+            FocusScope(
+              node: _bar,
+              child: TvLibraryBrowseBar(
+                key: _browseBar,
+                controller: c,
+                onSort: widget.onSort,
+                onFilters: widget.onFilters,
+                onMore: widget.onMore,
+                onUp: _focusTabs,
+                onDown: _down,
+                onLeft: _sidebar,
+              ),
+            ),
+            SizedBox(height: px(24)),
+          ] else
+            SizedBox(height: px(24)),
           Expanded(child: content),
         ],
       ),
@@ -632,7 +603,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     _timer?.cancel();
     _position.dispose();
     _hero.dispose();
-    for (final node in [_sort, _filters, _more, _action, _tabs]) {
+    for (final node in [_bar, _action, _tabs]) {
       node.dispose();
     }
     super.dispose();

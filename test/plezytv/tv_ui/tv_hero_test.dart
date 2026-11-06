@@ -60,23 +60,21 @@ class _Sources extends ChangeNotifier implements CatalogSourcesProvider {
 }
 
 void main() {
-  testWidgets('R4a compact hero contains only title and one metadata line inside 200', (tester) async {
+  testWidgets('R5/R6 hero retains description and ratings above the row', (tester) async {
     await pumpTvWidget(
       tester,
       Align(
         alignment: Alignment.topLeft,
         child: TvHero(
-          compact: true,
+          height: 536,
           item: testMediaItem(title: 'Title', year: 2026, summary: 'Description', rating: 9),
         ),
       ),
     );
-    expect(find.text('Description'), findsNothing);
-    expect(find.byType(TvRatings), findsNothing);
-    expect(tester.widget<ClearLogoImage>(find.byType(ClearLogoImage)).height, 80);
-    final meta = find.textContaining('2026');
-    expect(tester.widget<Text>(meta).maxLines, 1);
-    expect(tester.getBottomLeft(meta).dy, lessThanOrEqualTo(200));
+    expect(find.text('Description'), findsOneWidget);
+    expect(find.byType(TvRatings), findsOneWidget);
+    expect(tester.getBottomLeft(find.text('Description')).dy, 536);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('full hero ratings debounce, ignore stale answers, cache and fail silently', (tester) async {
@@ -144,7 +142,7 @@ void main() {
     expect(find.text('Full summary'), findsOneWidget);
     expect(find.textContaining('Drama, Crime, Comedy'), findsOneWidget);
     expect(find.textContaining('Action'), findsNothing);
-    expect(tester.getRect(find.text('Full summary')).bottom, lessThanOrEqualTo(340));
+    expect(tester.getRect(find.text('Full summary')).bottom, tester.getRect(find.byType(TvHero)).bottom);
   });
 
   testWidgets('S24 loading ratings reserve their final row height', (tester) async {
@@ -370,17 +368,14 @@ void main() {
     expect(tester.getSize(find.byType(TvHero)).height, 340);
   });
 
-  testWidgets('logo slot respects bounds; compact description and reduced height update', (tester) async {
-    final compact = ValueNotifier(false);
-    addTearDown(compact.dispose);
-    final item = testMediaItem(title: 'Title', clearLogoPath: '/logo', summary: 'Summary');
+  testWidgets('logo fits its bounds and description anchors to the supplied height', (tester) async {
     await pumpTvWidget(
       tester,
       Align(
         alignment: Alignment.topLeft,
-        child: ValueListenableBuilder<bool>(
-          valueListenable: compact,
-          builder: (context, value, _) => TvHero(item: item, compact: value),
+        child: TvHero(
+          height: 536,
+          item: testMediaItem(title: 'Title', clearLogoPath: '/logo', summary: 'Summary'),
         ),
       ),
       reduced: true,
@@ -388,58 +383,23 @@ void main() {
     final logo = tester.widget<ClearLogoImage>(find.byType(ClearLogoImage));
     expect(logo.logoPath, '/logo');
     expect(logo.width, 560);
-    expect(logo.height, lessThanOrEqualTo(200));
-    final normalImage = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
-    final normalImageSize = Size(normalImage.width!, normalImage.height!);
-    expect(normalImageSize, const Size(560, 120));
-    compact.value = true;
-    await tester.pump();
-    final compactImage = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
-    final compactImageSize = Size(compactImage.width!, compactImage.height!);
-    expect(compactImage.fit, BoxFit.contain);
-    // Test the contained artwork, independent of a network response or fallback.
-    for (final aspect in [1.0, 2.0, 3.0, 5.0]) {
-      final source = Size(100 * aspect, 100);
-      final normal = applyBoxFit(BoxFit.contain, source, normalImageSize).destination;
-      final compact = applyBoxFit(BoxFit.contain, source, compactImageSize).destination;
-      expect(compact.width, lessThanOrEqualTo(normal.width));
-      expect(compact.height, lessThanOrEqualTo(normal.height));
-    }
-    expect(compactImageSize, const Size(392, 80));
-    expect(compactImageSize.width, lessThan(normalImageSize.width));
-    expect(compactImageSize.height, lessThanOrEqualTo(normalImageSize.height));
+    expect(logo.height, 120);
+    final image = tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage));
+    expect(image.fit, BoxFit.contain);
+    expect(Size(image.width!, image.height!), const Size(560, 120));
     expect(tester.getSize(find.byKey(const ValueKey('hero-title-slot'))).height, 128);
     expect(
       tester.getRect(find.byType(OptimizedMediaImage)).bottom,
       tester.getRect(find.byKey(const ValueKey('hero-title-slot'))).bottom,
     );
-    expect(tester.getSize(find.byType(TvHero)).height, 200);
-    expect(find.text('Summary'), findsNothing);
-    expect(tester.widget<ClearLogoImage>(find.byType(ClearLogoImage)).height, lessThan(200));
+    expect(tester.getBottomLeft(find.text('Summary')).dy, 536);
     expect(tester.hasRunningAnimations, isFalse);
   });
 
-  testWidgets('normal height transition animates; null item is empty', (tester) async {
-    final compact = ValueNotifier(false);
-    addTearDown(compact.dispose);
-    await pumpTvWidget(
-      tester,
-      Align(
-        alignment: Alignment.topLeft,
-        child: ValueListenableBuilder<bool>(
-          valueListenable: compact,
-          builder: (context, value, _) => TvHero(item: null, compact: value),
-        ),
-      ),
-    );
+  testWidgets('null item keeps the parent supplied slot empty', (tester) async {
+    await pumpTvWidget(tester, const Align(alignment: Alignment.topLeft, child: TvHero(item: null, height: 536)));
     expect(find.byType(ClearLogoImage), findsNothing);
-    compact.value = true;
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(tester.getSize(find.byType(TvHero)).height, greaterThan(200));
-    expect(tester.getSize(find.byType(TvHero)).height, lessThan(340));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(TvHero)).height, 200);
+    expect(tester.getSize(find.byType(TvHero)).height, 536);
   });
 
   testWidgets('hero skeleton is static, non-focusable and loads no artwork', (tester) async {
@@ -505,7 +465,6 @@ void main() {
     await pumpTvWidget(
       tester,
       TvHero(
-        compact: true,
         item: testMediaItem(
           kind: MediaKind.show,
           year: 2023,
@@ -519,9 +478,9 @@ void main() {
     expect(find.text('2023 · 1 season · 18+ · Drama, Crime'), findsOneWidget);
   });
 
-  testWidgets('F3 dense content never overflows either height transition', (tester) async {
-    final compact = ValueNotifier(false);
-    addTearDown(compact.dispose);
+  testWidgets('F3 dense content never overflows parent supplied heights', (tester) async {
+    final height = ValueNotifier(340.0);
+    addTearDown(height.dispose);
     final item =
         testMediaItem(
           kind: MediaKind.episode,
@@ -541,17 +500,17 @@ void main() {
       tester,
       Align(
         alignment: Alignment.topLeft,
-        child: ValueListenableBuilder<bool>(
-          valueListenable: compact,
-          builder: (context, value, _) => TvHero(item: item, compact: value),
+        child: ValueListenableBuilder<double>(
+          valueListenable: height,
+          builder: (context, value, _) => TvHero(item: item, height: value),
         ),
       ),
     );
     final metadata = find.byWidgetPredicate((w) => w is Text && (w.data?.startsWith('S1 E3') ?? false));
     expect(tester.getSize(metadata).height, 60);
     expect(tester.getSize(find.text(item.summary!)).height, 68);
-    for (final value in [true, false]) {
-      compact.value = value;
+    for (final value in [536.0, 340.0]) {
+      height.value = value;
       await tester.pump();
       expect(tester.takeException(), isNull);
       for (var i = 0; i < 5; i++) {
@@ -561,8 +520,8 @@ void main() {
     }
   });
 
-  testWidgets('F4 F5 full two-line title, fixed top and bottom anchor in both modes', (tester) async {
-    for (final compact in [false, true]) {
+  testWidgets('F4 F5 full two-line title, bottom anchor at different heights', (tester) async {
+    for (final height in [340.0, 536.0]) {
       double? metadataTop;
       for (final title in ['Short', 'First line\nSecond line gy']) {
         await pumpTvWidget(
@@ -570,8 +529,8 @@ void main() {
           Align(
             alignment: Alignment.topLeft,
             child: TvHero(
-              compact: compact,
-              item: testMediaItem(title: title, year: 2023, summary: title == 'Short' ? 'Brief' : 'Long\nSummary'),
+              height: height,
+              item: testMediaItem(title: title, year: 2023, summary: 'Long\nSummary'),
             ),
           ),
         );
@@ -580,7 +539,7 @@ void main() {
         if (title != 'Short') expect(text.size.height, 128);
         final logo = tester.getRect(find.byKey(const ValueKey('hero-title-slot')));
         final titleRect = tester.getRect(find.text(title));
-        expect(logo.top, 0);
+        expect(logo.top, greaterThanOrEqualTo(0));
         expect(titleRect.bottom, logo.bottom);
         final current = tester.getTopLeft(find.text('2023')).dy;
         if (metadataTop != null) expect(current, metadataTop);
@@ -589,10 +548,10 @@ void main() {
     }
   });
 
-  testWidgets('F7 skeleton matches reference geometry and fixed top', (tester) async {
+  testWidgets('F7 skeleton matches block geometry and bottom anchor', (tester) async {
     await pumpTvWidget(tester, const Align(alignment: Alignment.topLeft, child: TvHeroSkeleton()));
     final blocks = find.descendant(of: find.byType(TvHeroSkeleton), matching: find.byType(Container));
-    expect(tester.getTopLeft(blocks.first).dy, 0);
+    expect(tester.getBottomLeft(blocks.last).dy, 328);
     expect(
       [for (var i = 0; i < blocks.evaluate().length; i++) tester.getSize(blocks.at(i))],
       [const Size(420, 96), const Size(520, 24), const Size(240, 24), const Size(860, 22), const Size(600, 22)],

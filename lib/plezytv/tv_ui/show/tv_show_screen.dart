@@ -33,6 +33,7 @@ import '../tv_tokens.dart';
 import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import 'tv_show_actions.dart';
+import 'tv_episode_actions.dart';
 import 'tv_show_controller.dart';
 import 'tv_show_logic.dart';
 
@@ -94,7 +95,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
             _collapseAt,
             RenderAbstractViewport.of(first).getOffsetToReveal(first, 0).offset - _barHeight - _rowTopGap,
           );
-    final collapsed = _tab == 0 && _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
+    final collapsed = _page.hasClients && _page.offset > 0 && _page.offset >= threshold - 0.5;
     if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
   }
 
@@ -363,10 +364,12 @@ class _TvShowScreenState extends State<TvShowScreen> {
     _heroTimer?.cancel();
     setState(() {
       _tab = index;
+      _collapsed = false;
       _selectedSeasonKey = index > 0 ? _key : null;
       _hero = null;
       _backdropEpisode = null;
     });
+    _scrollTop();
     if (index > 0) {
       unawaited(_enterSeason(focus: focus));
     } else if (focus) {
@@ -438,11 +441,22 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (!_playing && index >= items.length - 5) unawaited(_controller!.loadMoreEpisodes(key));
   }
 
+  void _flushEpisodeHero() {
+    _heroTimer?.cancel();
+    if (!_hasEpisodeRow || _tab == 0) return;
+    final episode = _controller!.episodesFor(_key).where((e) => e.id == _lastEpisode[_key]).firstOrNull;
+    if (episode != null && _hero != episode) {
+      setState(() => _hero = _backdropEpisode = episode);
+    }
+  }
+
+  bool get _hasEpisodeActions => _tab > 0 && !_singleSeason && _hero != null;
+
   Future<void> _play(MediaItem episode, {bool restart = false}) async {
     if (_playing) return;
     _playing = true;
     final c = _controller!;
-    final seasonKey = _hasEpisodeRow && _episodeWasFocusOwner ? _key : null;
+    final seasonKey = _hasEpisodeRow && (_tab > 0 || _episodeWasFocusOwner) ? _key : null;
     _launchState = _watchFingerprint(c);
     try {
       if (widget.playEpisode != null) {
@@ -526,6 +540,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   void _back() {
     if (_tab > 0) {
+      _tabs.currentState?.requestFocus();
       _select(0, focus: true);
       return;
     }
@@ -534,12 +549,11 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   KeyEventResult _contentKeys(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent || event is KeyRepeatEvent) _revealContent();
-    if (_tab == 0 &&
-        (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown)) {
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp || event.logicalKey == LogicalKeyboardKey.arrowDown) {
       // Each rail owns a focus scope; cross scopes explicitly in display order.
       final c = _controller!;
       final rows = [
-        if (_singleSeason) ...[
+        if (_hasEpisodeRow) ...[
           if (c.episodesFor(_key).isNotEmpty) _episodes,
         ] else if (!c.flattened && c.seasons.isNotEmpty)
           _seasons,
@@ -552,7 +566,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
         if (event is KeyDownEvent || event is KeyRepeatEvent) {
           final next = index + (event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1);
           if (next < 0) {
-            _actionScope.requestFocus();
+            _flushEpisodeHero();
+            if (_hasEpisodeActions) {
+              _primary.requestFocus();
+            } else if (_tab == 0) {
+              _actionScope.requestFocus();
+            } else {
+              _tabs.currentState?.requestFocus();
+              _scrollTop();
+            }
           } else if (next < rows.length) {
             rows[next].currentState?.requestFocus();
           }
@@ -700,8 +722,9 @@ class _TvShowScreenState extends State<TvShowScreen> {
                                     if (event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
                                     if (event is KeyDownEvent || event is KeyRepeatEvent) {
                                       final pending = _tabs.currentState?.focusedIndex;
-                                      if (pending != null && pending != _tab) _select(pending);
-                                      if (_tab == 0) {
+                                      final changedTab = pending != null && pending != _tab;
+                                      if (changedTab) _select(pending);
+                                      if (_tab == 0 || (!changedTab && _hasEpisodeActions)) {
                                         _primary.requestFocus();
                                       } else {
                                         unawaited(_enterSeason(focus: true));
@@ -763,12 +786,15 @@ class _TvShowScreenState extends State<TvShowScreen> {
                         Focus(
                           canRequestFocus: false,
                           onKeyEvent: _contentKeys,
-                          child: _tab == 0 ? _overview(context) : _season(context),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [_tab == 0 ? _overview(context) : _season(context), ..._lowerContent(context)],
+                          ),
                         ),
                     ],
                   ),
                 ),
-                if (_tab == 0 && _collapsed)
+                if (_collapsed)
                   Positioned(
                     key: const ValueKey('show-compact-header'),
                     top: 0,
@@ -877,16 +903,22 @@ class _TvShowScreenState extends State<TvShowScreen> {
               onSelect: () => _select(i + 1, focus: true),
             ),
           ),
-        for (final (index, row) in _lowerRows(context).indexed) ...[
-          if (index > 0 ||
-              _singleSeason && c.episodesFor(_key).isNotEmpty ||
-              !c.flattened && !_singleSeason && c.seasons.isNotEmpty)
-            SizedBox(height: px(TvTokens.space.sectionGap)),
-          row,
-        ],
-        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
       ],
     );
+  }
+
+  List<Widget> _lowerContent(BuildContext context) {
+    final c = _controller!, px = TvTheme.of(context).px;
+    final hasFirstRow = _hasEpisodeRow ? c.episodesFor(_key).isNotEmpty : !c.flattened && c.seasons.isNotEmpty;
+    final lowerRows = _lowerRows(context);
+    return [
+      for (final (index, row) in lowerRows.indexed) ...[
+        if (index > 0 || hasFirstRow) SizedBox(height: px(TvTokens.space.sectionGap)),
+        row,
+      ],
+      if (_tab == 0 || lowerRows.isNotEmpty)
+        SizedBox(height: MediaQuery.sizeOf(context).height - _barHeight - px(TvTokens.space.cardFocusReserve)),
+    ];
   }
 
   Future<void> _playExtra(MediaItem item) async {
@@ -900,7 +932,7 @@ class _TvShowScreenState extends State<TvShowScreen> {
 
   void _revealContent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _tab != 0) return;
+      if (!mounted) return;
       if (_actionScope.hasFocus) {
         _scrollTop();
         return;
@@ -1061,7 +1093,21 @@ class _TvShowScreenState extends State<TvShowScreen> {
                 SizedBox(height: px(TvTokens.detail.summaryGap)),
                 if (episode != null) TvRatings(item: episode),
                 SizedBox(height: px(20)),
-                Text(episode?.summary ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
+                Text(
+                  episode?.summary ?? '',
+                  maxLines: _hasEpisodeActions ? 2 : 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.bodyLarge,
+                ),
+                if (_hasEpisodeActions) ...[
+                  const Spacer(),
+                  FocusScope(
+                    node: _actionScope,
+                    child: TvEpisodeActions(controller: c, item: episode!, primaryFocus: _primary, play: _play),
+                  ),
+                  // Icon captions paint below the action row's layout bounds.
+                  SizedBox(height: px(TvTokens.type.caption.lineHeight + 16)),
+                ],
               ],
             ),
           ),
@@ -1106,7 +1152,14 @@ class _TvShowScreenState extends State<TvShowScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (items.isNotEmpty) row,
+        if (items.isNotEmpty)
+          Focus(
+            canRequestFocus: false,
+            onFocusChange: (inside) {
+              if (!inside) _flushEpisodeHero();
+            },
+            child: row,
+          ),
         if (c.pageErrors.containsKey(key))
           Padding(
             padding: EdgeInsets.only(

@@ -37,6 +37,52 @@ void main() {
     builder = TvHomeModelBuilder();
   });
 
+  MediaHub serverHub(String id, String? serverId, String? serverName, {MediaKind kind = MediaKind.movie}) => MediaHub(
+    id: id,
+    title: id,
+    type: 'mixed',
+    items: [testMediaItem(kind: kind)],
+    serverId: serverId,
+    serverName: serverName,
+  );
+
+  test('R7: multiple rows from one server have no source label', () {
+    provider.hubs = [serverHub('movies', 'a', 'Alpha'), serverHub('music', 'a', 'Alpha', kind: MediaKind.album)];
+    expect(builder.build(provider).rows.map((row) => row.source), [null, null]);
+  });
+
+  test('R7: two servers label their own rows, excluding Continue and serverless rows', () {
+    provider.onDeck = [testMediaItem(serverId: 'a'), testMediaItem(serverId: 'b')];
+    provider.hubs = [
+      serverHub('movies', 'a', 'Alpha'),
+      serverHub('music', 'b', 'Beta', kind: MediaKind.album),
+      serverHub('local', null, 'Not a server'),
+      serverHub('home.continue', 'c', 'Continue server'),
+    ];
+    expect(builder.build(provider).rows.map((row) => row.source), [null, 'Alpha', 'Beta', null]);
+  });
+
+  test('R7: only servers with displayable non-Continue rows count', () {
+    provider.onDeck = [testMediaItem(serverId: 'b')];
+    provider.hubs = [
+      serverHub('movies', 'a', 'Alpha'),
+      serverHub('home.continue', 'b', 'Beta'),
+      serverHub('photos', 'c', 'Gamma', kind: MediaKind.photo),
+      serverHub('local', null, 'Not a server'),
+    ];
+    expect(builder.build(provider).rows.map((row) => row.source), [null, null, null]);
+  });
+
+  test('R7: a later second server adds labels; its removal hides them again', () {
+    final first = serverHub('movies', 'a', 'Alpha');
+    provider.hubs = [first];
+    expect(builder.build(provider).rows.single.source, isNull);
+    provider.hubs = [first, serverHub('music', 'b', 'Beta', kind: MediaKind.album)];
+    expect(builder.build(provider).rows.map((row) => row.source), ['Alpha', 'Beta']);
+    provider.hubs = [first];
+    expect(builder.build(provider).rows.single.source, isNull);
+  });
+
   test('A7: only supported kinds, provider order, no empty or duplicate continue hub', () {
     final video = testMediaItem();
     final album = testMediaItem(kind: MediaKind.album);

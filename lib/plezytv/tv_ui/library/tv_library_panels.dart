@@ -40,6 +40,24 @@ Widget _row(
   onSelect: action,
 );
 
+Future<void> showTvLibraryGrouping(BuildContext context, FocusNode anchor, TvLibraryController c) => TvRightPanel.show(
+  context: context,
+  anchor: anchor,
+  root: TvRightPanelPage(
+    title: t.libraries.groupings.title,
+    changes: c,
+    itemsBuilder: (_) => [
+      for (final group in c.groupingOptions)
+        _row(
+          'group:$group',
+          tvGroupingLabel(group),
+          () => unawaited(c.select(grouping: group)),
+          selected: c.grouping == group,
+        ),
+    ],
+  ),
+);
+
 Future<void> showTvLibrarySort(BuildContext context, FocusNode anchor, TvLibraryController c) => TvRightPanel.show(
   context: context,
   anchor: anchor,
@@ -47,27 +65,6 @@ Future<void> showTvLibrarySort(BuildContext context, FocusNode anchor, TvLibrary
     title: t.libraries.sortBy,
     changes: c,
     itemsBuilder: (context) => [
-      _row(
-        'grouping',
-        t.libraries.groupings.title,
-        () => TvRightPanel.of(context).push(
-          TvRightPanelPage(
-            title: t.libraries.groupings.title,
-            changes: c,
-            itemsBuilder: (_) => [
-              for (final group in c.groupingOptions)
-                _row(
-                  'group:$group',
-                  tvGroupingLabel(group),
-                  () => unawaited(c.select(grouping: group)),
-                  selected: c.grouping == group,
-                ),
-            ],
-          ),
-        ),
-        value: tvGroupingLabel(c.grouping),
-        kind: TvSettingsItemKind.page,
-      ),
       for (final sort in c.sorts)
         _row(
           'sort:${sort.key}',
@@ -109,31 +106,45 @@ Future<void> showTvLibraryFilters(BuildContext context, FocusNode anchor, TvLibr
     title: t.libraries.filters,
     changes: c,
     itemsBuilder: (context) => [
-      for (final filter in c.filterResult.filters)
+      _row(
+        'quick:all',
+        t.libraries.all,
+        () => unawaited(c.selectQuickFilter(null)),
+        selected: c.quickFilterClauses.isEmpty,
+      ),
+      for (final entry in c.quickFilters.entries)
         _row(
-          filter.filter,
-          filter.title,
-          () => TvRightPanel.of(context).push(
-            TvRightPanelPage(
-              title: filter.title,
-              changes: c,
-              bodyBuilder: (_) => filter.editorKind == FilterEditorKind.valueList
-                  ? TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter)
-                  : SingleChildScrollView(
-                      child: TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter),
-                    ),
-            ),
-          ),
-          kind: TvSettingsItemKind.page,
-          value:
-              filterFieldSummary(
-                filter: filter,
-                clauses: c.preferences.filters,
-                serverId: c.library.serverId ?? '',
-                libraryKey: c.library.id,
-              ) ??
-              '',
+          'quick:${entry.key.name}',
+          entry.key == TvLibraryQuickFilter.unwatched ? t.libraries.filterCategories.unwatched : entry.value.title,
+          () => unawaited(c.selectQuickFilter(entry.key)),
+          selected: c.selectedQuickFilter == entry.key,
         ),
+      for (final filter in c.filterResult.filters)
+        if (tvLibraryQuickFilter(filter.filter) == null)
+          _row(
+            filter.filter,
+            filter.title,
+            () => TvRightPanel.of(context).push(
+              TvRightPanelPage(
+                title: filter.title,
+                changes: c,
+                bodyBuilder: (_) => filter.editorKind == FilterEditorKind.valueList
+                    ? TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter)
+                    : SingleChildScrollView(
+                        child: TvLibraryFilterEditor(key: ValueKey(filter.filter), controller: c, filter: filter),
+                      ),
+              ),
+            ),
+            kind: TvSettingsItemKind.page,
+            value:
+                filterFieldSummary(
+                  filter: filter,
+                  clauses: c.preferences.filters,
+                  serverId: c.library.serverId ?? '',
+                  libraryKey: c.library.id,
+                ) ??
+                '',
+          ),
       _row('clear', t.libraries.clearAll, () => unawaited(c.resetFilters())),
     ],
   ),
