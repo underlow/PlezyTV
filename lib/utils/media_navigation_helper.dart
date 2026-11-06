@@ -131,7 +131,8 @@ bool shouldOpenEpisodeDetailsForActivation({
 /// Accepts a [MediaItem] or a [MediaPlaylist] (typed as [Object] because Dart
 /// has no nominal union type).
 ///
-/// For episodes, normal card activation follows the Episode Action setting;
+/// For online TV episodes, normal card activation opens details. Elsewhere it
+/// follows the Episode Action setting;
 /// [playDirectly] surfaces instead follow the Continue Watching action setting.
 /// For movies, starts playback directly if [playDirectly] is true and the
 /// Continue Watching details setting is disabled; otherwise navigates to media
@@ -238,7 +239,7 @@ Future<MediaNavigationResult> navigateToMediaItem(
 
     case MediaKind.clip:
     case MediaKind.episode:
-      if (mi.kind == MediaKind.episode && shouldOpenEpisodeDetails) {
+      if (mi.kind == MediaKind.episode && ((TvUi.enabled && !isOffline && !playDirectly) || shouldOpenEpisodeDetails)) {
         return navigateToMediaItemDetails(context, mi, onRefresh: onRefresh, isOffline: isOffline);
       }
       final result = await navigateToVideoPlayer(context, metadata: mi, isOffline: isOffline);
