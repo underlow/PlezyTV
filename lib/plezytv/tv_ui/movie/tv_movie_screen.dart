@@ -597,16 +597,23 @@ class _TvMovieScreenState extends State<TvMovieScreen> {
             style: theme.title.copyWith(color: TvTokens.color.text.secondary, letterSpacing: px(3)),
           ),
         ),
-      if (ratings.isNotEmpty)
-        (TvTokens.detail.metadataGap.toDouble(), TvRatings(item: movie.copyWith(ratings: ratings))),
-      if (chips.isNotEmpty)
+      if (ratings.isNotEmpty || chips.isNotEmpty)
         (
-          TvTokens.detail.summaryGap.toDouble(),
+          TvTokens.detail.metadataGap.toDouble(),
           Wrap(
-            key: const ValueKey('movie-chips'),
-            spacing: px(16),
+            spacing: px(32),
             runSpacing: px(12),
-            children: [for (final label in chips) TvChip.technical(label: label)],
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (ratings.isNotEmpty) TvRatings(item: movie.copyWith(ratings: ratings)),
+              if (chips.isNotEmpty)
+                Wrap(
+                  key: const ValueKey('movie-chips'),
+                  spacing: px(16),
+                  runSpacing: px(12),
+                  children: [for (final label in chips) TvChip.technical(label: label)],
+                ),
+            ],
           ),
         ),
       if (summary != null && summary.isNotEmpty)

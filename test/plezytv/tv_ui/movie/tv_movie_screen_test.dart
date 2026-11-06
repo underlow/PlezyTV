@@ -281,6 +281,15 @@ void main() {
     expect(tester.getRect(find.byKey(const ValueKey('movie-summary'))).width, lessThanOrEqualTo(900));
   });
 
+  testWidgets('B-002 ratings and quality chips share one row', (tester) async {
+    final movie = movieItem().copyWith(rating: 8.5, mediaVersions: [_v1080]);
+    await mount(tester, fixture(movie: movie));
+    final ratings = tester.getRect(find.byType(TvRatings));
+    final chips = tester.getRect(find.byKey(const ValueKey('movie-chips')));
+    expect(chips.left, greaterThan(ratings.right));
+    expect(chips.center.dy, closeTo(ratings.center.dy, 1));
+  });
+
   testWidgets('A19 spoiler rule follows Plezy shouldHideSpoiler (movies stay visible)', (tester) async {
     await mount(tester, fixture(movie: movieItem().copyWith(summary: 'Plot')), hideSpoilers: true);
     expect(find.text('Plot'), findsOneWidget);

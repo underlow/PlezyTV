@@ -635,8 +635,9 @@ reduced devices move without animation.
 ### Movie, show and catalog layout (S24 T5)
 
 Detail text columns are limited to 900 design pixels. Movie and catalog genres
-are plain metadata text; movie director and edition follow metadata, then scores,
-technical labels, up to four summary lines and actions. Sections use the shared
+are plain metadata text; movie director and edition follow metadata, then scores
+and technical labels on one row (wrapping only when they exceed the column), up
+to four summary lines and actions. Sections use the shared
 48 pixel gap.
 
 On Show, a series with exactly one season displays that season's episode rail,
