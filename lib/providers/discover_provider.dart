@@ -561,28 +561,10 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }
 
   void _retainFullPassServers(Set<String> serverIds) {
-    final deck = <MediaItem>[];
-    final copies = <String, List<MediaItem>>{};
-    var copiesChanged = false;
-    // Prune every group, including View All entries. A departed representative
-    // must not take its eligible siblings with it or leave stale merge inputs.
-    for (final entry in _continueWatchingCopies.entries) {
-      final kept = entry.value.where((item) => serverIds.contains(item.serverId)).toList();
-      copiesChanged |= kept.length != entry.value.length;
-      if (kept.length > 1) {
-        final key = kept.any((item) => item.globalKey == entry.key) ? entry.key : kept.first.globalKey;
-        copies[key] = kept;
-      }
-    }
-    for (final row in _onDeck) {
-      if (serverIds.contains(row.serverId)) {
-        deck.add(row);
-      } else {
-        final kept = _continueWatchingCopies[row.globalKey]?.where((item) => serverIds.contains(item.serverId));
-        if (kept != null && kept.isNotEmpty) deck.add(kept.first);
-      }
-    }
-    _continueWatchingCopies = copies;
+    final retained = _eligibleContinueWatching(_onDeck, _continueWatchingCopies, serverIds: serverIds);
+    final copiesChanged = !mapEquals(retained.copies, _continueWatchingCopies);
+    final deck = retained.items;
+    _continueWatchingCopies = retained.copies;
     final hubs = _hubs.where((hub) => hub.serverId == null || serverIds.contains(hub.serverId)).toList();
     _loadedOnDeckServerIds = _loadedOnDeckServerIds.intersection(serverIds);
     _loadedHubServerIds = _loadedHubServerIds.intersection(serverIds);
@@ -792,11 +774,12 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       }
 
       if (_commitRevision == expectedCommitRevision) {
+        final retained = _eligibleContinueWatching(previousOnDeck, previousContinueWatchingCopies);
         _replaceOnDeck(
-          _withoutHiddenLibraries(previousOnDeck, _hiddenLibraries.hiddenLibraryKeys),
+          _withoutHiddenLibraries(retained.items, _hiddenLibraries.hiddenLibraryKeys),
           hasMore: previousHasMoreContinueWatching,
         );
-        _continueWatchingCopies = previousContinueWatchingCopies;
+        _continueWatchingCopies = retained.copies;
         _keepContinueWatchingCopies((item) => _isInVisibleLibrary(item, _hiddenLibraries.hiddenLibraryKeys));
         _replaceHubs(_hubsWithoutHiddenLibraries(previousHubs, _hiddenLibraries.hiddenLibraryKeys));
         _loadedOnDeckServerIds = Set<String>.of(previousLoadedOnDeckServerIds);
@@ -1126,12 +1109,17 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     final fetched = await _multiServer.aggregationService.getOnDeckFromAllServers(
       hiddenLibraryKeys: _hiddenLibraries.hiddenLibraryKeys,
     );
+    if (isDisposed) return const [];
+    final retained = _eligibleContinueWatching(fetched.items, fetched.copies);
     // "View All" renders through the same overlay as the row it expands, so
     // it has to reconcile too or the stale patch simply reappears there.
     _recordObservations(observation, fetched.observedItems, fetched.succeededServerIds);
     // Its rows past the preview open the same copy picker as the row's.
-    _continueWatchingCopies = {..._continueWatchingCopies, ...fetched.copies};
-    return fetched.items;
+    _continueWatchingCopies = _eligibleContinueWatching(const [], {
+      ..._continueWatchingCopies,
+      ...retained.copies,
+    }).copies;
+    return retained.items;
   }
 
   /// Refetch a single item (post-edit refresh from a hub row) through its
@@ -1171,9 +1159,43 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }
 
   void _applyOnDeck(List<MediaItem> fetched, {required Map<String, List<MediaItem>> copies}) {
-    final hasMore = fetched.length > continueWatchingPreviewLimit;
-    _continueWatchingCopies = copies;
-    _replaceOnDeck(hasMore ? fetched.take(continueWatchingPreviewLimit).toList() : fetched, hasMore: hasMore);
+    final retained = _eligibleContinueWatching(fetched, copies);
+    final hasMore = retained.items.length > continueWatchingPreviewLimit;
+    _continueWatchingCopies = retained.copies;
+    _replaceOnDeck(
+      hasMore ? retained.items.take(continueWatchingPreviewLimit).toList() : retained.items,
+      hasMore: hasMore,
+    );
+  }
+
+  /// Check membership synchronously at publication, after all fetch/dedup
+  /// awaits. Keep eligible siblings even when their representative departed.
+  /// An empty eligible set preserves upstream's outage behavior.
+  ContinueWatchingRows _eligibleContinueWatching(
+    List<MediaItem> rows,
+    Map<String, List<MediaItem>> copies, {
+    Set<String>? serverIds,
+  }) {
+    final ids = serverIds ?? _multiServer.serverManager.visibleOnlineClients.keys.toSet();
+    if (ids.isEmpty) return (items: rows, copies: copies);
+    final retainedCopies = <String, List<MediaItem>>{};
+    final replacements = <String, MediaItem>{};
+    for (final entry in copies.entries) {
+      final kept = entry.value.where((item) => ids.contains(item.serverId)).toList();
+      if (kept.isEmpty) continue;
+      final representative = kept.firstWhere((item) => item.globalKey == entry.key, orElse: () => kept.first);
+      replacements[entry.key] = representative;
+      if (kept.length > 1) {
+        retainedCopies[representative.globalKey] = kept.length == entry.value.length ? entry.value : kept;
+      }
+    }
+    return (
+      items: [
+        for (final row in rows)
+          if (ids.contains(row.serverId)) row else ?replacements[row.globalKey],
+      ],
+      copies: retainedCopies,
+    );
   }
 
   /// Drop copies failing [keep] from every row's copy group; a group left

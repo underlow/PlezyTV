@@ -194,6 +194,8 @@ class _HomeServer extends _FakeClient {
   void close() {}
   Future<void>? gate;
   bool fail = false;
+  List<MediaItem>? deckItems;
+  Completer<void>? deckStarted;
   int deckRequests = 0, hubRequests = 0, libraryRequests = 0;
 
   @override
@@ -213,9 +215,10 @@ class _HomeServer extends _FakeClient {
   @override
   Future<List<MediaItem>> fetchContinueWatching({int? count = 20, Set<String> excludedLibraryIds = const {}}) async {
     deckRequests++;
+    if (!(deckStarted?.isCompleted ?? true)) deckStarted!.complete();
     await gate;
     if (fail) throw Exception('offline');
-    return [_item(serverIdValue, serverId: serverIdValue)];
+    return deckItems ?? [_item(serverIdValue, serverId: serverIdValue)];
   }
 
   @override
@@ -940,6 +943,62 @@ void main() {
       }
     }
 
+    for (final mode in ['absorbed', 'representative', 'empty membership']) {
+      test('gated View All after full refresh preserves eligible copies: $mode', () async {
+        provider.dispose();
+        multiServer.dispose();
+        final aServer = _HomeServer('server_1')..deckItems = [a];
+        final bRow = mode == 'representative' ? b.copyWith(lastViewedAt: 3) : b;
+        final bOnly = _item('b-only', serverId: 'server_2');
+        final bServer = _HomeServer('server_2')..deckItems = [bRow, bOnly];
+        final c = a.copyWith(id: 'c', serverId: 'server_3');
+        final cServer = _HomeServer('server_3')..deckItems = [c];
+        manager = MultiServerManager()
+          ..debugRegisterClientForTesting(aServer)
+          ..debugRegisterClientForTesting(bServer);
+        addTearDown(manager.dispose);
+        multiServer = MultiServerProvider(manager, DataAggregationService(manager));
+        provider = DiscoverProvider(
+          multiServer,
+          hiddenLibraries,
+          libraries,
+          profileId: 'profile-a',
+          isProfileBinding: () => false,
+          syncSystemShelf: (_, _) async {},
+        );
+        await provider.load();
+        expect(reachableKeys(), {a.globalKey, b.globalKey, bOnly.globalKey});
+        final gate = Completer<void>();
+        aServer.gate = gate.future;
+        aServer.deckStarted = Completer<void>();
+        final viewAll = provider.loadAllContinueWatching();
+        await aServer.deckStarted!.future;
+        await pumpEventQueue(); // B answers while A holds View All open.
+        aServer.gate = null;
+        manager.debugRegisterClientForTesting(cServer);
+        cServer.fail = true;
+        manager.setVisibleServerIds(mode == 'empty membership' ? {} : {'server_1', 'server_3'});
+        await provider.refreshNow();
+        expect(
+          reachableKeys(),
+          mode == 'empty membership' ? {a.globalKey, b.globalKey, bOnly.globalKey} : {a.globalKey},
+        );
+        gate.complete();
+        final returned = await viewAll;
+        final returnedKeys = returned.map((row) => row.globalKey).toSet();
+        if (mode == 'empty membership') {
+          expect(returnedKeys, {a.globalKey, bOnly.globalKey});
+          expect(reachableKeys(), {a.globalKey, b.globalKey, bOnly.globalKey});
+        } else {
+          expect(returnedKeys, {a.globalKey});
+          expect(reachableKeys(), {a.globalKey});
+          cServer.fail = false;
+          await provider.syncToOnlineServers({'server_1', 'server_3'});
+          expect(reachableKeys(), {a.globalKey, c.globalKey});
+        }
+      });
+    }
+
     test('single eligible server retains its copy when departed representative is pruned and fetch fails', () {
       fakeAsync((clock) {
         loadGroup(clock, showB: true);
@@ -1144,11 +1203,14 @@ void main() {
     // Futures and stream listeners must belong to the widget test's fake clock.
     disposeFixture();
     await initializeFixture();
-    aggregation.onDeckResult = () => [
-      _item('episode', grandparentId: 'show'),
-      _item('episode', grandparentId: 'show', serverId: 'server_2'),
-      _item('survivor'),
-    ];
+    aggregation.onDeckResult = () {
+      manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
+      return [
+        _item('episode', grandparentId: 'show'),
+        _item('episode', grandparentId: 'show', serverId: 'server_2'),
+        _item('survivor'),
+      ];
+    };
     aggregation.hubsResult = () => [
       _hub(
         'hub',
@@ -1159,6 +1221,7 @@ void main() {
       ),
     ];
     await provider.load();
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'), online: false);
     final service = LibraryEventService(manager)..sync();
     addTearDown(service.dispose);
     client.channel.emit(
@@ -1273,6 +1336,7 @@ void main() {
   });
 
   test('a watched event evicts only the emitting server\'s copy of a colliding id', () async {
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
     aggregation.onDeckResult = () => [_item('42', serverId: 'server_1'), _item('42', serverId: 'server_2')];
     await provider.load();
 
@@ -1654,6 +1718,7 @@ void main() {
     aggregation.onDeckResult = () => [_item('a')];
     aggregation.hubsResult = () => [_hub('hub-1')];
     await provider.load();
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
     final generationBefore = provider.loadGeneration;
 
     aggregation.onDeckResult = () => [_item('b', serverId: 'server_2')];
@@ -1725,6 +1790,7 @@ void main() {
     aggregation.onDeckResult = () => [_item('a')];
     aggregation.hubsResult = () => [_hub('hub-1')];
     await provider.load();
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
 
     aggregation.onDeckResult = () => [_item('b', serverId: 'server_2')];
     aggregation.hubsResult = () => const [];
@@ -1748,6 +1814,7 @@ void main() {
     aggregation.onDeckResult = () => [_item('a')];
     aggregation.hubsResult = () => [_hub('hub-1')];
     await provider.load();
+    manager.debugRegisterClientForTesting(_FakeClient(serverIdValue: 'server_2'));
     final callsBefore = aggregation.onDeckCalls;
 
     aggregation.onDeckResult = () => throw Exception('flaky connect');
