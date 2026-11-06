@@ -577,12 +577,14 @@ MainScreenFocusScope.foregroundLeftOf(context)`, вне оболочки — 200
 название → метаданные 12, метаданные → оценки 12, оценки → описание 16,
 описание → кнопки 32.
 
-`space.cardGap` = 28. Постер, квадрат и персона растут в фокусе в 1.05 раза,
+`space.cardGap` = 40. Постер (233×350) вычисляется в токенах из шести колонок сетки, отступа и `letters.x`, поэтому плотность меняется одним числом, а ряды и сетка Browse идут с одним шагом. Эпизод — 432×243. Постер, квадрат и персона растут в фокусе в 1.05 раза,
 эпизод — в 1.03 раза, от нижнего края вверх и в стороны. Кольцо толщиной 4
 с отступом 3 учитывается в границах отрисовки: оно не заходит на соседнюю
 карточку, заголовок или неподвижные подписи. Статусы остаются в углах и
 у нижнего края карточки. Компактные шапки деталей должны иметь непрозрачный
 фон `bg.base` на всю высоту (переход экранов выполняется в S24 T3).
+
+Фон Home и библиотеки рисуется от края экрана, под свёрнутым меню (`TvShellBackdrop`), а контент обрезается по краю оболочки. Текст hero отстоит от заголовка ряда на `space.xl` = 32.
 
 Hero главной и Recommended (S27) получает высоту от доступной области:
 `tvHeroHeight` вычитает верхнее поле, полный слот постерного ряда и нижний
@@ -668,7 +670,7 @@ reveals its whole horizontal row, including captions.
 
 Watchlist shows the item count beside its title and `Sort: <field>` on the sort
 button. Library (S27) starts with underlined tabs, without a separate title/count.
-Only Browse has a bar: filter summary, grouping when there is a choice, “by”,
+Only Browse has a bar, on the tab line and right-aligned to the alphabet's right edge: filter summary, grouping when there is a choice, “by”,
 sort, item count, Clear for active filters, and more. Grouping has its own right
 panel; Sort reset also restores grouping. Clear immediately resets all filters.
 The filter panel starts with All, Unwatched and Unmatched when the server exposes
@@ -676,12 +678,12 @@ them, without duplicating those fields below. All removes only the quick filters
 other filters remain, and other booleans retain Yes/No. Saved negative quick
 filters contribute to the count and can be removed with All or Clear. Filters
 are saved per library across restarts, library switches and detail navigation.
-Up from the grid visits the Browse bar, then tabs; Down reverses that path, and
-Left from the first bar item opens the menu. Recommended, Collections and
-Playlists have no Browse bar or library more action. Browse's grid starts around
-200 design pixels. Poster grids retain 228 pixel cards with
-32 pixel gaps; whole columns fit before `letters.x - cardGap` (six posters,
-or three 400 pixel episode cards). The library alphabet starts at x 1776.
+Up from the grid visits the Browse bar; Left from its first item moves to the
+selected tab, and Down from the bar or tabs returns to the grid (to the bar while
+the grid is loading). Left from the first tab opens the menu. Recommended, Collections and
+Playlists have no Browse bar or library more action. Browse's grid starts at y 162: 56 below the tab line, of which the focused card
+takes 24. Whole columns fit before `letters.x - cardGap` (six posters, or three
+episode cards). The library alphabet starts at x 1776.
 
 The shell wraps upstream settings in `TvSettingsSection`: its group edges
 start at x 200, its width is capped at 1200 and its app bar uses `bg.base`,

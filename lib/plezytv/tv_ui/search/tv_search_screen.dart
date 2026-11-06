@@ -47,6 +47,7 @@ import '../shell/tv_section_shell.dart';
 import '../tv_settings.dart';
 import '../tv_strings.dart';
 import '../tv_theme.dart';
+import '../tv_tinted_background.dart';
 import '../tv_tokens.dart';
 import 'tv_search_controller.dart';
 import 'tv_search_history.dart';
@@ -589,8 +590,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
     final history = _history ?? const <String>[];
     final showRecent = controller.state == TvSearchState.idle && history.isNotEmpty;
     return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const NeverScrollableScrollPhysics(),
+      builder: (context, constraints) => _ResultsScroll(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1071,9 +1071,8 @@ class TvSearchScreenState extends State<TvSearchScreen>
           child: kind != null
               ? LayoutBuilder(builder: (context, constraints) => _grid(kind, multiServer, constraints.maxWidth))
               : LayoutBuilder(
-                  builder: (context, constraints) => SingleChildScrollView(
+                  builder: (context, constraints) => _ResultsScroll(
                     controller: _vertical,
-                    physics: const NeverScrollableScrollPhysics(),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1111,8 +1110,7 @@ class TvSearchScreenState extends State<TvSearchScreen>
         return _discoverBlock();
       case TvSearchState.loading:
         if (!controller.showSkeleton) return const SizedBox.shrink();
-        return SingleChildScrollView(
-          physics: const NeverScrollableScrollPhysics(),
+        return _ResultsScroll(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1224,6 +1222,27 @@ class TvSearchScreenState extends State<TvSearchScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Results scroll under the header, while rails run to the screen edge and a
+/// focused first card keeps its ring.
+class _ResultsScroll extends StatelessWidget {
+  const _ResultsScroll({this.controller, required this.child});
+  final ScrollController? controller;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    final px = TvTheme.of(context).px;
+    return ClipRect(
+      clipper: TvBleedClip(left: px(TvTokens.space.cardFocusReserve), right: px(TvTokens.space.safeX)),
+      child: SingleChildScrollView(
+        controller: controller,
+        clipBehavior: Clip.none,
+        physics: const NeverScrollableScrollPhysics(),
+        child: child,
       ),
     );
   }

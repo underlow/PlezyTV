@@ -253,7 +253,8 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     }
     if (key == LogicalKeyboardKey.arrowDown && _tabs.hasFocus) {
       if (down) {
-        if (tab == LibraryTabType.browse) {
+        // While the grid is loading there is nothing below; the bar is the next stop.
+        if (tab == LibraryTabType.browse && !_ready && c.grouping != 'folders' && _terminalState == null) {
           _focusBar();
         } else {
           _down();
@@ -520,7 +521,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       content = !_skeleton
           ? const SizedBox.expand()
           : GridView.count(
-              crossAxisCount: 6,
+              crossAxisCount: TvTokens.size.posterGrid.columns,
               mainAxisSpacing: px(TvTokens.space.cardGap),
               crossAxisSpacing: px(TvTokens.space.cardGap),
               childAspectRatio:
@@ -543,33 +544,47 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FocusScope(
-            node: _tabs,
-            child: TvTabs(
-              key: _tabBar,
-              tabs: [for (final type in tabs) TvTab(label: _tabLabel(type))],
-              selectedIndex: tabs.indexOf(tab),
-              onSelected: (index) => unawaited(_selectTab(index)),
+          // Ends at the alphabet's right edge, so the bar stays with the grid on wide screens.
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: px(TvTokens.size.letters.x + TvTokens.size.letters.w - TvTokens.space.contentLeft),
+            ),
+            child: Row(
+              children: [
+                FocusScope(
+                  node: _tabs,
+                  child: TvTabs(
+                    key: _tabBar,
+                    tabs: [for (final type in tabs) TvTab(label: _tabLabel(type))],
+                    selectedIndex: tabs.indexOf(tab),
+                    onSelected: (index) => unawaited(_selectTab(index)),
+                  ),
+                ),
+                if (tab == LibraryTabType.browse) ...[
+                  SizedBox(width: px(TvTokens.space.xl)),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: FocusScope(
+                        node: _bar,
+                        child: TvLibraryBrowseBar(
+                          key: _browseBar,
+                          controller: c,
+                          onSort: widget.onSort,
+                          onFilters: widget.onFilters,
+                          onMore: widget.onMore,
+                          onDown: _down,
+                          onLeft: _focusTabs,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (tab == LibraryTabType.browse) ...[
-            SizedBox(height: px(16)),
-            FocusScope(
-              node: _bar,
-              child: TvLibraryBrowseBar(
-                key: _browseBar,
-                controller: c,
-                onSort: widget.onSort,
-                onFilters: widget.onFilters,
-                onMore: widget.onMore,
-                onUp: _focusTabs,
-                onDown: _down,
-                onLeft: _sidebar,
-              ),
-            ),
-            SizedBox(height: px(24)),
-          ] else
-            SizedBox(height: px(24)),
+          // The focused card grows 24 upward; the rest stays clear of the header.
+          SizedBox(height: px(56)),
           Expanded(child: content),
         ],
       ),
@@ -582,20 +597,19 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
           ? ValueListenableBuilder<MediaItem?>(
               valueListenable: _hero,
               child: page,
-              builder: (context, item, child) => Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (item == null)
-                    const TvPlainBackground()
-                  else
-                    TvTintedBackground(
-                      source: TvArtworkSource(item: item, client: c.client),
-                    ),
-                  child!,
-                ],
+              builder: (context, item, child) => TvShellBackdrop(
+                background: item == null
+                    ? const TvPlainBackground()
+                    : TvTintedBackground(
+                        source: TvArtworkSource(item: item, client: c.client),
+                      ),
+                child: child!,
               ),
             )
-          : ColoredBox(color: TvTokens.color.bg.base, child: page),
+          : TvShellBackdrop(
+              background: ColoredBox(color: TvTokens.color.bg.base),
+              child: page,
+            ),
     );
   }
 

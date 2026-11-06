@@ -407,11 +407,11 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
       return !_skeleton
           ? const SizedBox.expand()
           : GridView.count(
-              crossAxisCount: 6,
+              crossAxisCount: TvTokens.size.posterGrid.columns,
               physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: TvTheme.of(context).px(24),
-              crossAxisSpacing: TvTheme.of(context).px(24),
-              childAspectRatio: 228 / 414,
+              mainAxisSpacing: TvTheme.of(context).px(TvTokens.space.cardGap),
+              crossAxisSpacing: TvTheme.of(context).px(TvTokens.space.cardGap),
+              childAspectRatio: TvTokens.size.posterGrid.w / (TvTokens.size.posterGrid.h + 72),
               children: List.generate(12, (_) => const TvPosterSkeleton(size: TvPosterSize.grid)),
             );
     }
@@ -514,7 +514,7 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
     return TvPagedGrid<Object>(
       key: _grid,
       source: _source,
-      columns: 6,
+      columns: TvTokens.size.posterGrid.columns,
       cellWidth: size.width,
       cellHeight: size.height + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight,
       gap: TvTokens.space.cardGap.toDouble(),

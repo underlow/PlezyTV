@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_cards.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_horizontal_row.dart';
 import '../../test_helpers/media_items.dart';
@@ -28,8 +29,8 @@ void main() {
               key: row,
               title: 'Row',
               itemCount: 100,
-              cardWidth: 216,
-              cardHeight: 398,
+              cardWidth: TvTokens.size.poster.w.toDouble(),
+              cardHeight: TvTokens.size.poster.h + 74.0,
               itemKey: keyed ? (i) => '$i' : null,
               cardBuilder: (_, i, node) {
                 nodes[i] = node;
@@ -63,7 +64,7 @@ void main() {
   }
 
   for (final reduced in [false, true]) {
-    for (final width in [216.0, 400.0, 280.0]) {
+    for (final width in [TvTokens.size.poster.w.toDouble(), TvTokens.size.episode.w.toDouble(), 280.0]) {
       testWidgets('row restores card and offset after removal (width=$width, reduced=$reduced)', (tester) async {
         final memory = TvHorizontalRowMemory();
         final shown = ValueNotifier(true);
@@ -125,7 +126,7 @@ void main() {
           await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
           await tester.pumpAndSettle();
           expect(nodes[i]!.hasFocus, isTrue);
-          expect(scroll.offset - previousOffset, inInclusiveRange(0, width + 28));
+          expect(scroll.offset - previousOffset, inInclusiveRange(0, width + TvTokens.space.cardGap));
           expect(tester.getBottomRight(find.byKey(ValueKey('card$i'))).dx, lessThanOrEqualTo(1920));
           previousOffset = scroll.offset;
         }
@@ -134,7 +135,7 @@ void main() {
           await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
           await tester.pumpAndSettle();
           expect(nodes[i]!.hasFocus, isTrue);
-          expect(previousOffset - scroll.offset, inInclusiveRange(0, width + 28));
+          expect(previousOffset - scroll.offset, inInclusiveRange(0, width + TvTokens.space.cardGap));
           previousOffset = scroll.offset;
         }
         expect(scroll.offset, 0);
@@ -165,8 +166,8 @@ void main() {
                 itemCount: ids.length,
                 itemKey: (i) => ids[i],
                 onItemFocused: (i) => focused.add(ids[i]),
-                cardWidth: 216,
-                cardHeight: 398,
+                cardWidth: TvTokens.size.poster.w.toDouble(),
+                cardHeight: TvTokens.size.poster.h + 74.0,
                 cardBuilder: (_, i, node) {
                   nodes[ids[i]] = node;
                   return TvPoster(

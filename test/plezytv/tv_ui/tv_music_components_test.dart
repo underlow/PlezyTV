@@ -24,15 +24,15 @@ void main() {
       );
       await pumpTvWidget(tester, Center(child: TvMusicCard(item: item, autofocus: true)));
       await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(OptimizedMediaImage)), const Size(216, 216));
+      expect(tester.getSize(find.byType(OptimizedMediaImage)), Size.square(TvTokens.size.poster.w.toDouble()));
       final focus = tester.widget<TvFocusable>(find.byType(TvFocusable));
-      expect(focus.radius, kind == MediaKind.artist ? 108 : null);
+      expect(focus.radius, kind == MediaKind.artist ? TvTokens.size.poster.w / 2 : null);
       expect(focus.scaleAlignment, Alignment.bottomCenter);
       expect(focus.focusedScale, TvTokens.focus.cardScale);
       final clip = tester.widget<ClipRRect>(find.byType(ClipRRect).first);
       expect(
         clip.borderRadius,
-        BorderRadius.circular(kind == MediaKind.artist ? 108 : TvTokens.radius.card.toDouble()),
+        BorderRadius.circular(kind == MediaKind.artist ? TvTokens.size.poster.w / 2 : TvTokens.radius.card.toDouble()),
       );
       expect(
         find.text(switch (kind) {
@@ -44,9 +44,12 @@ void main() {
       );
       final musicHeight = tester.getSize(find.byType(TvMusicCard)).height;
       await pumpTvWidget(tester, Center(child: TvAllCard(square: true, onSelect: () {})));
-      expect(tester.getSize(find.byType(TvAllCard)), Size(216, musicHeight));
+      expect(tester.getSize(find.byType(TvAllCard)), Size(TvTokens.size.poster.w.toDouble(), musicHeight));
       await pumpTvWidget(tester, Center(child: TvPoster(item: item)));
-      expect(tester.getSize(find.byType(TvPoster)).height - musicHeight, 108);
+      expect(
+        tester.getSize(find.byType(TvPoster)).height - musicHeight,
+        TvTokens.size.poster.h - TvTokens.size.poster.w,
+      );
     }
   });
 
@@ -112,7 +115,7 @@ void main() {
         ),
       );
       final visual = tester.widget<TvFocusVisual>(find.byType(TvFocusVisual));
-      expect(visual.radius, 108);
+      expect(visual.radius, TvTokens.size.poster.w / 2);
       expect(visual.alignment, Alignment.bottomCenter);
       expect(tester.widget<OptimizedMediaImage>(find.byType(OptimizedMediaImage)).imagePath, path);
       expect(find.byWidgetPredicate((w) => w is ColoredBox && w.color == TvTokens.color.surface.level2), findsWidgets);

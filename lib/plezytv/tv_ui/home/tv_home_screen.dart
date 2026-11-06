@@ -750,17 +750,13 @@ class TvHomeScreenState extends State<TvHomeScreen>
         child: ValueListenableBuilder<MediaItem?>(
           valueListenable: _hero,
           child: content,
-          builder: (context, item, child) => Stack(
-            fit: StackFit.expand,
-            children: [
-              if (item == null)
-                const TvPlainBackground()
-              else
-                TvTintedBackground(
-                  source: TvArtworkSource(item: item, client: context.getMediaClientForItemOrNull(item)),
-                ),
-              child!,
-            ],
+          builder: (context, item, child) => TvShellBackdrop(
+            background: item == null
+                ? const TvPlainBackground()
+                : TvTintedBackground(
+                    source: TvArtworkSource(item: item, client: context.getMediaClientForItemOrNull(item)),
+                  ),
+            child: child!,
           ),
         ),
       ),

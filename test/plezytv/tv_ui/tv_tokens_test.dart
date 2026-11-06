@@ -15,7 +15,7 @@ void main() {
     final source = jsonDecode(File('docs/design/tokens.json').readAsStringSync()) as Map<String, dynamic>;
     source.remove(r'$comment');
     // S24 specification section 3 supersedes these original design values.
-    (source['space'] as Map<String, dynamic>).addAll({'cardGap': 28, 'sectionGap': 48, 'cardFocusReserve': 24});
+    (source['space'] as Map<String, dynamic>).addAll({'cardGap': 40, 'sectionGap': 48, 'cardFocusReserve': 24});
     (source['focus'] as Map<String, dynamic>).addAll({'cardScale': 1.05, 'episodeScale': 1.03});
     (source['size']['hero'] as Map<String, dynamic>).addAll({'h': 340, 'logoMaxH': 120});
     // S27 removes compact hero sizing; retain parity for every remaining token.
@@ -25,6 +25,11 @@ void main() {
     // 2026-10-28: content starts at the collapsed sidebar edge, so the icons
     // have equal space on both sides.
     (source['space'] as Map<String, dynamic>).addAll({'contentLeft': 136});
+    // 2026-11-06: larger cards and gaps; the poster is derived from six grid columns,
+    // and rails share its column pitch.
+    (source['size']['poster'] as Map<String, dynamic>).addAll({'w': 233, 'h': 350, 'perRowVisible': 6});
+    (source['size']['posterGrid'] as Map<String, dynamic>).addAll({'w': 233, 'h': 350, 'gap': 40});
+    (source['size']['episode'] as Map<String, dynamic>).addAll({'w': 432, 'h': 243, 'perRowVisible': 3});
     const pl = TvTokens.player;
     final actual = {
       "color": {

@@ -1,3 +1,4 @@
+import 'package:plezy/plezytv/tv_ui/tv_theme.dart';
 import 'package:plezy/models/download_models.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_backend.dart';
@@ -383,9 +384,9 @@ void main() {
     }
     expect(rail(1), findsNothing);
     expect(hero(tester).item!.id, 'rail190');
-    // R5/R6: the row stays at y=590 at every row index,
+    // R5/R6: the row stays at the fixed hero-derived y at every row index,
     // including a far-away last row (independent of the offset calculation).
-    expect(tester.getTopLeft(rail(19)).dy, 590);
+    expect(tester.getTopLeft(rail(19)).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
     expect(find.byType(TvHorizontalRow, skipOffstage: false).evaluate().length, lessThanOrEqualTo(6));
     for (var i = 19; i > 1; i--) {
       await key(tester, LogicalKeyboardKey.arrowUp);
@@ -394,7 +395,7 @@ void main() {
     expect(restored.focusInside.value, isTrue);
     expect(restored.focusedIndex, 2);
     expect(hero(tester).item!.id, 'rail12');
-    expect(tester.getTopLeft(rail(1)).dy, 590);
+    expect(tester.getTopLeft(rail(1)).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
     menu.requestFocus();
     await tester.pumpAndSettle();
     expect(menu.hasFocus, isTrue);
@@ -490,8 +491,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(TvMusicCard), findsNWidgets(2));
     final rail = tester.widget<TvHorizontalRow>(find.byType(TvHorizontalRow, skipOffstage: false));
-    expect(rail.cardWidth, 216);
-    expect(rail.cardHeight, 216 + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight);
+    expect(rail.cardWidth, TvTokens.size.poster.w);
+    expect(
+      rail.cardHeight,
+      TvTokens.size.poster.w + 20 + TvTokens.type.body.lineHeight + TvTokens.type.caption.lineHeight,
+    );
     expect(hero(tester).item, tracks.first);
     await key(tester, LogicalKeyboardKey.arrowRight);
     expect(hero(tester).item, tracks.last);
@@ -586,11 +590,11 @@ void main() {
     }
     expect(hero(tester).item!.id, 'movies4');
     await key(tester, LogicalKeyboardKey.arrowDown);
-    expect(tester.getTopLeft(rowFinder(2)).dy, 590);
+    expect(tester.getTopLeft(rowFinder(2)).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(hero(tester).item!.id, 'movies4');
     expect(row(tester, 1).focusedIndex, 4);
-    expect(tester.getTopLeft(rowFinder(1)).dy, 590);
+    expect(tester.getTopLeft(rowFinder(1)).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
   });
 
   testWidgets('R1: hide-spoilers preference updates the hero', (tester) async {
@@ -678,8 +682,8 @@ void main() {
     final image = tester.widget<OptimizedMediaImage>(
       find.descendant(of: find.byType(TvPoster).first, matching: find.byType(OptimizedMediaImage)),
     );
-    expect(image.width, 216);
-    expect(image.height, 324);
+    expect(image.width, TvTokens.size.poster.w);
+    expect(image.height, TvTokens.size.poster.h);
   });
 
   testWidgets('R10: row changes preserves rails/cards and row focus geometry', (tester) async {
@@ -709,7 +713,7 @@ void main() {
     for (var frame = 0; frame < 24; frame++) {
       await tester.pump(const Duration(milliseconds: 16));
       if (frame == 0) {
-        expect(tester.getSize(find.byType(TvHero)).height, 536);
+        expect(tester.getSize(find.byType(TvHero)).height, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54));
       }
       expect(railBuilds, 0, reason: 'hero animation frame $frame');
       expect(cardBuilds, 0, reason: 'hero animation frame $frame');
@@ -723,10 +727,10 @@ void main() {
     expect(hero(tester).item!.id, 'shows1');
     expect(row(tester, 2).focusInside.value, isTrue);
     expect(row(tester, 2).focusedIndex, 1);
-    expect(tester.getTopLeft(rowFinder(2)).dy, 590);
+    expect(tester.getTopLeft(rowFinder(2)).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
     await key(tester, LogicalKeyboardKey.arrowUp);
     expect(row(tester, 1).focusInside.value, isTrue);
-    expect(tester.getTopLeft(rowFinder(1)).dy, 590);
+    expect(tester.getTopLeft(rowFinder(1)).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
   });
 
   testWidgets('A14: Continue Watching OK respects play setting', (tester) async {
@@ -1349,7 +1353,7 @@ void main() {
         navigator.pop();
         await tester.pumpAndSettle();
         final afterIndex = scenario.hubIndex + (scenario.hadContinue ? 0 : 1);
-        final expectedHeight = 590.0;
+        final expectedHeight = tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54;
         expect(row(tester, afterIndex).focusInside.value, isTrue);
         expect(hero(tester).item!.globalKey, target);
         expect(tester.getTopLeft(rowFinder(afterIndex)).dy, expectedHeight);

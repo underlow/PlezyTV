@@ -52,7 +52,7 @@ void main() {
     await tester.pumpAndSettle();
     final matrix = artworkTransform(tester);
     expect(matrix.entry(0, 0), closeTo(1.05, .00001));
-    expect(matrix.entry(1, 3) + 324 * matrix.entry(1, 1), closeTo(324, .00001));
+    expect(matrix.entry(1, 3) + TvTokens.size.poster.h * matrix.entry(1, 1), closeTo(TvTokens.size.poster.h, .00001));
     expect(tester.getRect(find.text('Poster')), titleRect);
     expect(tester.getRect(find.text('2020')), captionRect);
     expect(tester.getRect(find.byKey(const ValueKey('neighbor'))), neighborRect);
@@ -156,7 +156,7 @@ void main() {
     expect(find.text('S1 E3 · Title'), findsOneWidget);
     expect(find.text('${formatDurationTextual(1800000)} left'), findsOneWidget);
     final fill = find.byWidgetPredicate((w) => w is ColoredBox && w.color == TvTokens.color.status.progressFill);
-    expect(tester.getSize(fill), const Size(160, 6));
+    expect(tester.getSize(fill), Size(TvTokens.size.episode.w * 0.4, 6));
     final image = tester.getRect(find.byType(OptimizedMediaImage));
     expect(tester.getRect(fill).bottom, image.bottom);
     expect(artworkTransform(tester).entry(0, 0), closeTo(1.03, .00001));

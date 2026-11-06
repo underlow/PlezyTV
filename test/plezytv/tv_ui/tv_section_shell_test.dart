@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:plezy/plezytv/tv_ui/tv_theme.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -471,7 +472,7 @@ void main() {
         final hero = tester.widget<TvHero>(find.byType(TvHero));
         expect(restored.focusInside.value, isTrue);
         expect(hero.item!.globalKey, target);
-        expect(tester.getTopLeft(restoredRail).dy, 590);
+        expect(tester.getTopLeft(restoredRail).dy, tvHeroHeight(const TvThemeData(1), 1080, safeY: 54) + 54);
       });
     }
   }

@@ -442,8 +442,8 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
       title: TvPostPlayStrings.season(next.parentIndex),
       counter: TvPostPlayStrings.moreEpisodes(episodes.length),
       itemCount: episodes.length,
-      cardWidth: 400,
-      cardHeight: 315,
+      cardWidth: TvTokens.size.episode.w.toDouble(),
+      cardHeight: TvTokens.size.episode.h + 90.0,
       itemKey: (i) => episodes[i].globalKey,
       cardBuilder: (context, i, node) =>
           TvEpisode(item: episodes[i], client: _c.client, focusNode: node, onSelect: () => _launch(episodes[i])),
@@ -582,8 +582,8 @@ class _TvPostPlayScreenState extends State<TvPostPlayScreen> {
       contentLeft: 0,
       title: TvPostPlayStrings.similar,
       itemCount: hub.items.length,
-      cardWidth: 216,
-      cardHeight: 414,
+      cardWidth: TvTokens.size.poster.w.toDouble(),
+      cardHeight: TvTokens.size.poster.h + 90.0,
       itemKey: (i) => hub.items[i].globalKey,
       cardBuilder: (context, i, node) => TvPoster(
         item: hub.items[i],

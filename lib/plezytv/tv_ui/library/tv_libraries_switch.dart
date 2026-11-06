@@ -207,7 +207,9 @@ class TvLibrariesSwitchState extends State<TvLibrariesSwitch>
     }
     if (_controller case final controller?) return TvLibraryScreen(key: _child, controller: controller);
     if (isTvVideoLibrary(_library!)) return const SizedBox.expand();
-    return LibrariesScreen(key: _child, onLibrarySelected: loadLibraryByKey);
+    return ClipRect(
+      child: LibrariesScreen(key: _child, onLibrarySelected: loadLibraryByKey),
+    );
   }
 
   @override

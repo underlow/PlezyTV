@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:drift/native.dart';
+import 'package:plezy/plezytv/tv_ui/tv_tokens.dart';
 import 'package:plezy/database/app_database.dart';
 import 'package:plezy/services/plex_api_cache.dart';
 import 'package:http/http.dart' as http;
@@ -73,7 +74,7 @@ void main() {
     );
     expect(find.text('Description'), findsOneWidget);
     expect(find.byType(TvRatings), findsOneWidget);
-    expect(tester.getBottomLeft(find.text('Description')).dy, 536);
+    expect(tester.getBottomLeft(find.text('Description')).dy, 536 - TvTokens.space.xl);
     expect(tester.takeException(), isNull);
   });
 
@@ -142,7 +143,10 @@ void main() {
     expect(find.text('Full summary'), findsOneWidget);
     expect(find.textContaining('Drama, Crime, Comedy'), findsOneWidget);
     expect(find.textContaining('Action'), findsNothing);
-    expect(tester.getRect(find.text('Full summary')).bottom, tester.getRect(find.byType(TvHero)).bottom);
+    expect(
+      tester.getRect(find.text('Full summary')).bottom,
+      tester.getRect(find.byType(TvHero)).bottom - TvTokens.space.xl,
+    );
   });
 
   testWidgets('S24 loading ratings reserve their final row height', (tester) async {
@@ -392,7 +396,7 @@ void main() {
       tester.getRect(find.byType(OptimizedMediaImage)).bottom,
       tester.getRect(find.byKey(const ValueKey('hero-title-slot'))).bottom,
     );
-    expect(tester.getBottomLeft(find.text('Summary')).dy, 536);
+    expect(tester.getBottomLeft(find.text('Summary')).dy, 536 - TvTokens.space.xl);
     expect(tester.hasRunningAnimations, isFalse);
   });
 
@@ -569,7 +573,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       final surface = find.descendant(of: find.byType(TvFocusable), matching: find.byType(Container)).last;
-      expect(tester.getSize(surface), episode ? const Size(400, 225) : const Size(216, 324));
+      expect(
+        tester.getSize(surface),
+        episode
+            ? Size(TvTokens.size.episode.w.toDouble(), TvTokens.size.episode.h.toDouble())
+            : Size(TvTokens.size.poster.w.toDouble(), TvTokens.size.poster.h.toDouble()),
+      );
       expect(find.text('All'), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();

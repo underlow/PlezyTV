@@ -16,7 +16,6 @@ class TvLibraryBrowseBar extends StatefulWidget {
   const TvLibraryBrowseBar({
     super.key,
     required this.controller,
-    required this.onUp,
     required this.onDown,
     required this.onLeft,
     this.onSort,
@@ -25,7 +24,7 @@ class TvLibraryBrowseBar extends StatefulWidget {
   });
 
   final TvLibraryController controller;
-  final VoidCallback onUp, onDown, onLeft;
+  final VoidCallback onDown, onLeft;
   final ValueChanged<FocusNode>? onSort, onFilters, onMore;
 
   @override
@@ -65,7 +64,8 @@ class TvLibraryBrowseBarState extends State<TvLibraryBrowseBar> {
         minWidth: 0,
         disabled: disabled,
         onSelect: select,
-        onNavigateUp: widget.onUp,
+        // The bar shares the top line with the tabs: nothing lies above it.
+        onNavigateUp: () {},
         onNavigateDown: widget.onDown,
         onNavigateLeft: index == 0 ? widget.onLeft : nodes[index - 1].requestFocus,
         onNavigateRight: index == nodes.length - 1 ? () {} : nodes[index + 1].requestFocus,
@@ -74,6 +74,7 @@ class TvLibraryBrowseBarState extends State<TvLibraryBrowseBar> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.none,
       child: Row(
         children: [
           button(filterLabel, _filters, () {

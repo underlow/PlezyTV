@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../navigation/main_screen_scope.dart';
 import '../../services/device_performance.dart';
 import 'tv_theme.dart';
 import 'tv_tokens.dart';
@@ -12,6 +13,37 @@ typedef TvBackgroundTimer = Timer Function(Duration duration, void Function() ca
 
 Color tvBackgroundTop(Color? tint) =>
     Color.lerp(TvTokens.color.bg.base, tint ?? TvTokens.color.bg.base, TvTokens.color.bg.tintStrength)!;
+
+/// Clips vertically at the box, but lets content bleed past its sides.
+class TvBleedClip extends CustomClipper<Rect> {
+  const TvBleedClip({this.left = 0, this.right = 0});
+  final double left, right;
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(-left, 0, size.width + right, size.height);
+  @override
+  bool shouldReclip(TvBleedClip oldClipper) => oldClipper.left != left || oldClipper.right != right;
+}
+
+/// Paints [background] from the screen edge, under the collapsed menu, while
+/// [child] stays clipped at the shell's content edge. Outside the shell the
+/// inset is zero and this is a plain stack.
+class TvShellBackdrop extends StatelessWidget {
+  const TvShellBackdrop({super.key, required this.background, required this.child});
+  final Widget background, child;
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    clipBehavior: Clip.none,
+    children: [
+      Positioned(left: -MainScreenFocusScope.foregroundLeftOf(context), top: 0, right: 0, bottom: 0, child: background),
+      // A focused tab or card at the content edge grows left; the margin keeps it whole.
+      ClipRect(
+        clipper: TvBleedClip(left: TvTheme.of(context).px(TvTokens.space.cardFocusReserve)),
+        child: child,
+      ),
+    ],
+  );
+}
 
 class TvPlainBackground extends StatelessWidget {
   const TvPlainBackground({super.key, this.child});

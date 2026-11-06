@@ -2,6 +2,15 @@ import 'package:flutter/material.dart';
 
 /// Design units are pixels on a 1920 × 1080 canvas. Colors use RGBA in the source.
 abstract final class TvTokens {
+  // Density is set here: the poster fills the grid's columns up to the alphabet,
+  // and rails use the same size, so both share one column pitch.
+  static const _gridColumns = 6;
+  static const _cardGap = 40;
+  static const _contentLeft = 136;
+  static const _lettersX = 1776;
+  static const _posterW = (_lettersX - _contentLeft - _cardGap - (_gridColumns - 1) * _cardGap) ~/ _gridColumns;
+  static const _posterH = (_posterW * 3 + 1) ~/ 2;
+
   static const color = (
     bg: (
       base: Color(0xFF0E0F12),
@@ -88,9 +97,9 @@ abstract final class TvTokens {
     rowGap: 48,
     sectionGap: 48,
     cardFocusReserve: 24,
-    cardGap: 28,
+    cardGap: _cardGap,
     rowHeaderToCards: 16,
-    contentLeft: 136,
+    contentLeft: _contentLeft,
     actionsGap: 24,
   );
   // S24 R2, R8: shared detail header geometry.
@@ -104,9 +113,9 @@ abstract final class TvTokens {
   );
   static const radius = (xs: 4, sm: 8, card: 10, button: 12, iconButton: 16, chip: 8, panel: 16, badge: 6);
   static const size = (
-    poster: (w: 216, h: 324, ratio: "2:3", perRowVisible: 7),
-    posterGrid: (w: 228, h: 342, columns: 6, gap: 32),
-    episode: (w: 400, h: 225, ratio: "16:9", perRowVisible: 4),
+    poster: (w: _posterW, h: _posterH, ratio: "2:3", perRowVisible: _gridColumns),
+    posterGrid: (w: _posterW, h: _posterH, columns: _gridColumns, gap: _cardGap),
+    episode: (w: 432, h: 243, ratio: "16:9", perRowVisible: 3),
     seasonPoster: (w: 160, h: 240),
     castAvatar: (d: 140),
     button: (h: 64, minW: 200, padX: 32, iconSize: 28, iconGap: 12),
@@ -129,7 +138,7 @@ abstract final class TvTokens {
     unwatchedBadge: (minW: 36, h: 32),
     hero: (h: 340, textMaxW: 860, logoMaxW: 560, logoMaxH: 120),
     focusRing: (width: 4, offset: 3),
-    letters: (w: 48, itemH: 24, focusedH: 32, x: 1776),
+    letters: (w: 48, itemH: 24, focusedH: 32, x: _lettersX),
     keyboard: (key: 64, gap: 12, columns: 6, panelW: 444, panelX: 200, resultsX: 740),
     buttonSmall: (h: 52, padX: 24),
   );
