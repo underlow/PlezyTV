@@ -33,6 +33,7 @@ import '../tv_tokens.dart';
 import '../tv_tint_service.dart';
 import '../tv_tinted_background.dart';
 import 'tv_show_actions.dart';
+import 'tv_episode_actions.dart';
 import 'tv_show_controller.dart';
 import 'tv_show_logic.dart';
 
@@ -440,11 +441,22 @@ class _TvShowScreenState extends State<TvShowScreen> {
     if (!_playing && index >= items.length - 5) unawaited(_controller!.loadMoreEpisodes(key));
   }
 
+  void _flushEpisodeHero() {
+    _heroTimer?.cancel();
+    if (!_hasEpisodeRow || _tab == 0) return;
+    final episode = _controller!.episodesFor(_key).where((e) => e.id == _lastEpisode[_key]).firstOrNull;
+    if (episode != null && _hero != episode) {
+      setState(() => _hero = _backdropEpisode = episode);
+    }
+  }
+
+  bool get _hasEpisodeActions => _tab > 0 && !_singleSeason && _hero != null;
+
   Future<void> _play(MediaItem episode, {bool restart = false}) async {
     if (_playing) return;
     _playing = true;
     final c = _controller!;
-    final seasonKey = _hasEpisodeRow && _episodeWasFocusOwner ? _key : null;
+    final seasonKey = _hasEpisodeRow && (_tab > 0 || _episodeWasFocusOwner) ? _key : null;
     _launchState = _watchFingerprint(c);
     try {
       if (widget.playEpisode != null) {
@@ -554,7 +566,10 @@ class _TvShowScreenState extends State<TvShowScreen> {
         if (event is KeyDownEvent || event is KeyRepeatEvent) {
           final next = index + (event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1);
           if (next < 0) {
-            if (_tab == 0) {
+            _flushEpisodeHero();
+            if (_hasEpisodeActions) {
+              _primary.requestFocus();
+            } else if (_tab == 0) {
               _actionScope.requestFocus();
             } else {
               _tabs.currentState?.requestFocus();
@@ -707,8 +722,9 @@ class _TvShowScreenState extends State<TvShowScreen> {
                                     if (event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
                                     if (event is KeyDownEvent || event is KeyRepeatEvent) {
                                       final pending = _tabs.currentState?.focusedIndex;
-                                      if (pending != null && pending != _tab) _select(pending);
-                                      if (_tab == 0) {
+                                      final changedTab = pending != null && pending != _tab;
+                                      if (changedTab) _select(pending);
+                                      if (_tab == 0 || (!changedTab && _hasEpisodeActions)) {
                                         _primary.requestFocus();
                                       } else {
                                         unawaited(_enterSeason(focus: true));
@@ -1078,6 +1094,14 @@ class _TvShowScreenState extends State<TvShowScreen> {
                 if (episode != null) TvRatings(item: episode),
                 SizedBox(height: px(20)),
                 Text(episode?.summary ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
+                if (_hasEpisodeActions) ...[
+                  const Spacer(),
+                  FocusScope(
+                    node: _actionScope,
+                    child: TvEpisodeActions(controller: c, item: episode!, primaryFocus: _primary, play: _play),
+                  ),
+                  SizedBox(height: px(16)),
+                ],
               ],
             ),
           ),
@@ -1122,7 +1146,14 @@ class _TvShowScreenState extends State<TvShowScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (items.isNotEmpty) row,
+        if (items.isNotEmpty)
+          Focus(
+            canRequestFocus: false,
+            onFocusChange: (inside) {
+              if (!inside) _flushEpisodeHero();
+            },
+            child: row,
+          ),
         if (c.pageErrors.containsKey(key))
           Padding(
             padding: EdgeInsets.only(

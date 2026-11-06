@@ -1,19 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../../i18n/strings.g.dart';
-import '../../../media/ids.dart';
 import '../../../media/media_item.dart';
-import '../../../models/download_models.dart';
-import '../../../providers/download_provider.dart';
-import '../../../screens/downloads/downloads_screen.dart';
 import '../../../services/catalog/library_watchlist_candidates.dart';
 import '../../../services/media_list_playback_launcher.dart';
 import '../../../services/watch_actions.dart';
-import '../../../utils/dialogs.dart';
-import '../../../utils/download_utils.dart';
 import '../../../utils/error_message_utils.dart';
 import '../../../utils/platform_detector.dart';
 import '../../../utils/snackbar_helper.dart';
@@ -23,6 +16,7 @@ import '../components/tv_button.dart';
 import '../tv_strings.dart';
 import '../components/tv_action_row.dart';
 import 'tv_show_controller.dart';
+import 'tv_download_action.dart';
 
 /// Public Plezy actions; private detail-screen handlers are intentionally not copied.
 class TvShowActions extends StatefulWidget {
@@ -127,32 +121,6 @@ class _TvShowActionsState extends State<TvShowActions> {
     await c.refresh();
   }
 
-  Future<void> _download(DownloadProvider provider, bool manage, bool downloaded) async {
-    if (manage) {
-      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DownloadsScreen()));
-      return;
-    }
-    await queueDownloadWithFeedback(
-      context,
-      metadata: c.show,
-      client: c.client,
-      downloadProvider: provider,
-      onDelete: !downloaded
-          ? null
-          : () async {
-              final confirmed = await showDeleteConfirmation(
-                context,
-                title: t.downloads.deleteDownload,
-                message: t.downloads.deleteConfirm(title: c.show.displayTitle),
-              );
-              if (confirmed && mounted) {
-                await provider.deleteDownload(c.show.globalKey);
-                if (mounted) showSuccessSnackBar(context, t.downloads.downloadDeleted);
-              }
-            },
-    );
-  }
-
   @override
   void dispose() {
     c.removeListener(_changed);
@@ -164,49 +132,10 @@ class _TvShowActionsState extends State<TvShowActions> {
 
   @override
   Widget build(BuildContext context) {
-    final downloads = context.watch<DownloadProvider?>();
-    var progress = downloads?.getProgress(c.show.globalKey);
-    // Plezy's show aggregate omits all-paused/all-cancelled leaves. Keep
-    // those owned downloads manageable rather than offering a fresh queue.
-    if (progress == null && downloads != null) {
-      for (final entry in downloads.downloads.entries) {
-        final item = downloads.getMetadata(entry.key);
-        if (item?.serverId == c.show.serverId && item?.grandparentId == c.show.id) {
-          progress = entry.value;
-          break;
-        }
-      }
-    }
-    final downloaded = downloads?.isDownloaded(c.show.globalKey) ?? false;
-    final rule =
-        downloads?.hasSyncRule(
-          downloads.syncRuleKeyForClient(
-            c.client,
-            c.show.id,
-            serverId: c.show.serverId == null ? null : ServerId(c.show.serverId!),
-          ),
-        ) ??
-        false;
-    final queueing = downloads?.isQueueing(c.show.globalKey) ?? false;
-    final manage = rule || (progress != null && progress.status != DownloadStatus.completed) || queueing;
     final states = [
       for (final candidate in c.watchlistCandidates) candidate.source.isOnWatchlist(c.show.kind, candidate.ids),
     ];
     final onList = states.contains(true);
-    final icon = rule
-        ? Icons.sync
-        : queueing
-        ? Icons.hourglass_top
-        : switch (progress?.status) {
-            DownloadStatus.queued => Icons.schedule,
-            DownloadStatus.downloading => Icons.downloading,
-            DownloadStatus.paused => Icons.pause_circle_outline,
-            DownloadStatus.failed => Icons.error_outline,
-            DownloadStatus.cancelled => Icons.cancel_outlined,
-            DownloadStatus.partial => Icons.download_for_offline_outlined,
-            DownloadStatus.completed => Icons.download_done,
-            null => downloaded ? Icons.download_done : Icons.download,
-          };
     Widget action(IconData icon, String caption, Future<void> Function() run, {bool disabled = false}) =>
         TvIconButton(icon: icon, caption: caption, disabled: _busy || disabled, onSelect: () => unawaited(_run(run)));
     final buttons = <Widget>[
@@ -231,10 +160,7 @@ class _TvShowActionsState extends State<TvShowActions> {
         c.show.isWatched ? t.tooltips.markAsUnwatched : t.tooltips.markAsWatched,
         _toggleWatched,
       ),
-      if (!PlatformDetector.isAppleTV())
-        action(icon, manage ? t.navigation.downloads : t.downloads.downloadNow, () async {
-          if (downloads != null) await _download(downloads, manage, downloaded);
-        }, disabled: downloads == null),
+      if (!PlatformDetector.isAppleTV()) TvDownloadAction(item: c.show, client: c.client, disabled: _busy),
       MediaContextMenu(
         key: _menu,
         item: c.show,
