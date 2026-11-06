@@ -602,6 +602,7 @@ class _Translations$settings$hu extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Lejátszási sebesség';
 	@override String get scopeShaderPreset => 'Shader-előbeállítás';
 	@override String get scopeAspectRatio => 'Képarány';
+	@override String get scopeZoom => 'Nagyítás';
 	@override String get scopeSyncOffsets => 'Hang- és feliratszinkronizálás';
 	@override String get playerScopeOff => 'Ne mentse';
 	@override String get playerScopeGlobal => 'Mindenhol';
@@ -1007,6 +1008,7 @@ class _Translations$videoControls$hu extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Felirat letöltve';
 	@override String get subtitleDownloadedNotApplied => 'Felirat letöltve, de nem sikerült kiválasztani';
 	@override String get subtitleDownloadFailed => 'Nem sikerült a felirat letöltése';
+	@override String get subtitleDownloadTimedOut => 'A felirat nem jelent meg időben. Lehet, hogy a letöltés nem sikerült';
 	@override String get searchLanguages => 'Nyelvek keresése...';
 	@override String get skipIntro => 'Főcím átugrása';
 	@override String get skipCredits => 'Stáblista átugrása';
@@ -3043,6 +3045,8 @@ class _Translations$explore$detail$hu extends Translations$explore$detail$en {
 	@override String get watchOn => 'Megnézhető itt';
 	@override String get watchTrailer => 'Előzetes megtekintése';
 	@override String openOn({required Object site}) => 'Megnyitás itt: ${site}';
+	@override String get trailerUnavailable => 'Ezen az eszközön nem sikerült megnyitni az előzetest';
+	@override String get linkUnavailable => 'Ezen az eszközön nem sikerült megnyitni a hivatkozást';
 	@override String get crew => 'Stáb';
 	@override String get ratings => 'Értékelések';
 	@override String get schedule => 'Műsorrend';
@@ -3881,6 +3885,7 @@ extension on TranslationsHu {
 			'settings.scopePlaybackSpeed' => 'Lejátszási sebesség',
 			'settings.scopeShaderPreset' => 'Shader-előbeállítás',
 			'settings.scopeAspectRatio' => 'Képarány',
+			'settings.scopeZoom' => 'Nagyítás',
 			'settings.scopeSyncOffsets' => 'Hang- és feliratszinkronizálás',
 			'settings.playerScopeOff' => 'Ne mentse',
 			'settings.playerScopeGlobal' => 'Mindenhol',
@@ -3905,9 +3910,9 @@ extension on TranslationsHu {
 			'themeEditor.slots.outline' => 'Körvonal',
 			'themeEditor.slots.text' => 'Szöveg',
 			'themeEditor.slots.textMuted' => 'Másodlagos szöveg',
-			'themeEditor.slots.accent' => 'Kiemelőszín',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Kiemelőszín',
 			'themeEditor.opacity' => 'Átlátszatlanság',
 			'themeEditor.hexHint' => '#RRGGBB vagy #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Más témákból',
@@ -4231,6 +4236,7 @@ extension on TranslationsHu {
 			'videoControls.subtitleDownloaded' => 'Felirat letöltve',
 			'videoControls.subtitleDownloadedNotApplied' => 'Felirat letöltve, de nem sikerült kiválasztani',
 			'videoControls.subtitleDownloadFailed' => 'Nem sikerült a felirat letöltése',
+			'videoControls.subtitleDownloadTimedOut' => 'A felirat nem jelent meg időben. Lehet, hogy a letöltés nem sikerült',
 			'videoControls.searchLanguages' => 'Nyelvek keresése...',
 			'videoControls.skipIntro' => 'Főcím átugrása',
 			'videoControls.skipCredits' => 'Stáblista átugrása',
@@ -4418,10 +4424,10 @@ extension on TranslationsHu {
 			'profiles.pinsDontMatch' => 'A PIN-kódok nem egyeznek',
 			'profiles.tokenIdentityMismatch' => 'A Plex-profil tokenje nem a várt szerverhez tartozik',
 			'connections.sectionTitle' => 'Kapcsolatok',
-			'connections.addConnection' => 'Kapcsolat hozzáadása',
-			'connections.addConnectionSubtitleNoProfile' => 'Jelentkezz be Plexszel, vagy csatlakoztass egy Jellyfin- vagy Emby-szervert',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Kapcsolat hozzáadása',
+			'connections.addConnectionSubtitleNoProfile' => 'Jelentkezz be Plexszel, vagy csatlakoztass egy Jellyfin- vagy Emby-szervert',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Hozzáadás a következőhöz (${displayName}): Plex, Jellyfin, Emby vagy más profilkapcsolat',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'A(z) ${name} munkamenete lejárt',
 			'connections.sessionExpiredMany' => ({required Object count}) => '${count} szerver munkamenete lejárt',
@@ -4835,6 +4841,8 @@ extension on TranslationsHu {
 			'explore.detail.watchOn' => 'Megnézhető itt',
 			'explore.detail.watchTrailer' => 'Előzetes megtekintése',
 			'explore.detail.openOn' => ({required Object site}) => 'Megnyitás itt: ${site}',
+			'explore.detail.trailerUnavailable' => 'Ezen az eszközön nem sikerült megnyitni az előzetest',
+			'explore.detail.linkUnavailable' => 'Ezen az eszközön nem sikerült megnyitni a hivatkozást',
 			'explore.detail.crew' => 'Stáb',
 			'explore.detail.ratings' => 'Értékelések',
 			'explore.detail.schedule' => 'Műsorrend',
@@ -4930,12 +4938,12 @@ extension on TranslationsHu {
 			'liveTv.recordSettings.anyTime' => 'Felvétel bármikor',
 			'liveTv.recordSettings.skipInLibrary' => 'A könyvtárban már meglévő epizódok kihagyása',
 			'liveTv.recordSettings.keepUpTo' => 'Megtartandó epizódok',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => 'A 0 minden epizódot megtart',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => '${minutes} perc múlva kezdődik',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day}, ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => 'A(z) ${product} érvénytelen Élő TV-lejátszási adatokat adott vissza',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Nem sikerült elindítani az élő csatornát',
 			'liveTv.failedToBuildStreamUrl' => 'Nem sikerült összeállítani a stream URL-címét',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Nem sikerült elindítani a csatornát: ${reason}',
@@ -5444,12 +5452,12 @@ extension on TranslationsHu {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'Szoftveres',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Hardveres',
 			'performanceOverlay.tunnelingActive' => 'Aktív',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (${failures} sikertelen)',
 			'externalPlayer.title' => 'Külső lejátszó',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Külső lejátszó használata',
 			'externalPlayer.useExternalPlayerDescription' => 'Videók megnyitása egy másik alkalmazásban',
 			'externalPlayer.selectPlayer' => 'Lejátszó kiválasztása',

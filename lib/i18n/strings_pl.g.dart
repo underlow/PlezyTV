@@ -602,6 +602,7 @@ class _Translations$settings$pl extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Prędkość odtwarzania';
 	@override String get scopeShaderPreset => 'Ustawienie shadera';
 	@override String get scopeAspectRatio => 'Proporcje obrazu';
+	@override String get scopeZoom => 'Powiększenie';
 	@override String get scopeSyncOffsets => 'Synchronizacja dźwięku i napisów';
 	@override String get playerScopeOff => 'Nie zapisuj';
 	@override String get playerScopeGlobal => 'Wszędzie';
@@ -1013,6 +1014,7 @@ class _Translations$videoControls$pl extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Napisy pobrane';
 	@override String get subtitleDownloadedNotApplied => 'Napisy zostały pobrane, ale nie można ich było wybrać';
 	@override String get subtitleDownloadFailed => 'Nie udało się pobrać napisów';
+	@override String get subtitleDownloadTimedOut => 'Napisy nie pojawiły się na czas. Pobieranie mogło się nie udać';
 	@override String get searchLanguages => 'Szukaj języków...';
 	@override String get skipIntro => 'Pomiń intro';
 	@override String get skipCredits => 'Pomiń napisy końcowe';
@@ -3065,6 +3067,8 @@ class _Translations$explore$detail$pl extends Translations$explore$detail$en {
 	@override String get watchOn => 'Oglądaj na';
 	@override String get watchTrailer => 'Obejrzyj zwiastun';
 	@override String openOn({required Object site}) => 'Otwórz na ${site}';
+	@override String get trailerUnavailable => 'Nie udało się otworzyć zwiastuna na tym urządzeniu';
+	@override String get linkUnavailable => 'Nie udało się otworzyć linku na tym urządzeniu';
 	@override String get crew => 'Obsada i ekipa';
 	@override String get ratings => 'Oceny';
 	@override String get schedule => 'Harmonogram';
@@ -3905,6 +3909,7 @@ extension on TranslationsPl {
 			'settings.scopePlaybackSpeed' => 'Prędkość odtwarzania',
 			'settings.scopeShaderPreset' => 'Ustawienie shadera',
 			'settings.scopeAspectRatio' => 'Proporcje obrazu',
+			'settings.scopeZoom' => 'Powiększenie',
 			'settings.scopeSyncOffsets' => 'Synchronizacja dźwięku i napisów',
 			'settings.playerScopeOff' => 'Nie zapisuj',
 			'settings.playerScopeGlobal' => 'Wszędzie',
@@ -3929,9 +3934,9 @@ extension on TranslationsPl {
 			'themeEditor.slots.outline' => 'Kontur',
 			'themeEditor.slots.text' => 'Tekst',
 			'themeEditor.slots.textMuted' => 'Tekst drugorzędny',
-			'themeEditor.slots.accent' => 'Akcent',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Akcent',
 			'themeEditor.opacity' => 'Krycie',
 			'themeEditor.hexHint' => '#RRGGBB lub #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Z innych motywów',
@@ -4255,6 +4260,7 @@ extension on TranslationsPl {
 			'videoControls.subtitleDownloaded' => 'Napisy pobrane',
 			'videoControls.subtitleDownloadedNotApplied' => 'Napisy zostały pobrane, ale nie można ich było wybrać',
 			'videoControls.subtitleDownloadFailed' => 'Nie udało się pobrać napisów',
+			'videoControls.subtitleDownloadTimedOut' => 'Napisy nie pojawiły się na czas. Pobieranie mogło się nie udać',
 			'videoControls.searchLanguages' => 'Szukaj języków...',
 			'videoControls.skipIntro' => 'Pomiń intro',
 			'videoControls.skipCredits' => 'Pomiń napisy końcowe',
@@ -4442,10 +4448,10 @@ extension on TranslationsPl {
 			'profiles.pinsDontMatch' => 'PIN-y nie pasują',
 			'profiles.tokenIdentityMismatch' => 'Token profilu Plex został powiązany z nieoczekiwanym serwerem',
 			'connections.sectionTitle' => 'Połączenia',
-			'connections.addConnection' => 'Dodaj połączenie',
-			'connections.addConnectionSubtitleNoProfile' => 'Zaloguj się przez Plex lub połącz serwer Jellyfin albo Emby',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Dodaj połączenie',
+			'connections.addConnectionSubtitleNoProfile' => 'Zaloguj się przez Plex lub połącz serwer Jellyfin albo Emby',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Dodaj do ${displayName}: Plex, Jellyfin, Emby lub połączenie innego profilu',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Sesja wygasła dla ${name}',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Sesja wygasła dla ${count} serwerów',
@@ -4859,6 +4865,8 @@ extension on TranslationsPl {
 			'explore.detail.watchOn' => 'Oglądaj na',
 			'explore.detail.watchTrailer' => 'Obejrzyj zwiastun',
 			'explore.detail.openOn' => ({required Object site}) => 'Otwórz na ${site}',
+			'explore.detail.trailerUnavailable' => 'Nie udało się otworzyć zwiastuna na tym urządzeniu',
+			'explore.detail.linkUnavailable' => 'Nie udało się otworzyć linku na tym urządzeniu',
 			'explore.detail.crew' => 'Obsada i ekipa',
 			'explore.detail.ratings' => 'Oceny',
 			'explore.detail.schedule' => 'Harmonogram',
@@ -4954,12 +4962,12 @@ extension on TranslationsPl {
 			'liveTv.recordSettings.anyTime' => 'Nagrywaj o dowolnej porze',
 			'liveTv.recordSettings.skipInLibrary' => 'Pomijaj odcinki już obecne w bibliotece',
 			'liveTv.recordSettings.keepUpTo' => 'Odcinki do zachowania',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 zachowuje wszystkie odcinki',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Rozpocznie się za ${minutes} min',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} o ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} zwrócił nieprawidłowe dane odtwarzania TV na żywo',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Nie udało się uruchomić kanału na żywo',
 			'liveTv.failedToBuildStreamUrl' => 'Nie udało się utworzyć adresu URL strumienia',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Nie udało się uruchomić kanału: ${reason}',
@@ -5468,12 +5476,12 @@ extension on TranslationsPl {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek (sprzętowy)',
 			'performanceOverlay.decoderExynosHw' => 'Exynos (sprzętowy)',
 			'performanceOverlay.decoderSoftware' => 'Programowy',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Sprzętowy',
 			'performanceOverlay.tunnelingActive' => 'Aktywne',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (niepowodzenia: ${failures})',
 			'externalPlayer.title' => 'Zewnętrzny odtwarzacz',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Użyj zewnętrznego odtwarzacza',
 			'externalPlayer.useExternalPlayerDescription' => 'Otwieraj wideo w innej aplikacji',
 			'externalPlayer.selectPlayer' => 'Wybierz odtwarzacz',

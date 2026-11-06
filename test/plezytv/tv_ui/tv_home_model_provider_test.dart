@@ -52,6 +52,7 @@ class _FakeAggregationService extends DataAggregationService {
     final items = onDeckResult();
     return (
       items: items,
+      copies: const <String, List<MediaItem>>{},
       observedItems: [for (final item in items) (item: item, clientScope: null)],
       succeededServerIds: const {'server_1'},
       cancelledServerIds: const <String>{},

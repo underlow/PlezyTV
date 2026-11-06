@@ -223,6 +223,12 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   StreamSubscription<DeletionEvent>? _deletionSubscription;
 
   List<MediaItem> _onDeck = [];
+
+  /// [ContinueWatchingRows.copies] for the rows the last on-deck fetch
+  /// returned, widened by [loadAllContinueWatching]. Lookups go through
+  /// [continueWatchingCopiesOf]; a key with no row on screen is harmless.
+  Map<String, List<MediaItem>> _continueWatchingCopies = const {};
+
   List<MediaHub> _hubs = [];
   bool _hasMoreContinueWatching = false;
   DiscoverLoadState _onDeckState = DiscoverLoadState.initial;
@@ -260,6 +266,16 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   List<MediaItem>? _pendingSystemShelfItems;
 
   List<MediaItem> get onDeck => _onDeck;
+
+  /// Every copy merged into the Continue Watching row [item] — the same title
+  /// in another library or on another server — best-first, with [item]
+  /// standing in for its own entry. Empty when the row stands alone.
+  List<MediaItem> continueWatchingCopiesOf(MediaItem item) {
+    final copies = _continueWatchingCopies[item.globalKey];
+    if (copies == null) return const [];
+    return [for (final copy in copies) copy.globalKey == item.globalKey ? item : copy];
+  }
+
   List<MediaHub> get hubs => _hubs;
   bool get hasMoreContinueWatching => _hasMoreContinueWatching;
 
@@ -412,6 +428,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       final merged = await _mergeServerResults(
         deck: (
           items: [for (final r in decks) ...r.items],
+          copies: {for (final r in decks) ...r.copies},
           observedItems: [for (final r in decks) ...r.observedItems],
           succeededServerIds: deckIds,
           failedServerIds: {for (final r in decks) ...r.failedServerIds},
@@ -583,6 +600,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     final previousHubs = _hubs;
     final previousHasMoreContinueWatching = _hasMoreContinueWatching;
     final previousLoadedOnDeckServerIds = _loadedOnDeckServerIds;
+    final previousContinueWatchingCopies = _continueWatchingCopies;
     final previousLoadedHubServerIds = _loadedHubServerIds;
     final previousOnDeckState = _onDeckState;
     final previousHubsState = _hubsState;
@@ -681,7 +699,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         // Don't return — the hubs fetch is still in flight below.
         appLogger.d('DiscoverProvider: on-deck pass disrupted with no prior content; keeping loading state');
       } else {
-        _applyOnDeck(fetchedOnDeck.items);
+        _applyOnDeck(fetchedOnDeck.items, copies: fetchedOnDeck.copies);
         ++expectedCommitRevision;
         replacedOnDeck = true;
         _onDeckState = DiscoverLoadState.loaded;
@@ -757,6 +775,8 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           _withoutHiddenLibraries(previousOnDeck, _hiddenLibraries.hiddenLibraryKeys),
           hasMore: previousHasMoreContinueWatching,
         );
+        _continueWatchingCopies = previousContinueWatchingCopies;
+        _keepContinueWatchingCopies((item) => _isInVisibleLibrary(item, _hiddenLibraries.hiddenLibraryKeys));
         _replaceHubs(_hubsWithoutHiddenLibraries(previousHubs, _hiddenLibraries.hiddenLibraryKeys));
         _loadedOnDeckServerIds = Set<String>.of(previousLoadedOnDeckServerIds);
         _loadedHubServerIds = Set<String>.of(previousLoadedHubServerIds);
@@ -878,8 +898,14 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     final mergedDeck = deckIds.isEmpty
         ? null
         : await _multiServer.aggregationService.mergeContinueWatching(
-            _onDeck.where((item) => !deckIds.contains(item.serverId)).toList(),
-            deck!.items,
+            // Dedup regroups every copy, so one on a pending server survives
+            // the replacement of the row that absorbed it.
+            _rowsWithCopies(
+              _onDeck,
+              _continueWatchingCopies,
+            ).where((item) => !deckIds.contains(item.serverId)).toList(),
+            _rowsWithCopies(deck!.items, deck.copies).toList(),
+            existingCopies: const {},
             limit: _continueWatchingProbeLimit,
           );
     if (!current()) return false;
@@ -895,7 +921,8 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         : [..._hubs.where((hub) => !hubIds.contains(hub.serverId)), ..._filterDiscoverHubs(hubs!.hubs)];
     if (mergedHubs != null) sortMediaHubsByLibraryOrder(mergedHubs, _libraries.libraries);
     if (mergedDeck != null) {
-      _applyOnDeck(_withoutHiddenLibraries(mergedDeck, hiddenKeys));
+      _applyOnDeck(_withoutHiddenLibraries(mergedDeck.items, hiddenKeys), copies: mergedDeck.copies);
+      _keepContinueWatchingCopies((item) => _isInVisibleLibrary(item, hiddenKeys));
       // Pending servers may have additional items beyond the preview cap.
       if (hadMore && _loadedOnDeckServerIds.difference(deckIds).isNotEmpty) _hasMoreContinueWatching = true;
     }
@@ -916,6 +943,14 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
       {...deckIds, ...hubIds},
     );
     return true;
+  }
+
+  Iterable<MediaItem> _rowsWithCopies(List<MediaItem> rows, Map<String, List<MediaItem>> copies) sync* {
+    for (final row in rows) {
+      for (final copy in copies[row.globalKey] ?? [row]) {
+        yield copy.globalKey == row.globalKey ? row : copy;
+      }
+    }
   }
 
   /// Playback-progress hubs duplicate the top Continue Watching row.
@@ -944,10 +979,12 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   List<MediaItem> _withoutHiddenLibraries(List<MediaItem> items, Set<String> hiddenLibraryKeys) {
     if (hiddenLibraryKeys.isEmpty) return items;
-    return items.where((item) {
-      final libraryKey = item.libraryGlobalKey;
-      return libraryKey == null || !hiddenLibraryKeys.contains(libraryKey);
-    }).toList();
+    return items.where((item) => _isInVisibleLibrary(item, hiddenLibraryKeys)).toList();
+  }
+
+  static bool _isInVisibleLibrary(MediaItem item, Set<String> hiddenLibraryKeys) {
+    final libraryKey = item.libraryGlobalKey;
+    return libraryKey == null || !hiddenLibraryKeys.contains(libraryKey);
   }
 
   List<MediaHub> _hubsWithoutHiddenLibraries(List<MediaHub> hubs, Set<String> hiddenLibraryKeys) {
@@ -988,6 +1025,9 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     final filteredOnDeck = _withoutHiddenLibraries(_onDeck, hiddenLibraryKeys);
     if (filteredOnDeck.length != _onDeck.length) {
       _replaceOnDeck(filteredOnDeck, hasMore: _hasMoreContinueWatching);
+    }
+    if (hiddenLibraryKeys.isNotEmpty) {
+      _keepContinueWatchingCopies((item) => _isInVisibleLibrary(item, hiddenLibraryKeys));
     }
     final filteredHubs = _hubsWithoutHiddenLibraries(_hubs, hiddenLibraryKeys);
     if (!listEquals(filteredHubs, _hubs)) {
@@ -1047,7 +1087,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         safeNotifyListeners();
         return;
       }
-      _applyOnDeck(fetched.items);
+      _applyOnDeck(fetched.items, copies: fetched.copies);
       _recordObservations(observation, fetched.observedItems, fetched.succeededServerIds);
       safeNotifyListeners();
       unawaited(_syncSystemShelf(_onDeck));
@@ -1068,6 +1108,8 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     // "View All" renders through the same overlay as the row it expands, so
     // it has to reconcile too or the stale patch simply reappears there.
     _recordObservations(observation, fetched.observedItems, fetched.succeededServerIds);
+    // Its rows past the preview open the same copy picker as the row's.
+    _continueWatchingCopies = {..._continueWatchingCopies, ...fetched.copies};
     return fetched.items;
   }
 
@@ -1107,9 +1149,44 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
     if (updatedHubs != null) _replaceHubs(updatedHubs);
   }
 
-  void _applyOnDeck(List<MediaItem> fetched) {
+  void _applyOnDeck(List<MediaItem> fetched, {required Map<String, List<MediaItem>> copies}) {
     final hasMore = fetched.length > continueWatchingPreviewLimit;
+    _continueWatchingCopies = copies;
     _replaceOnDeck(hasMore ? fetched.take(continueWatchingPreviewLimit).toList() : fetched, hasMore: hasMore);
+  }
+
+  /// Drop copies failing [keep] from every row's copy group; a group left
+  /// with a single copy is no longer a choice and goes.
+  void _keepContinueWatchingCopies(bool Function(MediaItem item) keep) {
+    if (_continueWatchingCopies.isEmpty) return;
+    _continueWatchingCopies = {
+      for (final MapEntry(:key, :value) in _continueWatchingCopies.entries)
+        if (value.where(keep).toList() case final kept when kept.length > 1) key: kept,
+    };
+  }
+
+  /// A row shows the copy last played on this device, so progress on a copy
+  /// the row absorbed swaps that copy in at its new offset: the pick the next
+  /// fetch's dedup makes anyway. Returns whether a row changed.
+  bool _promoteContinueWatchingCopy(String globalKey, int viewOffset) {
+    for (var i = 0; i < _onDeck.length; i++) {
+      final row = _onDeck[i];
+      final copies = _continueWatchingCopies[row.globalKey];
+      final copyIndex = copies?.indexWhere((copy) => copy.globalKey == globalKey) ?? -1;
+      if (copyIndex == -1) continue;
+      final promoted = copies![copyIndex].copyWith(viewOffsetMs: viewOffset);
+      _continueWatchingCopies = {
+        for (final entry in _continueWatchingCopies.entries)
+          if (entry.key != row.globalKey) entry.key: entry.value,
+        promoted.globalKey: [
+          for (final copy in copies)
+            if (copy.globalKey == globalKey) promoted else if (copy.globalKey == row.globalKey) row else copy,
+        ],
+      };
+      _replaceOnDeck(List.of(_onDeck)..[i] = promoted, hasMore: _hasMoreContinueWatching);
+      return true;
+    }
+    return false;
   }
 
   void _replaceOnDeck(List<MediaItem> onDeck, {required bool hasMore}) {
@@ -1126,10 +1203,13 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   // --- Event reactions -----------------------------------------------------
 
   /// Watch on-deck items and their parent shows/seasons (an episode's watch
-  /// flip changes what Continue Watching should show for its series).
-  Set<String>? get _watchedIds => hierarchicalEventIds(_onDeck);
+  /// flip changes what Continue Watching should show for its series), plus
+  /// the copies the rows absorbed.
+  Set<String>? get _watchedIds => hierarchicalEventIds(_onDeck.followedBy(_continueWatchingCopyItems));
 
-  Set<String>? get _watchedGlobalKeys => hierarchicalEventGlobalKeys(_onDeck);
+  Set<String>? get _watchedGlobalKeys => hierarchicalEventGlobalKeys(_onDeck.followedBy(_continueWatchingCopyItems));
+
+  Iterable<MediaItem> get _continueWatchingCopyItems => _continueWatchingCopies.values.expand((copies) => copies);
 
   void _onWatchStateChanged(WatchStateEvent event) {
     if (event.changeType == WatchStateChangeType.progressUpdate && event.isNowWatched != true) {
@@ -1140,6 +1220,9 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
           List.of(_onDeck)..[index] = _onDeck[index].copyWith(viewOffsetMs: viewOffset),
           hasMore: _hasMoreContinueWatching,
         );
+        safeNotifyListeners();
+        unawaited(_syncSystemShelf(_onDeck));
+      } else if (viewOffset != null && index == -1 && _promoteContinueWatchingCopy(event.globalKey, viewOffset)) {
         safeNotifyListeners();
         unawaited(_syncSystemShelf(_onDeck));
       }
@@ -1166,6 +1249,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
   }
 
   void _evictFromOnDeck(bool Function(MediaItem item) matches) {
+    _keepContinueWatchingCopies((item) => !matches(item));
     final remaining = _onDeck.where((item) => !matches(item)).toList();
     if (remaining.length == _onDeck.length) return;
     _replaceOnDeck(remaining, hasMore: _hasMoreContinueWatching);
@@ -1178,10 +1262,11 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
 
   /// Deletions can affect any visible list, so the filter covers on-deck and
   /// hub items plus their parents (a deleted season/show takes its visible
-  /// episodes with it).
-  Set<String>? get _deletionIds => hierarchicalEventIds(_visibleItems);
+  /// episodes with it), and the copies behind Continue Watching rows.
+  Set<String>? get _deletionIds => hierarchicalEventIds(_visibleItems.followedBy(_continueWatchingCopyItems));
 
-  Set<String>? get _deletionGlobalKeys => hierarchicalEventGlobalKeys(_visibleItems);
+  Set<String>? get _deletionGlobalKeys =>
+      hierarchicalEventGlobalKeys(_visibleItems.followedBy(_continueWatchingCopyItems));
 
   void _onDeletion(DeletionEvent event) {
     // On-deck and hubs are server-backed: a download-only deletion leaves the
@@ -1196,6 +1281,7 @@ class DiscoverProvider extends ChangeNotifier with DisposableChangeNotifierMixin
         (item.id == event.itemId || item.parentId == event.itemId || item.grandparentId == event.itemId);
 
     var changed = false;
+    _keepContinueWatchingCopies((item) => !affected(item));
     final remainingOnDeck = _onDeck.where((item) => !affected(item)).toList();
     if (remainingOnDeck.length != _onDeck.length) {
       _replaceOnDeck(remainingOnDeck, hasMore: _hasMoreContinueWatching);

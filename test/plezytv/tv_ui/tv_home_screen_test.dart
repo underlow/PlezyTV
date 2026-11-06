@@ -163,6 +163,8 @@ class _HiddenReady extends ChangeNotifier implements HiddenLibrariesProvider {
 
 class _Discover extends ChangeNotifier implements DiscoverProvider {
   @override
+  List<MediaItem> continueWatchingCopiesOf(MediaItem row) => const [];
+  @override
   List<MediaItem> onDeck = [];
   @override
   List<MediaHub> hubs = [];

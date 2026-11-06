@@ -602,6 +602,7 @@ class _Translations$settings$bg extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Скорост на възпроизвеждане';
 	@override String get scopeShaderPreset => 'Предварителна настройка на шейдъра';
 	@override String get scopeAspectRatio => 'Съотношение на страните';
+	@override String get scopeZoom => 'Мащаб';
 	@override String get scopeSyncOffsets => 'Синхронизация на аудио и субтитри';
 	@override String get playerScopeOff => 'Не запазвай';
 	@override String get playerScopeGlobal => 'Навсякъде';
@@ -1007,6 +1008,7 @@ class _Translations$videoControls$bg extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Субтитърът е изтеглен';
 	@override String get subtitleDownloadedNotApplied => 'Субтитрите са изтеглени, но не можаха да бъдат избрани';
 	@override String get subtitleDownloadFailed => 'Неуспешно изтегляне на субтитър';
+	@override String get subtitleDownloadTimedOut => 'Субтитърът не се появи навреме. Изтеглянето може да е неуспешно';
 	@override String get searchLanguages => 'Търсене на езици...';
 	@override String get skipIntro => 'Пропусни интрото';
 	@override String get skipCredits => 'Пропусни надписите';
@@ -3043,6 +3045,8 @@ class _Translations$explore$detail$bg extends Translations$explore$detail$en {
 	@override String get watchOn => 'Гледай в';
 	@override String get watchTrailer => 'Гледай трейлъра';
 	@override String openOn({required Object site}) => 'Отвори в ${site}';
+	@override String get trailerUnavailable => 'Трейлърът не можа да се отвори на това устройство';
+	@override String get linkUnavailable => 'Връзката не можа да се отвори на това устройство';
 	@override String get crew => 'Екип';
 	@override String get ratings => 'Оценки';
 	@override String get schedule => 'Програма';
@@ -3881,6 +3885,7 @@ extension on TranslationsBg {
 			'settings.scopePlaybackSpeed' => 'Скорост на възпроизвеждане',
 			'settings.scopeShaderPreset' => 'Предварителна настройка на шейдъра',
 			'settings.scopeAspectRatio' => 'Съотношение на страните',
+			'settings.scopeZoom' => 'Мащаб',
 			'settings.scopeSyncOffsets' => 'Синхронизация на аудио и субтитри',
 			'settings.playerScopeOff' => 'Не запазвай',
 			'settings.playerScopeGlobal' => 'Навсякъде',
@@ -3905,9 +3910,9 @@ extension on TranslationsBg {
 			'themeEditor.slots.outline' => 'Контур',
 			'themeEditor.slots.text' => 'Текст',
 			'themeEditor.slots.textMuted' => 'Вторичен текст',
-			'themeEditor.slots.accent' => 'Акцент',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Акцент',
 			'themeEditor.opacity' => 'Непрозрачност',
 			'themeEditor.hexHint' => '#RRGGBB или #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'От други теми',
@@ -4231,6 +4236,7 @@ extension on TranslationsBg {
 			'videoControls.subtitleDownloaded' => 'Субтитърът е изтеглен',
 			'videoControls.subtitleDownloadedNotApplied' => 'Субтитрите са изтеглени, но не можаха да бъдат избрани',
 			'videoControls.subtitleDownloadFailed' => 'Неуспешно изтегляне на субтитър',
+			'videoControls.subtitleDownloadTimedOut' => 'Субтитърът не се появи навреме. Изтеглянето може да е неуспешно',
 			'videoControls.searchLanguages' => 'Търсене на езици...',
 			'videoControls.skipIntro' => 'Пропусни интрото',
 			'videoControls.skipCredits' => 'Пропусни надписите',
@@ -4418,10 +4424,10 @@ extension on TranslationsBg {
 			'profiles.pinsDontMatch' => 'PIN кодовете не съвпадат',
 			'profiles.tokenIdentityMismatch' => 'Токенът на профила в Plex съответства на неочакван сървър',
 			'connections.sectionTitle' => 'Връзки',
-			'connections.addConnection' => 'Добави връзка',
-			'connections.addConnectionSubtitleNoProfile' => 'Влезте с Plex или свържете Jellyfin или Emby сървър',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Добави връзка',
+			'connections.addConnectionSubtitleNoProfile' => 'Влезте с Plex или свържете Jellyfin или Emby сървър',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Добави към ${displayName}: Plex, Jellyfin, Emby или връзка от друг профил',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Сесията за ${name} е изтекла',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Сесиите за ${count} сървъра са изтекли',
@@ -4835,6 +4841,8 @@ extension on TranslationsBg {
 			'explore.detail.watchOn' => 'Гледай в',
 			'explore.detail.watchTrailer' => 'Гледай трейлъра',
 			'explore.detail.openOn' => ({required Object site}) => 'Отвори в ${site}',
+			'explore.detail.trailerUnavailable' => 'Трейлърът не можа да се отвори на това устройство',
+			'explore.detail.linkUnavailable' => 'Връзката не можа да се отвори на това устройство',
 			'explore.detail.crew' => 'Екип',
 			'explore.detail.ratings' => 'Оценки',
 			'explore.detail.schedule' => 'Програма',
@@ -4930,12 +4938,12 @@ extension on TranslationsBg {
 			'liveTv.recordSettings.anyTime' => 'Записване по всяко време',
 			'liveTv.recordSettings.skipInLibrary' => 'Пропускане на епизоди, които вече са в библиотеката',
 			'liveTv.recordSettings.keepUpTo' => 'Епизоди за запазване',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 запазва всички епизоди',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Започва след ${minutes} мин',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} в ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} върна невалидни данни за възпроизвеждане на телевизия на живо',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Каналът на живо не можа да бъде пуснат',
 			'liveTv.failedToBuildStreamUrl' => 'URL за потока не можа да бъде създаден',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Каналът не можа да бъде стартиран: ${reason}',
@@ -5444,12 +5452,12 @@ extension on TranslationsBg {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'Софтуерен',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Хардуерен',
 			'performanceOverlay.tunnelingActive' => 'Активно',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (неуспешни: ${failures})',
 			'externalPlayer.title' => 'Външен плеър',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Използвай външен плеър',
 			'externalPlayer.useExternalPlayerDescription' => 'Отваряй видеата в друго приложение',
 			'externalPlayer.selectPlayer' => 'Избери плейър',

@@ -602,6 +602,7 @@ class _Translations$settings$sv extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Uppspelningshastighet';
 	@override String get scopeShaderPreset => 'Förinställning för shader';
 	@override String get scopeAspectRatio => 'Bildförhållande';
+	@override String get scopeZoom => 'Zoom';
 	@override String get scopeSyncOffsets => 'Synkronisering av ljud och undertexter';
 	@override String get playerScopeOff => 'Spara inte';
 	@override String get playerScopeGlobal => 'Överallt';
@@ -1007,6 +1008,7 @@ class _Translations$videoControls$sv extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Undertexten har laddats ned';
 	@override String get subtitleDownloadedNotApplied => 'Undertexten laddades ned men kunde inte väljas';
 	@override String get subtitleDownloadFailed => 'Det gick inte att ladda ned undertexten';
+	@override String get subtitleDownloadTimedOut => 'Undertexten dök inte upp i tid. Nedladdningen kan ha misslyckats';
 	@override String get searchLanguages => 'Sök språk...';
 	@override String get skipIntro => 'Hoppa över intro';
 	@override String get skipCredits => 'Hoppa över eftertexter';
@@ -3043,6 +3045,8 @@ class _Translations$explore$detail$sv extends Translations$explore$detail$en {
 	@override String get watchOn => 'Titta på';
 	@override String get watchTrailer => 'Titta på trailer';
 	@override String openOn({required Object site}) => 'Öppna på ${site}';
+	@override String get trailerUnavailable => 'Det gick inte att öppna trailern på den här enheten';
+	@override String get linkUnavailable => 'Det gick inte att öppna länken på den här enheten';
 	@override String get crew => 'Besättning';
 	@override String get ratings => 'Betyg';
 	@override String get schedule => 'Schema';
@@ -3881,6 +3885,7 @@ extension on TranslationsSv {
 			'settings.scopePlaybackSpeed' => 'Uppspelningshastighet',
 			'settings.scopeShaderPreset' => 'Förinställning för shader',
 			'settings.scopeAspectRatio' => 'Bildförhållande',
+			'settings.scopeZoom' => 'Zoom',
 			'settings.scopeSyncOffsets' => 'Synkronisering av ljud och undertexter',
 			'settings.playerScopeOff' => 'Spara inte',
 			'settings.playerScopeGlobal' => 'Överallt',
@@ -3905,9 +3910,9 @@ extension on TranslationsSv {
 			'themeEditor.slots.outline' => 'Kontur',
 			'themeEditor.slots.text' => 'Text',
 			'themeEditor.slots.textMuted' => 'Sekundär text',
-			'themeEditor.slots.accent' => 'Accentfärg',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Accentfärg',
 			'themeEditor.opacity' => 'Opacitet',
 			'themeEditor.hexHint' => '#RRGGBB eller #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Från andra teman',
@@ -4231,6 +4236,7 @@ extension on TranslationsSv {
 			'videoControls.subtitleDownloaded' => 'Undertexten har laddats ned',
 			'videoControls.subtitleDownloadedNotApplied' => 'Undertexten laddades ned men kunde inte väljas',
 			'videoControls.subtitleDownloadFailed' => 'Det gick inte att ladda ned undertexten',
+			'videoControls.subtitleDownloadTimedOut' => 'Undertexten dök inte upp i tid. Nedladdningen kan ha misslyckats',
 			'videoControls.searchLanguages' => 'Sök språk...',
 			'videoControls.skipIntro' => 'Hoppa över intro',
 			'videoControls.skipCredits' => 'Hoppa över eftertexter',
@@ -4418,10 +4424,10 @@ extension on TranslationsSv {
 			'profiles.pinsDontMatch' => 'PIN-koderna stämmer inte överens',
 			'profiles.tokenIdentityMismatch' => 'Plex-profiltoken kopplades till en oväntad server',
 			'connections.sectionTitle' => 'Anslutningar',
-			'connections.addConnection' => 'Lägg till anslutning',
-			'connections.addConnectionSubtitleNoProfile' => 'Logga in med Plex eller anslut en Jellyfin- eller Emby-server',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Lägg till anslutning',
+			'connections.addConnectionSubtitleNoProfile' => 'Logga in med Plex eller anslut en Jellyfin- eller Emby-server',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Lägg till för ${displayName}: Plex, Jellyfin, Emby eller en annan profilanslutning',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Sessionen har gått ut för ${name}',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Sessionen har gått ut för ${count} servrar',
@@ -4835,6 +4841,8 @@ extension on TranslationsSv {
 			'explore.detail.watchOn' => 'Titta på',
 			'explore.detail.watchTrailer' => 'Titta på trailer',
 			'explore.detail.openOn' => ({required Object site}) => 'Öppna på ${site}',
+			'explore.detail.trailerUnavailable' => 'Det gick inte att öppna trailern på den här enheten',
+			'explore.detail.linkUnavailable' => 'Det gick inte att öppna länken på den här enheten',
 			'explore.detail.crew' => 'Besättning',
 			'explore.detail.ratings' => 'Betyg',
 			'explore.detail.schedule' => 'Schema',
@@ -4930,12 +4938,12 @@ extension on TranslationsSv {
 			'liveTv.recordSettings.anyTime' => 'Spela in när som helst',
 			'liveTv.recordSettings.skipInLibrary' => 'Hoppa över avsnitt som redan finns i biblioteket',
 			'liveTv.recordSettings.keepUpTo' => 'Avsnitt att behålla',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 behåller alla avsnitt',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Börjar om ${minutes} min',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} kl. ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} returnerade ogiltiga uppspelningsdata för Live-TV',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Kunde inte starta livekanalen',
 			'liveTv.failedToBuildStreamUrl' => 'Kunde inte skapa strömmens URL',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Det gick inte att starta kanalen: ${reason}',
@@ -5444,12 +5452,12 @@ extension on TranslationsSv {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'Programvara',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Maskinvara',
 			'performanceOverlay.tunnelingActive' => 'Aktiv',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (${failures} misslyckades)',
 			'externalPlayer.title' => 'Extern spelare',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Använd extern spelare',
 			'externalPlayer.useExternalPlayerDescription' => 'Öppna videor i en annan app',
 			'externalPlayer.selectPlayer' => 'Välj spelare',

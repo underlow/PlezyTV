@@ -602,6 +602,7 @@ class _Translations$settings$it extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Velocità di riproduzione';
 	@override String get scopeShaderPreset => 'Preimpostazione shader';
 	@override String get scopeAspectRatio => 'Proporzioni';
+	@override String get scopeZoom => 'Zoom';
 	@override String get scopeSyncOffsets => 'Sincronizzazione audio e sottotitoli';
 	@override String get playerScopeOff => 'Non salvare';
 	@override String get playerScopeGlobal => 'Ovunque';
@@ -1007,6 +1008,7 @@ class _Translations$videoControls$it extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Sottotitolo scaricato';
 	@override String get subtitleDownloadedNotApplied => 'Il sottotitolo è stato scaricato, ma non è stato possibile selezionarlo';
 	@override String get subtitleDownloadFailed => 'Impossibile scaricare il sottotitolo';
+	@override String get subtitleDownloadTimedOut => 'Il sottotitolo non è comparso in tempo. Il download potrebbe non essere riuscito';
 	@override String get searchLanguages => 'Cerca lingue...';
 	@override String get skipIntro => 'Salta intro';
 	@override String get skipCredits => 'Salta titoli';
@@ -3043,6 +3045,8 @@ class _Translations$explore$detail$it extends Translations$explore$detail$en {
 	@override String get watchOn => 'Guarda su';
 	@override String get watchTrailer => 'Guarda trailer';
 	@override String openOn({required Object site}) => 'Apri su ${site}';
+	@override String get trailerUnavailable => 'Impossibile aprire il trailer su questo dispositivo';
+	@override String get linkUnavailable => 'Impossibile aprire il link su questo dispositivo';
 	@override String get crew => 'Cast tecnico';
 	@override String get ratings => 'Valutazioni';
 	@override String get schedule => 'Programmazione';
@@ -3881,6 +3885,7 @@ extension on TranslationsIt {
 			'settings.scopePlaybackSpeed' => 'Velocità di riproduzione',
 			'settings.scopeShaderPreset' => 'Preimpostazione shader',
 			'settings.scopeAspectRatio' => 'Proporzioni',
+			'settings.scopeZoom' => 'Zoom',
 			'settings.scopeSyncOffsets' => 'Sincronizzazione audio e sottotitoli',
 			'settings.playerScopeOff' => 'Non salvare',
 			'settings.playerScopeGlobal' => 'Ovunque',
@@ -3905,9 +3910,9 @@ extension on TranslationsIt {
 			'themeEditor.slots.outline' => 'Contorno',
 			'themeEditor.slots.text' => 'Testo',
 			'themeEditor.slots.textMuted' => 'Testo secondario',
-			'themeEditor.slots.accent' => 'Accento',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Accento',
 			'themeEditor.opacity' => 'Opacità',
 			'themeEditor.hexHint' => '#RRGGBB o #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Da altri temi',
@@ -4231,6 +4236,7 @@ extension on TranslationsIt {
 			'videoControls.subtitleDownloaded' => 'Sottotitolo scaricato',
 			'videoControls.subtitleDownloadedNotApplied' => 'Il sottotitolo è stato scaricato, ma non è stato possibile selezionarlo',
 			'videoControls.subtitleDownloadFailed' => 'Impossibile scaricare il sottotitolo',
+			'videoControls.subtitleDownloadTimedOut' => 'Il sottotitolo non è comparso in tempo. Il download potrebbe non essere riuscito',
 			'videoControls.searchLanguages' => 'Cerca lingue...',
 			'videoControls.skipIntro' => 'Salta intro',
 			'videoControls.skipCredits' => 'Salta titoli',
@@ -4418,10 +4424,10 @@ extension on TranslationsIt {
 			'profiles.pinsDontMatch' => 'I PIN non corrispondono',
 			'profiles.tokenIdentityMismatch' => 'Il token del profilo Plex è stato associato a un server imprevisto',
 			'connections.sectionTitle' => 'Connessioni',
-			'connections.addConnection' => 'Aggiungi connessione',
-			'connections.addConnectionSubtitleNoProfile' => 'Accedi con Plex o collega un server Jellyfin o Emby',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Aggiungi connessione',
+			'connections.addConnectionSubtitleNoProfile' => 'Accedi con Plex o collega un server Jellyfin o Emby',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Aggiungi a ${displayName}: Plex, Jellyfin, Emby o la connessione di un altro profilo',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Sessione scaduta per ${name}',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Sessione scaduta per ${count} server',
@@ -4835,6 +4841,8 @@ extension on TranslationsIt {
 			'explore.detail.watchOn' => 'Guarda su',
 			'explore.detail.watchTrailer' => 'Guarda trailer',
 			'explore.detail.openOn' => ({required Object site}) => 'Apri su ${site}',
+			'explore.detail.trailerUnavailable' => 'Impossibile aprire il trailer su questo dispositivo',
+			'explore.detail.linkUnavailable' => 'Impossibile aprire il link su questo dispositivo',
 			'explore.detail.crew' => 'Cast tecnico',
 			'explore.detail.ratings' => 'Valutazioni',
 			'explore.detail.schedule' => 'Programmazione',
@@ -4930,12 +4938,12 @@ extension on TranslationsIt {
 			'liveTv.recordSettings.anyTime' => 'Registra a qualsiasi ora',
 			'liveTv.recordSettings.skipInLibrary' => 'Salta gli episodi già presenti nella libreria',
 			'liveTv.recordSettings.keepUpTo' => 'Episodi da conservare',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 conserva tutti gli episodi',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Inizia tra ${minutes} min',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} alle ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} ha restituito dati di riproduzione della TV in diretta non validi',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Impossibile avviare il canale in diretta',
 			'liveTv.failedToBuildStreamUrl' => 'Impossibile creare l\'URL dello stream',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Impossibile avviare il canale: ${reason}',
@@ -5444,12 +5452,12 @@ extension on TranslationsIt {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'Software',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Hardware',
 			'performanceOverlay.tunnelingActive' => 'Attivo',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (${failures} errori)',
 			'externalPlayer.title' => 'Lettore esterno',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Usa un lettore esterno',
 			'externalPlayer.useExternalPlayerDescription' => 'Apri i video in un\'altra app',
 			'externalPlayer.selectPlayer' => 'Seleziona il lettore',

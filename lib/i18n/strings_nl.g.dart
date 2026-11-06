@@ -602,6 +602,7 @@ class _Translations$settings$nl extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Afspeelsnelheid';
 	@override String get scopeShaderPreset => 'Shadervoorinstelling';
 	@override String get scopeAspectRatio => 'Beeldverhouding';
+	@override String get scopeZoom => 'Zoom';
 	@override String get scopeSyncOffsets => 'Audio- en ondertitelsynchronisatie';
 	@override String get playerScopeOff => 'Niet opslaan';
 	@override String get playerScopeGlobal => 'Overal';
@@ -1007,6 +1008,7 @@ class _Translations$videoControls$nl extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Ondertitel gedownload';
 	@override String get subtitleDownloadedNotApplied => 'De ondertiteling is gedownload, maar kon niet worden geselecteerd';
 	@override String get subtitleDownloadFailed => 'Ondertitel downloaden mislukt';
+	@override String get subtitleDownloadTimedOut => 'De ondertiteling verscheen niet op tijd. Het downloaden is mogelijk mislukt';
 	@override String get searchLanguages => 'Talen zoeken...';
 	@override String get skipIntro => 'Intro overslaan';
 	@override String get skipCredits => 'Aftiteling overslaan';
@@ -3043,6 +3045,8 @@ class _Translations$explore$detail$nl extends Translations$explore$detail$en {
 	@override String get watchOn => 'Bekijk op';
 	@override String get watchTrailer => 'Trailer bekijken';
 	@override String openOn({required Object site}) => 'Openen op ${site}';
+	@override String get trailerUnavailable => 'Kan de trailer niet openen op dit apparaat';
+	@override String get linkUnavailable => 'Kan de link niet openen op dit apparaat';
 	@override String get crew => 'Crew';
 	@override String get ratings => 'Beoordelingen';
 	@override String get schedule => 'Uitzendschema';
@@ -3881,6 +3885,7 @@ extension on TranslationsNl {
 			'settings.scopePlaybackSpeed' => 'Afspeelsnelheid',
 			'settings.scopeShaderPreset' => 'Shadervoorinstelling',
 			'settings.scopeAspectRatio' => 'Beeldverhouding',
+			'settings.scopeZoom' => 'Zoom',
 			'settings.scopeSyncOffsets' => 'Audio- en ondertitelsynchronisatie',
 			'settings.playerScopeOff' => 'Niet opslaan',
 			'settings.playerScopeGlobal' => 'Overal',
@@ -3905,9 +3910,9 @@ extension on TranslationsNl {
 			'themeEditor.slots.outline' => 'Rand',
 			'themeEditor.slots.text' => 'Tekst',
 			'themeEditor.slots.textMuted' => 'Secundaire tekst',
-			'themeEditor.slots.accent' => 'Accent',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Accent',
 			'themeEditor.opacity' => 'Dekking',
 			'themeEditor.hexHint' => '#RRGGBB of #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Uit andere thema\'s',
@@ -4231,6 +4236,7 @@ extension on TranslationsNl {
 			'videoControls.subtitleDownloaded' => 'Ondertitel gedownload',
 			'videoControls.subtitleDownloadedNotApplied' => 'De ondertiteling is gedownload, maar kon niet worden geselecteerd',
 			'videoControls.subtitleDownloadFailed' => 'Ondertitel downloaden mislukt',
+			'videoControls.subtitleDownloadTimedOut' => 'De ondertiteling verscheen niet op tijd. Het downloaden is mogelijk mislukt',
 			'videoControls.searchLanguages' => 'Talen zoeken...',
 			'videoControls.skipIntro' => 'Intro overslaan',
 			'videoControls.skipCredits' => 'Aftiteling overslaan',
@@ -4418,10 +4424,10 @@ extension on TranslationsNl {
 			'profiles.pinsDontMatch' => 'De pincodes komen niet overeen',
 			'profiles.tokenIdentityMismatch' => 'Het token van het Plex-profiel bleek bij een onverwachte server te horen',
 			'connections.sectionTitle' => 'Verbindingen',
-			'connections.addConnection' => 'Verbinding toevoegen',
-			'connections.addConnectionSubtitleNoProfile' => 'Meld je aan met Plex of verbind een Jellyfin- of Emby-server',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Verbinding toevoegen',
+			'connections.addConnectionSubtitleNoProfile' => 'Meld je aan met Plex of verbind een Jellyfin- of Emby-server',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Toevoegen aan ${displayName}: Plex, Jellyfin, Emby of een andere profielverbinding',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Sessie verlopen voor ${name}',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Sessie verlopen voor ${count} servers',
@@ -4835,6 +4841,8 @@ extension on TranslationsNl {
 			'explore.detail.watchOn' => 'Bekijk op',
 			'explore.detail.watchTrailer' => 'Trailer bekijken',
 			'explore.detail.openOn' => ({required Object site}) => 'Openen op ${site}',
+			'explore.detail.trailerUnavailable' => 'Kan de trailer niet openen op dit apparaat',
+			'explore.detail.linkUnavailable' => 'Kan de link niet openen op dit apparaat',
 			'explore.detail.crew' => 'Crew',
 			'explore.detail.ratings' => 'Beoordelingen',
 			'explore.detail.schedule' => 'Uitzendschema',
@@ -4930,12 +4938,12 @@ extension on TranslationsNl {
 			'liveTv.recordSettings.anyTime' => 'Op elk tijdstip opnemen',
 			'liveTv.recordSettings.skipInLibrary' => 'Afleveringen overslaan die al in de bibliotheek staan',
 			'liveTv.recordSettings.keepUpTo' => 'Te bewaren afleveringen',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 bewaart alle afleveringen',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Begint over ${minutes} min',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} om ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} heeft ongeldige afspeelgegevens voor Live-tv geretourneerd',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Kon de livezender niet starten',
 			'liveTv.failedToBuildStreamUrl' => 'Kon de stream-URL niet samenstellen',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Kon het kanaal niet starten: ${reason}',
@@ -5444,12 +5452,12 @@ extension on TranslationsNl {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'Software',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Hardware',
 			'performanceOverlay.tunnelingActive' => 'Actief',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (${failures} mislukt)',
 			'externalPlayer.title' => 'Externe speler',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Externe speler gebruiken',
 			'externalPlayer.useExternalPlayerDescription' => 'Open video\'s in een andere app',
 			'externalPlayer.selectPlayer' => 'Speler selecteren',

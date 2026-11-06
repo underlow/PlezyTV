@@ -81,7 +81,8 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
   String? _terminalState;
   int _selection = 0;
   TvLibraryController get c => widget.controller;
-  List<LibraryTabType> get tabs => visibleLibraryTabs(c.library);
+  // Upstream's Genres tab has no TV screen yet.
+  List<LibraryTabType> get tabs => visibleLibraryTabs(c.library).where((t) => t != LibraryTabType.genres).toList();
   LibraryTabType get tab => tabs.firstWhere((t) => t.name == c.preferences.tab, orElse: () => LibraryTabType.browse);
   bool get _failed => c.error != null || (c.totalCount == null && c.source.errors.containsKey(0));
   bool get _filtered => c.preferences.filters.isNotEmpty || c.alphaPrefix != null;
@@ -475,6 +476,7 @@ class TvLibraryScreenState extends State<TvLibraryScreen>
     LibraryTabType.recommended => t.libraries.tabs.recommended,
     LibraryTabType.collections => t.libraries.tabs.collections,
     LibraryTabType.playlists => t.libraries.tabs.playlists,
+    LibraryTabType.genres => t.libraries.tabs.genres,
   };
   @override
   Widget build(BuildContext context) {

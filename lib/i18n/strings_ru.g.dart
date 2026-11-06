@@ -602,6 +602,7 @@ class _Translations$settings$ru extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Скорость воспроизведения';
 	@override String get scopeShaderPreset => 'Предустановка шейдера';
 	@override String get scopeAspectRatio => 'Соотношение сторон';
+	@override String get scopeZoom => 'Масштаб';
 	@override String get scopeSyncOffsets => 'Синхронизация аудио и субтитров';
 	@override String get playerScopeOff => 'Не сохранять';
 	@override String get playerScopeGlobal => 'Везде';
@@ -1013,6 +1014,7 @@ class _Translations$videoControls$ru extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Субтитры загружены';
 	@override String get subtitleDownloadedNotApplied => 'Субтитры загружены, но их не удалось выбрать';
 	@override String get subtitleDownloadFailed => 'Не удалось загрузить субтитры';
+	@override String get subtitleDownloadTimedOut => 'Субтитры не появились вовремя. Возможно, загрузка не удалась';
 	@override String get searchLanguages => 'Поиск языков...';
 	@override String get skipIntro => 'Пропустить заставку';
 	@override String get skipCredits => 'Пропустить титры';
@@ -3065,6 +3067,8 @@ class _Translations$explore$detail$ru extends Translations$explore$detail$en {
 	@override String get watchOn => 'Смотреть на';
 	@override String get watchTrailer => 'Смотреть трейлер';
 	@override String openOn({required Object site}) => 'Открыть на ${site}';
+	@override String get trailerUnavailable => 'Не удалось открыть трейлер на этом устройстве';
+	@override String get linkUnavailable => 'Не удалось открыть ссылку на этом устройстве';
 	@override String get crew => 'Съёмочная группа';
 	@override String get ratings => 'Рейтинги';
 	@override String get schedule => 'Расписание';
@@ -3905,6 +3909,7 @@ extension on TranslationsRu {
 			'settings.scopePlaybackSpeed' => 'Скорость воспроизведения',
 			'settings.scopeShaderPreset' => 'Предустановка шейдера',
 			'settings.scopeAspectRatio' => 'Соотношение сторон',
+			'settings.scopeZoom' => 'Масштаб',
 			'settings.scopeSyncOffsets' => 'Синхронизация аудио и субтитров',
 			'settings.playerScopeOff' => 'Не сохранять',
 			'settings.playerScopeGlobal' => 'Везде',
@@ -3929,9 +3934,9 @@ extension on TranslationsRu {
 			'themeEditor.slots.outline' => 'Обводка',
 			'themeEditor.slots.text' => 'Текст',
 			'themeEditor.slots.textMuted' => 'Второстепенный текст',
-			'themeEditor.slots.accent' => 'Акцент',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Акцент',
 			'themeEditor.opacity' => 'Непрозрачность',
 			'themeEditor.hexHint' => '#RRGGBB или #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Из других тем',
@@ -4255,6 +4260,7 @@ extension on TranslationsRu {
 			'videoControls.subtitleDownloaded' => 'Субтитры загружены',
 			'videoControls.subtitleDownloadedNotApplied' => 'Субтитры загружены, но их не удалось выбрать',
 			'videoControls.subtitleDownloadFailed' => 'Не удалось загрузить субтитры',
+			'videoControls.subtitleDownloadTimedOut' => 'Субтитры не появились вовремя. Возможно, загрузка не удалась',
 			'videoControls.searchLanguages' => 'Поиск языков...',
 			'videoControls.skipIntro' => 'Пропустить заставку',
 			'videoControls.skipCredits' => 'Пропустить титры',
@@ -4442,10 +4448,10 @@ extension on TranslationsRu {
 			'profiles.pinsDontMatch' => 'PIN-коды не совпадают',
 			'profiles.tokenIdentityMismatch' => 'Токен профиля Plex указал на неожиданный сервер',
 			'connections.sectionTitle' => 'Подключения',
-			'connections.addConnection' => 'Добавить подключение',
-			'connections.addConnectionSubtitleNoProfile' => 'Войдите через Plex или подключите сервер Jellyfin или Emby',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Добавить подключение',
+			'connections.addConnectionSubtitleNoProfile' => 'Войдите через Plex или подключите сервер Jellyfin или Emby',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Добавить к ${displayName}: Plex, Jellyfin, Emby или подключение другого профиля',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Сессия истекла для ${name}',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Сессия истекла для ${count} серверов',
@@ -4859,6 +4865,8 @@ extension on TranslationsRu {
 			'explore.detail.watchOn' => 'Смотреть на',
 			'explore.detail.watchTrailer' => 'Смотреть трейлер',
 			'explore.detail.openOn' => ({required Object site}) => 'Открыть на ${site}',
+			'explore.detail.trailerUnavailable' => 'Не удалось открыть трейлер на этом устройстве',
+			'explore.detail.linkUnavailable' => 'Не удалось открыть ссылку на этом устройстве',
 			'explore.detail.crew' => 'Съёмочная группа',
 			'explore.detail.ratings' => 'Рейтинги',
 			'explore.detail.schedule' => 'Расписание',
@@ -4954,12 +4962,12 @@ extension on TranslationsRu {
 			'liveTv.recordSettings.anyTime' => 'Записывать в любое время',
 			'liveTv.recordSettings.skipInLibrary' => 'Пропускать эпизоды, уже имеющиеся в библиотеке',
 			'liveTv.recordSettings.keepUpTo' => 'Сколько эпизодов хранить',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 — хранить все эпизоды',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Начало через ${minutes} мин',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} в ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} вернул некорректные данные для воспроизведения ТВ в прямом эфире',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Не удалось запустить канал в прямом эфире',
 			'liveTv.failedToBuildStreamUrl' => 'Не удалось сформировать URL потока',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Не удалось запустить канал: ${reason}',
@@ -5468,12 +5476,12 @@ extension on TranslationsRu {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek, аппаратный',
 			'performanceOverlay.decoderExynosHw' => 'Exynos, аппаратный',
 			'performanceOverlay.decoderSoftware' => 'Программный',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Аппаратный',
 			'performanceOverlay.tunnelingActive' => 'Активно',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (ошибок: ${failures})',
 			'externalPlayer.title' => 'Внешний плеер',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Использовать внешний плеер',
 			'externalPlayer.useExternalPlayerDescription' => 'Открывать видео в другом приложении',
 			'externalPlayer.selectPlayer' => 'Выбрать плеер',

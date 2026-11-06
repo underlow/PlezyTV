@@ -602,6 +602,7 @@ class _Translations$settings$de extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => 'Wiedergabegeschwindigkeit';
 	@override String get scopeShaderPreset => 'Shader-Voreinstellung';
 	@override String get scopeAspectRatio => 'Seitenverhältnis';
+	@override String get scopeZoom => 'Zoom';
 	@override String get scopeSyncOffsets => 'Audio- und Untertitelsynchronisierung';
 	@override String get playerScopeOff => 'Nicht speichern';
 	@override String get playerScopeGlobal => 'Überall';
@@ -1007,6 +1008,7 @@ class _Translations$videoControls$de extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => 'Untertitel heruntergeladen';
 	@override String get subtitleDownloadedNotApplied => 'Der Untertitel wurde heruntergeladen, konnte aber nicht ausgewählt werden';
 	@override String get subtitleDownloadFailed => 'Untertitel konnte nicht heruntergeladen werden';
+	@override String get subtitleDownloadTimedOut => 'Der Untertitel ist nicht rechtzeitig erschienen. Der Download ist möglicherweise fehlgeschlagen';
 	@override String get searchLanguages => 'Sprachen suchen...';
 	@override String get skipIntro => 'Intro überspringen';
 	@override String get skipCredits => 'Abspann überspringen';
@@ -3043,6 +3045,8 @@ class _Translations$explore$detail$de extends Translations$explore$detail$en {
 	@override String get watchOn => 'Ansehen auf';
 	@override String get watchTrailer => 'Trailer ansehen';
 	@override String openOn({required Object site}) => 'Auf ${site} öffnen';
+	@override String get trailerUnavailable => 'Der Trailer konnte auf diesem Gerät nicht geöffnet werden';
+	@override String get linkUnavailable => 'Der Link konnte auf diesem Gerät nicht geöffnet werden';
 	@override String get crew => 'Crew';
 	@override String get ratings => 'Bewertungen';
 	@override String get schedule => 'Sendetermine';
@@ -3881,6 +3885,7 @@ extension on TranslationsDe {
 			'settings.scopePlaybackSpeed' => 'Wiedergabegeschwindigkeit',
 			'settings.scopeShaderPreset' => 'Shader-Voreinstellung',
 			'settings.scopeAspectRatio' => 'Seitenverhältnis',
+			'settings.scopeZoom' => 'Zoom',
 			'settings.scopeSyncOffsets' => 'Audio- und Untertitelsynchronisierung',
 			'settings.playerScopeOff' => 'Nicht speichern',
 			'settings.playerScopeGlobal' => 'Überall',
@@ -3905,9 +3910,9 @@ extension on TranslationsDe {
 			'themeEditor.slots.outline' => 'Kontur',
 			'themeEditor.slots.text' => 'Text',
 			'themeEditor.slots.textMuted' => 'Sekundärtext',
-			'themeEditor.slots.accent' => 'Akzent',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'Akzent',
 			'themeEditor.opacity' => 'Deckkraft',
 			'themeEditor.hexHint' => '#RRGGBB oder #AARRGGBB',
 			'themeEditor.fromOtherThemes' => 'Aus anderen Designs',
@@ -4231,6 +4236,7 @@ extension on TranslationsDe {
 			'videoControls.subtitleDownloaded' => 'Untertitel heruntergeladen',
 			'videoControls.subtitleDownloadedNotApplied' => 'Der Untertitel wurde heruntergeladen, konnte aber nicht ausgewählt werden',
 			'videoControls.subtitleDownloadFailed' => 'Untertitel konnte nicht heruntergeladen werden',
+			'videoControls.subtitleDownloadTimedOut' => 'Der Untertitel ist nicht rechtzeitig erschienen. Der Download ist möglicherweise fehlgeschlagen',
 			'videoControls.searchLanguages' => 'Sprachen suchen...',
 			'videoControls.skipIntro' => 'Intro überspringen',
 			'videoControls.skipCredits' => 'Abspann überspringen',
@@ -4418,10 +4424,10 @@ extension on TranslationsDe {
 			'profiles.pinsDontMatch' => 'PINs stimmen nicht überein',
 			'profiles.tokenIdentityMismatch' => 'Das Plex-Profil-Token wurde einem unerwarteten Server zugeordnet',
 			'connections.sectionTitle' => 'Verbindungen',
-			'connections.addConnection' => 'Verbindung hinzufügen',
-			'connections.addConnectionSubtitleNoProfile' => 'Mit Plex anmelden oder mit einem Jellyfin- oder Emby-Server verbinden',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => 'Verbindung hinzufügen',
+			'connections.addConnectionSubtitleNoProfile' => 'Mit Plex anmelden oder mit einem Jellyfin- oder Emby-Server verbinden',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => 'Zu ${displayName} hinzufügen: Plex, Jellyfin, Emby oder eine andere Profilverbindung',
 			'connections.sessionExpiredOne' => ({required Object name}) => 'Sitzung für ${name} abgelaufen',
 			'connections.sessionExpiredMany' => ({required Object count}) => 'Sitzungen für ${count} Server abgelaufen',
@@ -4835,6 +4841,8 @@ extension on TranslationsDe {
 			'explore.detail.watchOn' => 'Ansehen auf',
 			'explore.detail.watchTrailer' => 'Trailer ansehen',
 			'explore.detail.openOn' => ({required Object site}) => 'Auf ${site} öffnen',
+			'explore.detail.trailerUnavailable' => 'Der Trailer konnte auf diesem Gerät nicht geöffnet werden',
+			'explore.detail.linkUnavailable' => 'Der Link konnte auf diesem Gerät nicht geöffnet werden',
 			'explore.detail.crew' => 'Crew',
 			'explore.detail.ratings' => 'Bewertungen',
 			'explore.detail.schedule' => 'Sendetermine',
@@ -4930,12 +4938,12 @@ extension on TranslationsDe {
 			'liveTv.recordSettings.anyTime' => 'Zu jeder Zeit aufnehmen',
 			'liveTv.recordSettings.skipInLibrary' => 'Episoden überspringen, die schon in der Bibliothek sind',
 			'liveTv.recordSettings.keepUpTo' => 'Zu behaltende Episoden',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 behält alle Episoden',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => 'Beginnt in ${minutes} Min.',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} um ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product} hat ungültige Live-TV-Wiedergabedaten zurückgegeben',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'Der Live-Sender konnte nicht gestartet werden',
 			'liveTv.failedToBuildStreamUrl' => 'Die Stream-URL konnte nicht erstellt werden',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'Sender konnte nicht gestartet werden: ${reason}',
@@ -5444,12 +5452,12 @@ extension on TranslationsDe {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'Software',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'Hardware',
 			'performanceOverlay.tunnelingActive' => 'Aktiv',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted} (${failures} fehlgeschlagen)',
 			'externalPlayer.title' => 'Externer Player',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => 'Externen Player verwenden',
 			'externalPlayer.useExternalPlayerDescription' => 'Videos in einer anderen App öffnen',
 			'externalPlayer.selectPlayer' => 'Player auswählen',

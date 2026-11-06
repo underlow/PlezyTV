@@ -602,6 +602,7 @@ class _Translations$settings$ja extends Translations$settings$en {
 	@override String get scopePlaybackSpeed => '再生速度';
 	@override String get scopeShaderPreset => 'シェーダープリセット';
 	@override String get scopeAspectRatio => 'アスペクト比';
+	@override String get scopeZoom => 'ズーム';
 	@override String get scopeSyncOffsets => '音声と字幕の同期';
 	@override String get playerScopeOff => '保存しない';
 	@override String get playerScopeGlobal => 'すべて';
@@ -1004,6 +1005,7 @@ class _Translations$videoControls$ja extends Translations$videoControls$en {
 	@override String get subtitleDownloaded => '字幕をダウンロードしました';
 	@override String get subtitleDownloadedNotApplied => '字幕はダウンロードされましたが、選択できませんでした';
 	@override String get subtitleDownloadFailed => '字幕のダウンロードに失敗しました';
+	@override String get subtitleDownloadTimedOut => '字幕が時間内に追加されませんでした。ダウンロードに失敗した可能性があります';
 	@override String get searchLanguages => '言語を検索…';
 	@override String get skipIntro => 'イントロをスキップ';
 	@override String get skipCredits => 'クレジットをスキップ';
@@ -3032,6 +3034,8 @@ class _Translations$explore$detail$ja extends Translations$explore$detail$en {
 	@override String get watchOn => '視聴先';
 	@override String get watchTrailer => '予告編を見る';
 	@override String openOn({required Object site}) => '${site}で開く';
+	@override String get trailerUnavailable => 'この端末では予告編を開けませんでした';
+	@override String get linkUnavailable => 'この端末ではリンクを開けませんでした';
 	@override String get crew => 'スタッフ';
 	@override String get ratings => '評価';
 	@override String get schedule => '放送予定';
@@ -3869,6 +3873,7 @@ extension on TranslationsJa {
 			'settings.scopePlaybackSpeed' => '再生速度',
 			'settings.scopeShaderPreset' => 'シェーダープリセット',
 			'settings.scopeAspectRatio' => 'アスペクト比',
+			'settings.scopeZoom' => 'ズーム',
 			'settings.scopeSyncOffsets' => '音声と字幕の同期',
 			'settings.playerScopeOff' => '保存しない',
 			'settings.playerScopeGlobal' => 'すべて',
@@ -3893,9 +3898,9 @@ extension on TranslationsJa {
 			'themeEditor.slots.outline' => '枠線',
 			'themeEditor.slots.text' => 'テキスト',
 			'themeEditor.slots.textMuted' => '補助テキスト',
-			'themeEditor.slots.accent' => 'アクセント',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.accent' => 'アクセント',
 			'themeEditor.opacity' => '不透明度',
 			'themeEditor.hexHint' => '#RRGGBB または #AARRGGBB',
 			'themeEditor.fromOtherThemes' => '他のテーマから',
@@ -4219,6 +4224,7 @@ extension on TranslationsJa {
 			'videoControls.subtitleDownloaded' => '字幕をダウンロードしました',
 			'videoControls.subtitleDownloadedNotApplied' => '字幕はダウンロードされましたが、選択できませんでした',
 			'videoControls.subtitleDownloadFailed' => '字幕のダウンロードに失敗しました',
+			'videoControls.subtitleDownloadTimedOut' => '字幕が時間内に追加されませんでした。ダウンロードに失敗した可能性があります',
 			'videoControls.searchLanguages' => '言語を検索…',
 			'videoControls.skipIntro' => 'イントロをスキップ',
 			'videoControls.skipCredits' => 'クレジットをスキップ',
@@ -4406,10 +4412,10 @@ extension on TranslationsJa {
 			'profiles.pinsDontMatch' => 'PINが一致しません',
 			'profiles.tokenIdentityMismatch' => 'Plexプロフィールのトークンから予期しないサーバーが特定されました',
 			'connections.sectionTitle' => '接続',
-			'connections.addConnection' => '接続を追加',
-			'connections.addConnectionSubtitleNoProfile' => 'Plexでサインインするか、JellyfinまたはEmbyサーバーに接続',
 			_ => null,
 		} ?? switch (path) {
+			'connections.addConnection' => '接続を追加',
+			'connections.addConnectionSubtitleNoProfile' => 'Plexでサインインするか、JellyfinまたはEmbyサーバーに接続',
 			'connections.addConnectionSubtitleScoped' => ({required Object displayName}) => '${displayName}に追加：Plex、Jellyfin、Emby、または別のプロフィールの接続',
 			'connections.sessionExpiredOne' => ({required Object name}) => '${name} のセッションの有効期限が切れました',
 			'connections.sessionExpiredMany' => ({required Object count}) => '${count} 台のサーバーのセッションの有効期限が切れました',
@@ -4823,6 +4829,8 @@ extension on TranslationsJa {
 			'explore.detail.watchOn' => '視聴先',
 			'explore.detail.watchTrailer' => '予告編を見る',
 			'explore.detail.openOn' => ({required Object site}) => '${site}で開く',
+			'explore.detail.trailerUnavailable' => 'この端末では予告編を開けませんでした',
+			'explore.detail.linkUnavailable' => 'この端末ではリンクを開けませんでした',
 			'explore.detail.crew' => 'スタッフ',
 			'explore.detail.ratings' => '評価',
 			'explore.detail.schedule' => '放送予定',
@@ -4918,12 +4926,12 @@ extension on TranslationsJa {
 			'liveTv.recordSettings.anyTime' => 'すべての時間帯で録画',
 			'liveTv.recordSettings.skipInLibrary' => 'ライブラリにあるエピソードをスキップ',
 			'liveTv.recordSettings.keepUpTo' => '保持するエピソード数',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordSettings.keepUpToHint' => '0 ですべてのエピソードを保持',
 			'liveTv.startingInMinutes' => ({required Object minutes}) => '${minutes}分後に開始',
 			'liveTv.dayAtTime' => ({required Object day, required Object time}) => '${day} ${time}',
 			'liveTv.invalidPlaybackData' => ({required Object product}) => '${product}から無効なライブTV再生データが返されました',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.failedToStartChannel' => 'ライブチャンネルを開始できませんでした',
 			'liveTv.failedToBuildStreamUrl' => 'ストリームURLを生成できませんでした',
 			'liveTv.playbackStartFailed' => ({required Object reason}) => 'チャンネルを再生できませんでした: ${reason}',
@@ -5432,12 +5440,12 @@ extension on TranslationsJa {
 			'performanceOverlay.decoderMediatekHw' => 'MediaTek HW',
 			'performanceOverlay.decoderExynosHw' => 'Exynos HW',
 			'performanceOverlay.decoderSoftware' => 'ソフトウェア',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.decoderHardware' => 'ハードウェア',
 			'performanceOverlay.tunnelingActive' => '有効',
 			'performanceOverlay.dvRpuFailed' => ({required Object converted, required Object failures}) => '${converted}（${failures}件失敗）',
 			'externalPlayer.title' => '外部プレーヤー',
-			_ => null,
-		} ?? switch (path) {
 			'externalPlayer.useExternalPlayer' => '外部プレーヤーを使用',
 			'externalPlayer.useExternalPlayerDescription' => '動画を別のアプリで開きます',
 			'externalPlayer.selectPlayer' => 'プレーヤーを選択',
