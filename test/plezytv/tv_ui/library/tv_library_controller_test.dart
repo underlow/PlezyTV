@@ -10,6 +10,7 @@ import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/media/media_library.dart';
+import 'package:plezy/media/media_filter.dart';
 import 'package:plezy/media/media_sort.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_controller.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_preferences.dart';
@@ -104,6 +105,53 @@ void main() {
     expect(restored.query().sort?.direction, LibrarySortDirection.descending);
     await c.select(clearSort: true);
     expect(storage.getLibrarySort(library.globalKey), isNull);
+  });
+  test('quick choice persists across recreation, another library and refresh', () async {
+    final storage = await StorageService.getInstance();
+    final store = TvStorageLibraryPreferences(storage);
+    FakeMediaServerClient client() => FakeMediaServerClient()
+      ..filters = LibraryFilterResult(
+        filters: [
+          MediaFilter(filter: 'unwatchedLeaves', filterType: 'boolean', key: '', title: 'Unwatched', type: 'filter'),
+        ],
+        cachedValues: {},
+      );
+    const genre = LibraryFilter(field: 'genre', values: ['drama']);
+    final c = controller(client(), store: store);
+    await c.initialize();
+    await flush(); // MediaBrowser filter discovery runs after the first page.
+    await c.select(filters: [genre]);
+    await c.selectQuickFilter(TvLibraryQuickFilter.unwatched);
+    const expected = [
+      genre,
+      LibraryFilter(field: 'unwatchedLeaves', values: ['1']),
+    ];
+    expect(storage.getLibraryFilters(sectionId: library.globalKey), expected);
+    const otherLibrary = MediaLibrary(
+      id: 'other',
+      backend: MediaBackend.jellyfin,
+      title: 'Other',
+      kind: MediaKind.movie,
+      serverId: 'server',
+    );
+    final other = controller(client(), store: store, lib: otherLibrary);
+    await other.initialize();
+    expect(other.query().filters, isEmpty);
+    await other.select(
+      filters: const [
+        LibraryFilter(field: 'year', values: ['2020']),
+      ],
+    );
+    final restored = controller(client(), store: TvStorageLibraryPreferences(storage));
+    await restored.initialize();
+    expect(restored.query().filters, expected);
+    expect(restored.selectedQuickFilter, TvLibraryQuickFilter.unwatched);
+    await restored.refresh();
+    expect(restored.query().filters, expected);
+    await restored.selectQuickFilter(null);
+    final cleared = controller(client(), store: TvStorageLibraryPreferences(storage));
+    await cleared.initialize();
+    expect(cleared.query().filters, [genre]);
   });
   test('A20 memory route seeds only incoming filter and never writes storage', () async {
     final storage = await StorageService.getInstance();
