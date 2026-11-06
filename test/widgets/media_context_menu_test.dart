@@ -425,7 +425,7 @@ void main() {
       );
 
       await _openMenu(tester, menuKey);
-      await tester.tap(find.text(t.common.addTo));
+      await _tapMenuEntry(tester, t.common.addTo);
       await tester.pumpAndSettle();
 
       expect(find.text(t.playlists.playlist), findsOneWidget);
