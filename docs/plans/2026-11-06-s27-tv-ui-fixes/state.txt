@@ -1,3 +1,6 @@
 profile: medium
-phase: analysis
+phase: implementation
+status: paused
+task: T1
+document reviewers: codex sol medium
 project: docs/projects/plezy-tv/project.md S27
