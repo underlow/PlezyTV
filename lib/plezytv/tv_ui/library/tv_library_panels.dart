@@ -40,6 +40,24 @@ Widget _row(
   onSelect: action,
 );
 
+Future<void> showTvLibraryGrouping(BuildContext context, FocusNode anchor, TvLibraryController c) => TvRightPanel.show(
+  context: context,
+  anchor: anchor,
+  root: TvRightPanelPage(
+    title: t.libraries.groupings.title,
+    changes: c,
+    itemsBuilder: (_) => [
+      for (final group in c.groupingOptions)
+        _row(
+          'group:$group',
+          tvGroupingLabel(group),
+          () => unawaited(c.select(grouping: group)),
+          selected: c.grouping == group,
+        ),
+    ],
+  ),
+);
+
 Future<void> showTvLibrarySort(BuildContext context, FocusNode anchor, TvLibraryController c) => TvRightPanel.show(
   context: context,
   anchor: anchor,
@@ -47,27 +65,6 @@ Future<void> showTvLibrarySort(BuildContext context, FocusNode anchor, TvLibrary
     title: t.libraries.sortBy,
     changes: c,
     itemsBuilder: (context) => [
-      _row(
-        'grouping',
-        t.libraries.groupings.title,
-        () => TvRightPanel.of(context).push(
-          TvRightPanelPage(
-            title: t.libraries.groupings.title,
-            changes: c,
-            itemsBuilder: (_) => [
-              for (final group in c.groupingOptions)
-                _row(
-                  'group:$group',
-                  tvGroupingLabel(group),
-                  () => unawaited(c.select(grouping: group)),
-                  selected: c.grouping == group,
-                ),
-            ],
-          ),
-        ),
-        value: tvGroupingLabel(c.grouping),
-        kind: TvSettingsItemKind.page,
-      ),
       for (final sort in c.sorts)
         _row(
           'sort:${sort.key}',

@@ -20,6 +20,7 @@ import 'package:plezy/plezytv/tv_ui/components/tv_right_panel.dart';
 import 'package:plezy/plezytv/tv_ui/components/tv_settings_item.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_controller.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_panels.dart';
+import 'package:plezy/plezytv/tv_ui/library/tv_library_query.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_preferences.dart';
 import 'package:plezy/plezytv/tv_ui/library/tv_library_screen.dart';
 import 'package:plezy/plezytv/tv_ui/tv_strings.dart';
@@ -54,7 +55,11 @@ void main() {
   }
 
   Future<void> button(WidgetTester tester, String label) async {
-    final found = find.byWidgetPredicate((w) => w is TvButton && w.label.startsWith(label));
+    final found = find.byWidgetPredicate(
+      (w) =>
+          w is TvButton &&
+          (label == 'Filters' ? w.focusNode?.debugLabel == 'Library filters' : w.label.startsWith(label)),
+    );
     tester.widget<TvButton>(found).onSelect!();
     await settle(tester);
   }
@@ -130,8 +135,8 @@ void main() {
   testWidgets('A16: sort default direction, panel refresh, Back anchor and Down first item', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0), movie(1)];
     final c = await mount(tester, client);
-    expect(find.text('Sort: Title'), findsOneWidget);
-    await button(tester, 'Sort: Title');
+    expect(find.text('Title'), findsOneWidget);
+    await button(tester, 'Title');
     expect(
       find.descendant(of: find.byKey(const ValueKey('ascending')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
@@ -150,7 +155,7 @@ void main() {
       find.descendant(of: find.byKey(const ValueKey('direction')), matching: find.byIcon(Icons.check)),
       findsOneWidget,
     );
-    expect(find.text('Sort: Added'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Added'), findsOneWidget);
     expect(c.preferences.descending, isTrue);
     expect(client.queries.last.sort?.field, 'addedAt');
     expect(find.byType(TvRightPanel), findsOneWidget);
@@ -194,7 +199,9 @@ void main() {
       ..items = [movie(0)]
       ..onFilters = () => pending.future;
     await mount(tester, client);
-    TvButton filters() => tester.widget<TvButton>(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Filters'));
+    TvButton filters() => tester.widget<TvButton>(
+      find.byWidgetPredicate((w) => w is TvButton && w.focusNode?.debugLabel == 'Library filters'),
+    );
     expect(filters().disabled, isTrue);
     pending.complete(LibraryFilterResult.empty);
     await settle(tester);
@@ -227,7 +234,7 @@ void main() {
     await settle(tester);
     expect(c.folders.length, 2);
     expect(focus, 'Folder row 0');
-    await button(tester, 'Sort: Title');
+    await button(tester, 'Title');
     final level = c.folders.last;
     await c.refresh();
     await settle(tester);
@@ -313,12 +320,13 @@ void main() {
   testWidgets('grouping page switches grid to folders and reset restores defaults', (tester) async {
     final client = FakeMediaServerClient()..items = [movie(0)];
     final c = await mount(tester, client);
-    await button(tester, 'Sort: Title');
-    await activate(tester, 'grouping');
+    await button(tester, tvGroupingLabel(c.grouping));
     await activate(tester, 'group:folders');
     expect(c.grouping, 'folders');
     expect(find.byType(TvRightPanel), findsOneWidget);
     await press(tester, LogicalKeyboardKey.escape);
+    expect(focus, 'Library grouping');
+    await button(tester, 'Title');
     await activate(tester, 'reset');
     expect(c.grouping, 'movies');
     expect(c.selectedSort, isNull);

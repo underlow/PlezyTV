@@ -203,7 +203,8 @@ class TvLibraryExtraTabState extends State<TvLibraryExtraTab> {
         if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
         if (_empty && (widget.ownsTabFocus() || _scope.hasFocus)) {
           widget.onUp();
-        } else if ((autoFocus && widget.ownsTabFocus()) || (!_recommended && _scope.hasFocus)) {
+        } else if ((autoFocus && widget.autoFocusOnLoad && widget.ownsTabFocus()) ||
+            (!_recommended && _scope.hasFocus)) {
           requestFocus();
         }
       });

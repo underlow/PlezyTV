@@ -155,7 +155,7 @@ void main() {
       ),
     );
     await settle(tester);
-    final button = find.byWidgetPredicate((w) => w is TvButton && w.label == 'More');
+    final button = find.byWidgetPredicate((w) => w is TvButton && w.focusNode?.debugLabel == 'Library more');
     tester.widget<TvButton>(button).onSelect!();
     await settle(tester);
     await activate(tester, 'manage');

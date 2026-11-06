@@ -149,6 +149,77 @@ void main() {
     return key;
   }
 
+  testWidgets('T7: grid, bar, tabs focus path and first control exits left', (tester) async {
+    final c = make(FakeMediaServerClient()..items = [movie(0)]);
+    var sidebar = 0;
+    await mount(tester, c, sidebar: () => sidebar++);
+    await settle(tester);
+    expect(tester.getTopLeft(find.byType(TvPoster).first).dy, lessThanOrEqualTo(200));
+    await press(tester, LogicalKeyboardKey.arrowUp);
+    expect(focus, 'Library filters');
+    await press(tester, LogicalKeyboardKey.arrowUp);
+    expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library tabs'), isTrue);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focus, 'Library filters');
+    await press(tester, LogicalKeyboardKey.arrowLeft);
+    expect(sidebar, 1);
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focus, 'TV grid 0');
+  });
+
+  testWidgets('T7: one grouping has no focus stop; Clear resets filters immediately', (tester) async {
+    final c = make(
+      FakeMediaServerClient()..items = [movie(0)],
+      lib: const MediaLibrary(id: '1', backend: MediaBackend.jellyfin, title: 'Movies', kind: MediaKind.movie),
+    );
+    await mount(tester, c);
+    await settle(tester);
+    await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowRight);
+    expect(focus, 'Library sort');
+    await press(tester, LogicalKeyboardKey.arrowRight);
+    expect(focus, 'Library more');
+    await c.select(
+      filters: const [
+        LibraryFilter(field: 'genre', values: ['drama']),
+      ],
+    );
+    await settle(tester);
+    await press(tester, LogicalKeyboardKey.arrowLeft);
+    expect(focus, 'Library clear');
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(c.preferences.filters, isEmpty);
+    expect(focus, 'Library filters');
+    await press(tester, LogicalKeyboardKey.arrowRight);
+    expect(focus, 'Library sort');
+    await press(tester, LogicalKeyboardKey.arrowRight);
+    expect(focus, 'Library more');
+  });
+
+  for (final extra in ['recommended', 'collections', 'playlists']) {
+    testWidgets('T7: $extra uses tabs directly without Browse actions', (tester) async {
+      final client = FakeMediaServerClient()
+        ..items = [movie(0)]
+        ..hubs = [
+          MediaHub(id: 'h', title: 'Hub', type: 'movie', items: [movie(1)]),
+        ]
+        ..collections = [movie(2)]
+        ..playlists = [
+          const MediaPlaylist(id: 'p', backend: MediaBackend.jellyfin, title: 'List', playlistType: 'video'),
+        ];
+      final c = make(client);
+      await mount(tester, c);
+      await settle(tester);
+      await c.select(tab: extra);
+      await settle(tester);
+      expect(find.byWidgetPredicate((w) => w is TvButton && w.focusNode?.debugLabel == 'Library more'), findsNothing);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library extra content'), isTrue);
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library tabs'), isTrue);
+    });
+  }
+
   for (final shellInset in [0.0, (TvTokens.size.sidebar.collapsedW - TvTokens.space.cardFocusReserve).toDouble()]) {
     testWidgets('library edges align at the content inset with shell inset $shellInset', (tester) async {
       final client = FakeMediaServerClient()..items = [movie(0)];
@@ -170,7 +241,6 @@ void main() {
         ),
       );
       await settle(tester);
-      expect(tester.getTopLeft(find.text('Movies')).dx, TvTokens.space.contentLeft);
       expect(tester.getTopLeft(find.byType(TvTabs)).dx, TvTokens.space.contentLeft);
       expect(tester.getTopLeft(find.byType(TvPoster).first).dx, TvTokens.space.contentLeft);
       await c.select(tab: 'recommended');
@@ -189,7 +259,7 @@ void main() {
     final c = make(client);
     await mount(tester, c);
     await tester.pump(const Duration(milliseconds: 299));
-    expect(find.text('Movies'), findsOneWidget);
+    expect(find.byType(TvTabs), findsOneWidget);
     expect(find.byType(TvPosterSkeleton), findsNothing);
     await tester.pump(const Duration(milliseconds: 1));
     expect(find.byType(TvPosterSkeleton), findsNWidgets(12));
@@ -221,7 +291,7 @@ void main() {
       await settle(tester);
       if (moveToHeader) {
         expect(FocusManager.instance.primaryFocus, same(owner));
-        expect(focus, 'Library sort');
+        expect(FocusManager.instance.primaryFocus!.ancestors.any((n) => n.debugLabel == 'Library tabs'), isTrue);
       } else {
         expect(FocusManager.instance.primaryFocus, isNot(same(owner)));
         expect(find.byType(TvPoster), findsOneWidget);
@@ -237,6 +307,7 @@ void main() {
     final c = make(client);
     await mount(tester, c);
     await settle(tester);
+    await press(tester, LogicalKeyboardKey.arrowUp);
     await press(tester, LogicalKeyboardKey.arrowUp);
     await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(c.preferences.tab, 'recommended');
@@ -265,6 +336,7 @@ void main() {
     await settle(tester);
     expect(focus, 'TV grid 0');
     await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowUp);
     for (final key in [
       LogicalKeyboardKey.arrowRight,
       LogicalKeyboardKey.arrowRight,
@@ -284,11 +356,11 @@ void main() {
     final c = make(FakeMediaServerClient()..onPage = (_) => page.future);
     await mount(tester, c);
     await tester.pump();
-    await press(tester, LogicalKeyboardKey.arrowUp);
-    expect(focus, 'Library sort');
+    await press(tester, LogicalKeyboardKey.arrowDown);
+    expect(focus, 'Library filters');
     page.complete(LibraryPage(items: [movie(0)], totalCount: 1));
     await settle(tester);
-    expect(focus, 'Library sort');
+    expect(focus, 'Library filters');
     expect(find.byType(TvPosterSkeleton), findsNothing);
     await press(tester, LogicalKeyboardKey.arrowDown);
     expect(focus, 'TV grid 0');
@@ -313,7 +385,7 @@ void main() {
       ),
     );
     await settle(tester);
-    await press(tester, LogicalKeyboardKey.arrowUp);
+    await press(tester, LogicalKeyboardKey.arrowDown);
     await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(focus, 'Test sidebar');
     page.complete(LibraryPage(items: [movie(0)], totalCount: 1));
@@ -326,6 +398,7 @@ void main() {
     var sidebar = 0;
     await mount(tester, c, sidebar: () => sidebar++);
     await settle(tester);
+    await press(tester, LogicalKeyboardKey.arrowUp);
     await press(tester, LogicalKeyboardKey.arrowUp);
     await press(tester, LogicalKeyboardKey.arrowRight);
     expect(c.preferences.tab, 'collections');
@@ -343,7 +416,7 @@ void main() {
     final c = make(client);
     await mount(tester, c);
     await settle(tester);
-    expect(find.text('Sort: Title'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Title'), findsOneWidget);
     expect(find.text('300'), findsOneWidget);
     final layout = tester.widget<TvPagedGrid<MediaItem>>(find.byType(TvPagedGrid<MediaItem>));
     expect(layout.columns, 6);
@@ -361,7 +434,7 @@ void main() {
     );
     await settle(tester);
     expect(find.text('Filters · 1'), findsOneWidget);
-    expect(find.text('Sort: Title'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Title'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
   });
 
@@ -633,7 +706,7 @@ void main() {
       client.onPage = (_) async => LibraryPage(items: [movie(40)], totalCount: 1);
       await press(tester, LogicalKeyboardKey.select);
       expect(c.alphaPrefix, 'A');
-      expect(find.text('Sort: Title'), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is TvButton && w.label == 'Title'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
       expect(focus, 'TV grid 0');
       expect(client.queries.last.nameStartsWith, 'A');
