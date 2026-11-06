@@ -131,6 +131,26 @@ void main() {
     });
   }
 
+  testWidgets('S27 R9 episode action caption clears the season heading with a long summary', (tester) async {
+    final client = fixture();
+    client.episodes['Season 1']![3] = client.episodes['Season 1']![3].copyWith(
+      summary: 'First description line.\nSecond description line.\nThird description line.',
+      ratings: [const MediaRatingSource(source: 'imdb', value: 8)],
+    );
+    await mount(tester, client, seasonId: 'Season 1', episodeId: 'e4');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    final watched = tester.widgetList<TvIconButton>(find.byType(TvIconButton)).firstWhere((b) => b.icon == Icons.check);
+    final caption = tester.getRect(find.text(watched.caption));
+    final rail = find.byType(TvHorizontalRow).first;
+    final heading = tester.getRect(find.descendant(of: rail, matching: find.text('Season 1')));
+    expect(caption.bottom, lessThanOrEqualTo(heading.top));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('R9a R9b R2a show compact header and bounded metadata, exact row spacing', (tester) async {
     final client = fixture();
     client.extras = [media('Trailer', MediaKind.movie)];

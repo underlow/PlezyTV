@@ -1093,14 +1093,20 @@ class _TvShowScreenState extends State<TvShowScreen> {
                 SizedBox(height: px(TvTokens.detail.summaryGap)),
                 if (episode != null) TvRatings(item: episode),
                 SizedBox(height: px(20)),
-                Text(episode?.summary ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: theme.bodyLarge),
+                Text(
+                  episode?.summary ?? '',
+                  maxLines: _hasEpisodeActions ? 2 : 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.bodyLarge,
+                ),
                 if (_hasEpisodeActions) ...[
                   const Spacer(),
                   FocusScope(
                     node: _actionScope,
                     child: TvEpisodeActions(controller: c, item: episode!, primaryFocus: _primary, play: _play),
                   ),
-                  SizedBox(height: px(16)),
+                  // Icon captions paint below the action row's layout bounds.
+                  SizedBox(height: px(TvTokens.type.caption.lineHeight + 16)),
                 ],
               ],
             ),
